@@ -1,0 +1,68 @@
+{
+  "name": "default",
+  "global": {
+    "speed": 0.25,
+    "zoom": 2.0,
+    "trail": 0.34,
+    "flame_brightness": 0.4
+  },
+  "kifs": {
+    "fold_angle": 0.62,
+    "scale": 1.8,
+    "brightness": 0.3
+  },
+  "transforms": [
+    {
+      "weight": 0.25,
+      "angle": 0.6,
+      "scale": 0.65,
+      "offset": [0.4, 0.15],
+      "color": 0.0,
+      "linear": 0.0,
+      "sinusoidal": 0.5,
+      "spherical": 0.0,
+      "swirl": 0.5,
+      "horseshoe": 0.0,
+      "handkerchief": 0.0
+    },
+    {
+      "weight": 0.25,
+      "angle": -1.0,
+      "scale": 0.7,
+      "offset": [-0.3, 0.3],
+      "color": 0.33,
+      "linear": 0.0,
+      "sinusoidal": 0.0,
+      "spherical": 0.6,
+      "swirl": 0.0,
+      "horseshoe": 0.4,
+      "handkerchief": 0.0
+    },
+    {
+      "weight": 0.25,
+      "angle": 1.7,
+      "scale": 0.6,
+      "offset": [-0.1, -0.35],
+      "color": 0.67,
+      "linear": 0.0,
+      "sinusoidal": 0.3,
+      "spherical": 0.0,
+      "swirl": 0.0,
+      "horseshoe": 0.0,
+      "handkerchief": 0.7
+    },
+    {
+      "weight": 0.25,
+      "angle": 0.0,
+      "scale": 0.82,
+      "offset": [0.0, 0.0],
+      "color": 0.85,
+      "linear": 0.6,
+      "sinusoidal": 0.0,
+      "spherical": 0.0,
+      "swirl": 0.0,
+      "horseshoe": 0.0,
+      "handkerchief": 0.0
+    }
+  ]
+}
