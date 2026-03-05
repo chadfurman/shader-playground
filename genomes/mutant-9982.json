@@ -1,0 +1,80 @@
+{
+  "name": "mutant-9982",
+  "global": {
+    "speed": 0.25,
+    "zoom": 2.0,
+    "trail": 0.34,
+    "flame_brightness": 0.4
+  },
+  "kifs": {
+    "fold_angle": 0.6844848,
+    "scale": 2.3871632,
+    "brightness": 0.3
+  },
+  "transforms": [
+    {
+      "weight": 0.25,
+      "angle": -0.64211726,
+      "scale": 0.41228563,
+      "offset": [
+        -0.16542159,
+        0.6003498
+      ],
+      "color": 0.38514045,
+      "linear": 0.4,
+      "sinusoidal": 0.0,
+      "spherical": 0.0,
+      "swirl": 0.0,
+      "horseshoe": 0.0,
+      "handkerchief": 0.6
+    },
+    {
+      "weight": 0.25,
+      "angle": 0.7063947,
+      "scale": 0.83056235,
+      "offset": [
+        0.58742183,
+        0.22451721
+      ],
+      "color": 0.05514068,
+      "linear": 0.5,
+      "sinusoidal": 0.0,
+      "spherical": 0.0,
+      "swirl": 0.5,
+      "horseshoe": 0.0,
+      "handkerchief": 0.0
+    },
+    {
+      "weight": 0.25,
+      "angle": 2.1009538,
+      "scale": 0.7388103,
+      "offset": [
+        -0.42243832,
+        0.17263867
+      ],
+      "color": 0.7251406,
+      "linear": 0.7,
+      "sinusoidal": 0.3,
+      "spherical": 0.0,
+      "swirl": 0.0,
+      "horseshoe": 0.0,
+      "handkerchief": 0.0
+    },
+    {
+      "weight": 0.25,
+      "angle": -0.065075874,
+      "scale": 0.7163329,
+      "offset": [
+        0.37186366,
+        -0.61890244
+      ],
+      "color": 0.9051405,
+      "linear": 0.0,
+      "sinusoidal": 0.0,
+      "spherical": 0.0,
+      "swirl": 0.0,
+      "horseshoe": 0.6,
+      "handkerchief": 0.0
+    }
+  ]
+}
