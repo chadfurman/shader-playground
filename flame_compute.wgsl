@@ -9,7 +9,7 @@
 //   [2]  trail (used by fragment shader)
 //   [3]  flame_brightness (used by fragment shader)
 //   [4-6] kifs params (used by fragment shader)
-//   [7]  reserved
+//   [7]  drift_speed
 //   [8..19]  transform 0: weight, angle, scale, ox, oy, color, w_lin, w_sin, w_sph, w_swi, w_hor, w_han
 //   [20..31] transform 1
 //   [32..43] transform 2
@@ -98,9 +98,10 @@ fn apply_xform(p: vec2<f32>, idx: i32, t: f32) -> vec2<f32> {
     let w_han  = param(base + 11);
 
     // Affine transform (angle drifts slowly with time)
-    let q = rot2(angle + t * 0.07 * f32(idx + 1)) * p * scale
-          + vec2(ox + 0.05 * sin(t * 0.3 * f32(idx + 1)),
-                 oy + 0.05 * cos(t * 0.4 * f32(idx + 1)));
+    let drift = param(7);
+    let q = rot2(angle + t * 0.07 * drift * f32(idx + 1)) * p * scale
+          + vec2(ox + 0.05 * sin(t * 0.3 * drift * f32(idx + 1)),
+                 oy + 0.05 * cos(t * 0.4 * drift * f32(idx + 1)));
 
     // Weighted sum of variations
     var v = q * w_lin;

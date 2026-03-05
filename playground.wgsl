@@ -12,8 +12,9 @@
 //   [4]  KIFS fold angle
 //   [5]  KIFS scale
 //   [6]  KIFS brightness
-//   [7]  reserved
+//   [7]  drift_speed (used by compute shader)
 //   [8+] transform data (used by compute shader)
+//   [56] color_shift
 
 struct Uniforms {
     time: f32,
@@ -122,6 +123,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let kifs_fold    = param(4);
     let kifs_scale   = param(5);
     let kifs_bright  = param(6);
+    let color_shift = param(56);
 
     let t = u.time * speed;
 
@@ -144,7 +146,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let edge = smoothstep(0.0, 50.0, grad);
 
     // Volumetric look: edges bright+sharp, cores darker+richer
-    let core_color = palette(avg_color + u.time * 0.02);
+    let core_color = palette(avg_color + u.time * 0.02 + color_shift);
     let brightness = mix(log_d * 0.6, log_d * 1.2, edge);
     let flame = core_color * brightness * flame_bright;
 
