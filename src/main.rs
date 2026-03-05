@@ -14,6 +14,7 @@ use winit::window::{Window, WindowAttributes};
 mod audio;
 mod audio_weights;
 mod genome;
+mod sck_audio;
 use crate::genome::FlameGenome;
 use crate::audio::{AudioCapture, AudioProcessor};
 use crate::audio_weights::AudioWeights;
@@ -696,6 +697,8 @@ struct App {
     audio_processor: AudioProcessor,
     audio_weights: AudioWeights,
     audio_enabled: bool,
+    audio_info: bool,
+    audio_info_timer: f32,
     mutation_accum: f32,
 }
 
@@ -724,6 +727,8 @@ impl App {
             audio_processor: AudioProcessor::new(),
             audio_weights: load_audio_weights(),
             audio_enabled: true,
+            audio_info: false,
+            audio_info_timer: 0.0,
             mutation_accum: 0.0,
         }
     }
@@ -808,14 +813,7 @@ impl ApplicationHandler for App {
             }
         }
 
-        // Start audio capture
-        match AudioCapture::new() {
-            Ok(cap) => {
-                eprintln!("[audio] capture started ({}Hz)", cap.sample_rate);
-                self.audio_capture = Some(cap);
-            }
-            Err(e) => eprintln!("[audio] capture failed: {e} (visuals-only mode)"),
-        }
+        // Audio capture was already started in main() via device selection
 
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
     }
@@ -924,6 +922,10 @@ impl ApplicationHandler for App {
                         self.audio_enabled = !self.audio_enabled;
                         eprintln!("[audio] {}", if self.audio_enabled { "enabled" } else { "disabled" });
                     }
+                    "i" => {
+                        self.audio_info = !self.audio_info;
+                        eprintln!("[info] {}", if self.audio_info { "ON — printing audio features every 0.5s" } else { "OFF" });
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -959,6 +961,40 @@ impl ApplicationHandler for App {
                         let name = format!("xf{}_weight", i);
                         let base_idx = 8 + i * 12;
                         self.target_params[base_idx] = (base[base_idx] + w.offset(&name, features)).max(0.0);
+                    }
+
+                    // Info mode: print features + offsets with meters every 0.5s
+                    if self.audio_info {
+                        self.audio_info_timer += dt;
+                        if self.audio_info_timer >= 0.5 {
+                            self.audio_info_timer = 0.0;
+                            let bar = |v: f32, width: usize| -> String {
+                                let filled = ((v.clamp(0.0, 1.0)) * width as f32) as usize;
+                                format!("[{}{}]", "█".repeat(filled), "░".repeat(width - filled))
+                            };
+                            eprintln!(
+                                "[info] bass {} {:.3}  mids {} {:.3}  highs {} {:.3}  nrg {} {:.3}",
+                                bar(features.bass, 10), features.bass,
+                                bar(features.mids, 10), features.mids,
+                                bar(features.highs, 10), features.highs,
+                                bar(features.energy, 10), features.energy,
+                            );
+                            eprintln!(
+                                "[info] beat {} {:.2}  accum {} {:.2}  pulse {} {:.2}",
+                                bar(features.beat, 8), features.beat,
+                                bar(features.beat_accum, 8), features.beat_accum,
+                                bar(features.beat_pulse, 8), features.beat_pulse,
+                            );
+                            eprintln!(
+                                "[info] offsets: fold={:+.3} scale={:+.3} bright={:+.3} trail={:+.3} drift={:+.3} color={:+.3}",
+                                w.offset("kifs_fold", features),
+                                w.offset("kifs_scale", features),
+                                w.offset("kifs_bright", features),
+                                w.offset("trail", features),
+                                w.offset("drift_speed", features),
+                                w.offset("color_shift", features),
+                            );
+                        }
                     }
 
                     // Mutation trigger
@@ -1021,7 +1057,18 @@ impl ApplicationHandler for App {
 
 fn main() {
     env_logger::init();
+
+    // Select audio device before opening the window
+    let audio_capture = match AudioCapture::select_and_start() {
+        Ok(cap) => Some(cap),
+        Err(e) => {
+            eprintln!("[audio] capture failed: {e} (visuals-only mode)");
+            None
+        }
+    };
+
     let event_loop = EventLoop::new().unwrap();
     let mut app = App::new();
+    app.audio_capture = audio_capture;
     event_loop.run_app(&mut app).unwrap();
 }

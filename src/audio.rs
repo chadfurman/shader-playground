@@ -99,50 +99,83 @@ fn band_edge(half: usize, i: usize) -> usize {
 
 const BUFFER_SIZE: usize = 4096;
 
+// Stream holder keeps either cpal or SCK stream alive via RAII.
+#[allow(dead_code)]
+enum StreamHolder {
+    Cpal(cpal::Stream),
+    Sck(screencapturekit::stream::sc_stream::SCStream),
+}
+
 pub struct AudioCapture {
     buffer: Arc<Mutex<Vec<f32>>>,
-    _stream: cpal::Stream,
+    _stream: StreamHolder,
     pub sample_rate: u32,
 }
 
 impl AudioCapture {
-    pub fn new() -> Result<Self, String> {
+    /// List devices, let user pick. Option 0 = System Audio (SCK).
+    pub fn select_and_start() -> Result<Self, String> {
         let host = cpal::default_host();
+        let devices: Vec<_> = host
+            .input_devices()
+            .map_err(|e| format!("enumerate devices: {e}"))?
+            .collect();
 
-        // Try loopback first (captures system audio on macOS via ProcessTap)
-        if let Some(device) = host.default_output_device() {
-            if let Ok(capture) = Self::from_output_device(&device) {
-                eprintln!("[audio] loopback capture active");
-                return Ok(capture);
-            }
+        eprintln!("\n── Audio Devices ──");
+        eprintln!("  [0] System Audio (ScreenCaptureKit)");
+        for (i, dev) in devices.iter().enumerate() {
+            let name = dev.name().unwrap_or_else(|_| "???".into());
+            let config_info = match dev.default_input_config() {
+                Ok(c) => format!("{}Hz {:?}", c.sample_rate(), c.sample_format()),
+                Err(_) => "no config".into(),
+            };
+            eprintln!("  [{}] {name} ({config_info})", i + 1);
+        }
+        eprintln!("  [Enter] = System Audio");
+        eprint!("Select device: ");
+
+        let mut input = String::new();
+        std::io::stdin()
+            .read_line(&mut input)
+            .map_err(|e| format!("read stdin: {e}"))?;
+        let input = input.trim();
+
+        // Default or "0" → SCK system audio
+        if input.is_empty() || input == "0" {
+            return Self::new_system_audio();
         }
 
-        // Fall back to mic
-        let device = host
-            .default_input_device()
-            .ok_or("no audio input device")?;
-        eprintln!("[audio] mic capture active");
-        Self::from_input_device(&device)
-    }
+        let idx: usize = input
+            .parse()
+            .map_err(|_| format!("invalid number: {input}"))?;
+        let dev_idx = idx - 1; // offset by 1 since [0] is SCK
+        let device = devices
+            .into_iter()
+            .nth(dev_idx)
+            .ok_or_else(|| format!("device {idx} not found"))?;
 
-    /// Build capture from an output device (loopback/system audio).
-    /// Uses the device's output config since it has no input scope.
-    fn from_output_device(device: &cpal::Device) -> Result<Self, String> {
-        let config = device
-            .default_output_config()
-            .map_err(|e| format!("output config: {e}"))?;
-        Self::build_capture(device, &config)
-    }
-
-    /// Build capture from an input device (microphone).
-    fn from_input_device(device: &cpal::Device) -> Result<Self, String> {
+        let name = device.name().unwrap_or_else(|_| "???".into());
         let config = device
             .default_input_config()
-            .map_err(|e| format!("input config: {e}"))?;
-        Self::build_capture(device, &config)
+            .map_err(|e| format!("input config for {name}: {e}"))?;
+
+        eprintln!("[audio] using: {name} ({}Hz)", config.sample_rate());
+        Self::build_cpal_capture(&device, &config)
     }
 
-    fn build_capture(
+    /// Capture system audio via ScreenCaptureKit (macOS 12.3+).
+    pub fn new_system_audio() -> Result<Self, String> {
+        let buffer = Arc::new(Mutex::new(Vec::with_capacity(BUFFER_SIZE)));
+        let (stream, rate) =
+            crate::sck_audio::start_system_audio_capture(buffer.clone(), BUFFER_SIZE)?;
+        Ok(Self {
+            _stream: StreamHolder::Sck(stream),
+            buffer,
+            sample_rate: rate,
+        })
+    }
+
+    fn build_cpal_capture(
         device: &cpal::Device,
         config: &cpal::SupportedStreamConfig,
     ) -> Result<Self, String> {
@@ -169,7 +202,7 @@ impl AudioCapture {
 
         Ok(Self {
             buffer,
-            _stream: stream,
+            _stream: StreamHolder::Cpal(stream),
             sample_rate,
         })
     }
