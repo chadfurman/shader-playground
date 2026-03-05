@@ -679,8 +679,12 @@ struct App {
     last_frame_time: Instant,
     genome: FlameGenome,
     genome_history: Vec<[f32; 64]>,
-    morph_rate: f32,
+    morph_rate_idx: usize,
 }
+
+const MORPH_RATES: [f32; 15] = [
+    0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 20.0, 35.0, 50.0,
+];
 
 impl App {
     fn new() -> Self {
@@ -698,7 +702,7 @@ impl App {
             last_frame_time: Instant::now(),
             genome,
             genome_history: Vec::new(),
-            morph_rate: 5.0,
+            morph_rate_idx: 7, // MORPH_RATES[7] = 2.0
         }
     }
 
@@ -866,12 +870,16 @@ impl ApplicationHandler for App {
                         );
                     }
                     "=" | "+" => {
-                        self.morph_rate = (self.morph_rate - 1.0).max(0.5);
-                        eprintln!("[morph] rate = {} (slower)", self.morph_rate);
+                        if self.morph_rate_idx < MORPH_RATES.len() - 1 {
+                            self.morph_rate_idx += 1;
+                        }
+                        eprintln!("[morph] rate = {} (faster)", MORPH_RATES[self.morph_rate_idx]);
                     }
                     "-" => {
-                        self.morph_rate = (self.morph_rate + 1.0).min(20.0);
-                        eprintln!("[morph] rate = {} (faster)", self.morph_rate);
+                        if self.morph_rate_idx > 0 {
+                            self.morph_rate_idx -= 1;
+                        }
+                        eprintln!("[morph] rate = {} (slower)", MORPH_RATES[self.morph_rate_idx]);
                     }
                     _ => {}
                 },
@@ -889,7 +897,7 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = now.duration_since(self.last_frame_time).as_secs_f32();
                 self.last_frame_time = now;
-                let rate = 1.0 - (-dt * self.morph_rate).exp();
+                let rate = 1.0 - (-dt * MORPH_RATES[self.morph_rate_idx]).exp();
                 for i in 0..64 {
                     self.params[i] += (self.target_params[i] - self.params[i]) * rate;
                 }
