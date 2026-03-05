@@ -87,6 +87,51 @@ impl FlameGenome {
         p
     }
 
+    /// Pack global params into a fixed [f32; 12] for the uniform buffer.
+    /// Layout:
+    ///   [0] speed  [1] zoom  [2] trail  [3] flame_brightness
+    ///   [4] kifs_fold  [5] kifs_scale  [6] kifs_brightness  [7] drift_speed
+    ///   [8] color_shift  [9..11] reserved
+    pub fn flatten_globals(&self) -> [f32; 12] {
+        let mut g = [0.0f32; 12];
+        g[0] = self.global.speed;
+        g[1] = self.global.zoom;
+        g[2] = self.global.trail;
+        g[3] = self.global.flame_brightness;
+        g[4] = self.kifs.fold_angle;
+        g[5] = self.kifs.scale;
+        g[6] = self.kifs.brightness;
+        // g[7] = drift_speed (set by weights, default 0)
+        // g[8] = color_shift (set by weights, default 0)
+        g
+    }
+
+    /// Pack all transforms into a flat Vec<f32> for the storage buffer.
+    /// Each transform = 12 floats: weight, angle, scale, offset_x, offset_y,
+    /// color, linear, sinusoidal, spherical, swirl, horseshoe, handkerchief.
+    pub fn flatten_transforms(&self) -> Vec<f32> {
+        let mut t = Vec::with_capacity(self.transforms.len() * 12);
+        for xf in &self.transforms {
+            t.push(xf.weight);
+            t.push(xf.angle);
+            t.push(xf.scale);
+            t.push(xf.offset[0]);
+            t.push(xf.offset[1]);
+            t.push(xf.color);
+            t.push(xf.linear);
+            t.push(xf.sinusoidal);
+            t.push(xf.spherical);
+            t.push(xf.swirl);
+            t.push(xf.horseshoe);
+            t.push(xf.handkerchief);
+        }
+        t
+    }
+
+    pub fn transform_count(&self) -> u32 {
+        self.transforms.len() as u32
+    }
+
     /// Create the default genome matching current hardcoded transforms.
     pub fn default_genome() -> Self {
         Self {
@@ -104,7 +149,7 @@ impl FlameGenome {
             },
             transforms: vec![
                 FlameTransform {
-                    weight: 0.25,
+                    weight: 0.20,
                     angle: 0.6,
                     scale: 0.65,
                     offset: [1.0, 0.4],
@@ -117,7 +162,7 @@ impl FlameGenome {
                     handkerchief: 0.0,
                 },
                 FlameTransform {
-                    weight: 0.25,
+                    weight: 0.20,
                     angle: -1.0,
                     scale: 0.70,
                     offset: [-0.8, 0.9],
@@ -130,7 +175,7 @@ impl FlameGenome {
                     handkerchief: 0.0,
                 },
                 FlameTransform {
-                    weight: 0.25,
+                    weight: 0.20,
                     angle: 1.7,
                     scale: 0.60,
                     offset: [-0.5, -1.0],
@@ -143,7 +188,7 @@ impl FlameGenome {
                     handkerchief: 0.7,
                 },
                 FlameTransform {
-                    weight: 0.25,
+                    weight: 0.20,
                     angle: 0.0,
                     scale: 0.82,
                     offset: [0.6, -0.7],
@@ -154,6 +199,32 @@ impl FlameGenome {
                     swirl: 0.0,
                     horseshoe: 0.0,
                     handkerchief: 0.0,
+                },
+                FlameTransform {
+                    weight: 0.20,
+                    angle: -0.5,
+                    scale: 0.55,
+                    offset: [0.3, 1.2],
+                    color: 0.15,
+                    linear: 0.3,
+                    sinusoidal: 0.0,
+                    spherical: 0.4,
+                    swirl: 0.0,
+                    horseshoe: 0.3,
+                    handkerchief: 0.0,
+                },
+                FlameTransform {
+                    weight: 0.20,
+                    angle: 2.1,
+                    scale: 0.72,
+                    offset: [-1.1, 0.2],
+                    color: 0.50,
+                    linear: 0.0,
+                    sinusoidal: 0.2,
+                    spherical: 0.0,
+                    swirl: 0.6,
+                    horseshoe: 0.0,
+                    handkerchief: 0.2,
                 },
             ],
         }
