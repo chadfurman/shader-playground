@@ -10,6 +10,8 @@ use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowAttributes};
 
+mod genome;
+
 // ── Uniforms ──
 
 #[repr(C)]
