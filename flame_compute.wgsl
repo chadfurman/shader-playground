@@ -14,7 +14,7 @@ struct Uniforms {
     resolution: vec2<f32>,
     mouse: vec2<f32>,
     _pad: vec2<f32>,
-    params: array<vec4<f32>, 4>,
+    params: array<vec4<f32>, 16>,
 }
 
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;

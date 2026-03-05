@@ -22,7 +22,7 @@ struct Uniforms {
     resolution: [f32; 2],
     mouse: [f32; 2],
     _pad: [f32; 2],
-    params: [[f32; 4]; 4],
+    params: [[f32; 4]; 16],
 }
 
 // ── File Watcher ──
@@ -501,11 +501,11 @@ fn load_compute_source() -> String {
         .unwrap_or_else(|_| include_str!("../flame_compute.wgsl").to_string())
 }
 
-fn load_params() -> [f32; 16] {
-    let mut params = [0.0f32; 16];
+fn load_params() -> [f32; 64] {
+    let mut params = [0.0f32; 64];
     if let Ok(json) = fs::read_to_string(params_path()) {
         if let Ok(vals) = serde_json::from_str::<Vec<f32>>(&json) {
-            for (i, v) in vals.iter().enumerate().take(16) {
+            for (i, v) in vals.iter().enumerate().take(64) {
                 params[i] = *v;
             }
         }
@@ -672,8 +672,8 @@ struct App {
     start: Instant,
     frame: u32,
     mouse: [f32; 2],
-    params: [f32; 16],
-    target_params: [f32; 16],
+    params: [f32; 64],
+    target_params: [f32; 64],
     last_frame_time: Instant,
 }
 
@@ -794,16 +794,16 @@ impl ApplicationHandler for App {
                 let dt = now.duration_since(self.last_frame_time).as_secs_f32();
                 self.last_frame_time = now;
                 let rate = 1.0 - (-dt * 5.0_f32).exp();
-                for i in 0..16 {
+                for i in 0..64 {
                     self.params[i] += (self.target_params[i] - self.params[i]) * rate;
                 }
 
-                let flat_params: [[f32; 4]; 4] = [
-                    [self.params[0], self.params[1], self.params[2], self.params[3]],
-                    [self.params[4], self.params[5], self.params[6], self.params[7]],
-                    [self.params[8], self.params[9], self.params[10], self.params[11]],
-                    [self.params[12], self.params[13], self.params[14], self.params[15]],
-                ];
+                let mut flat_params = [[0.0f32; 4]; 16];
+                for i in 0..16 {
+                    for j in 0..4 {
+                        flat_params[i][j] = self.params[i * 4 + j];
+                    }
+                }
 
                 let uniforms = Uniforms {
                     time: self.start.elapsed().as_secs_f32(),
