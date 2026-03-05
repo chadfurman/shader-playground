@@ -1028,10 +1028,11 @@ impl ApplicationHandler for App {
                     let time_since_mutation = time - self.last_mutation_time;
                     let time_signals = crate::weights::TimeSignals::compute(time, time_since_mutation);
 
-                    // Option A: temporarily skip per-param weights for the split.
-                    // Set targets directly from genome; Task 6 will split the weights system.
-                    self.target_globals = self.genome.flatten_globals();
-                    self.target_xf_params = self.genome.flatten_transforms();
+                    let base_globals = self.genome.flatten_globals();
+                    let base_xf = self.genome.flatten_transforms();
+
+                    self.target_globals = self.weights.apply_globals(&base_globals, &self.audio_features, &time_signals);
+                    self.target_xf_params = self.weights.apply_transforms(&base_xf, self.num_transforms, &self.audio_features, &time_signals);
 
                     // Auto-evolve via mutation_rate
                     let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);

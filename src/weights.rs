@@ -41,9 +41,7 @@ impl TimeSignals {
 }
 
 const SIGNAL_COUNT: f32 = 11.0; // bass, mids, highs, energy, beat, beat_accum, time_slow, time_med, time_fast, time_noise, time_envelope
-const NUM_TRANSFORMS: usize = 4;
 const PARAMS_PER_XF: usize = 12;
-const XF_BASE: usize = 8;
 
 /// Per-transform field names in order (matching genome flatten layout).
 const XF_FIELDS: [&str; PARAMS_PER_XF] = [
@@ -84,18 +82,13 @@ impl Weights {
         serde_json::from_str(&json).map_err(|e| format!("parse {}: {e}", path.display()))
     }
 
-    /// Apply weight matrix: target[i] = base[i] + (sum of signal_weight * signal_value) / signal_count
-    ///
-    /// Supports `xfN_` wildcard keys that expand to all transforms with per-transform
-    /// deterministic randomization (scale factor 0.5x–1.5x based on transform + field hash).
-    pub fn apply(
-        &self,
-        base: &[f32; 64],
+    /// Build the list of (weight-map, signal-value) pairs used by all apply methods.
+    fn signal_list<'a>(
+        &'a self,
         features: &crate::audio::AudioFeatures,
         time_signals: &TimeSignals,
-    ) -> [f32; 64] {
-        let mut result = *base;
-        let signals: &[(&HashMap<String, f32>, f32)] = &[
+    ) -> Vec<(&'a HashMap<String, f32>, f32)> {
+        vec![
             (&self.bass, features.bass),
             (&self.mids, features.mids),
             (&self.highs, features.highs),
@@ -107,23 +100,63 @@ impl Weights {
             (&self.time_fast, time_signals.time_fast),
             (&self.time_noise, time_signals.time_noise),
             (&self.time_envelope, time_signals.time_envelope),
-        ];
+        ]
+    }
+
+    /// Apply weights to global params only.
+    pub fn apply_globals(
+        &self,
+        base: &[f32; 12],
+        features: &crate::audio::AudioFeatures,
+        time_signals: &TimeSignals,
+    ) -> [f32; 12] {
+        let mut result = *base;
+        let signals = self.signal_list(features, time_signals);
+        for (_signal_idx, (weights, signal_val)) in signals.iter().enumerate() {
+            for (name, &weight) in *weights {
+                if name == "mutation_rate" { continue; }
+                if name.starts_with("xf") { continue; } // transform params handled separately
+                if let Some(idx) = global_index(name) {
+                    result[idx] += weight * signal_val / SIGNAL_COUNT;
+                }
+            }
+        }
+        result
+    }
+
+    /// Apply weights to transform params.
+    pub fn apply_transforms(
+        &self,
+        base: &[f32],
+        num_transforms: usize,
+        features: &crate::audio::AudioFeatures,
+        time_signals: &TimeSignals,
+    ) -> Vec<f32> {
+        let mut result = base.to_vec();
+        let signals = self.signal_list(features, time_signals);
         for (signal_idx, (weights, signal_val)) in signals.iter().enumerate() {
             for (name, &weight) in *weights {
-                if name == "mutation_rate" {
-                    continue;
-                }
-                // xfN_ wildcard: expand to all transforms with per-transform randomization
+                if name == "mutation_rate" { continue; }
+                // xfN_ wildcard
                 if let Some(field) = name.strip_prefix("xfN_") {
                     if let Some(field_offset) = xf_field_index(field) {
-                        for xf in 0..NUM_TRANSFORMS {
-                            let idx = XF_BASE + xf * PARAMS_PER_XF + field_offset;
-                            let scale = per_transform_scale(xf, field_offset, signal_idx);
-                            result[idx] += weight * scale * signal_val / SIGNAL_COUNT;
+                        for xf in 0..num_transforms {
+                            let idx = xf * PARAMS_PER_XF + field_offset;
+                            if idx < result.len() {
+                                let scale = per_transform_scale(xf, field_offset, signal_idx);
+                                result[idx] += weight * scale * signal_val / SIGNAL_COUNT;
+                            }
                         }
                     }
-                } else if let Some(idx) = param_index(name) {
-                    result[idx] += weight * signal_val / SIGNAL_COUNT;
+                }
+                // Explicit xf0_, xf1_, etc.
+                else if let Some((xf, field_offset)) = try_parse_xf(name) {
+                    if xf < num_transforms {
+                        let idx = xf * PARAMS_PER_XF + field_offset;
+                        if idx < result.len() {
+                            result[idx] += weight * signal_val / SIGNAL_COUNT;
+                        }
+                    }
                 }
             }
         }
@@ -132,21 +165,9 @@ impl Weights {
 
     /// Compute mutation rate from weighted signals.
     pub fn mutation_rate(&self, features: &crate::audio::AudioFeatures, time_signals: &TimeSignals) -> f32 {
-        let signals: &[(&HashMap<String, f32>, f32)] = &[
-            (&self.bass, features.bass),
-            (&self.mids, features.mids),
-            (&self.highs, features.highs),
-            (&self.energy, features.energy),
-            (&self.beat, features.beat),
-            (&self.beat_accum, features.beat_accum),
-            (&self.time_slow, time_signals.time_slow),
-            (&self.time_med, time_signals.time_med),
-            (&self.time_fast, time_signals.time_fast),
-            (&self.time_noise, time_signals.time_noise),
-            (&self.time_envelope, time_signals.time_envelope),
-        ];
+        let signals = self.signal_list(features, time_signals);
         let mut rate = 0.0;
-        for (weights, signal_val) in signals {
+        for (weights, signal_val) in &signals {
             if let Some(&w) = weights.get("mutation_rate") {
                 rate += w * signal_val;
             }
@@ -169,34 +190,26 @@ fn xf_field_index(field: &str) -> Option<usize> {
     XF_FIELDS.iter().position(|&f| f == field)
 }
 
-fn param_index(name: &str) -> Option<usize> {
+fn global_index(name: &str) -> Option<usize> {
     match name {
-        // Global
         "speed" => Some(0),
         "zoom" => Some(1),
         "trail" => Some(2),
         "flame_brightness" => Some(3),
-        // KIFS
         "kifs_fold" => Some(4),
         "kifs_scale" => Some(5),
         "kifs_brightness" => Some(6),
-        // Misc
         "drift_speed" => Some(7),
-        // Extra
-        "color_shift" => Some(56),
-        // Explicit per-transform (still supported alongside xfN_)
-        _ => try_explicit_xf(name),
+        "color_shift" => Some(8),
+        _ => None,
     }
 }
 
-/// Parse explicit `xf0_weight`, `xf3_angle`, etc.
-fn try_explicit_xf(name: &str) -> Option<usize> {
+/// Parse explicit `xf0_weight`, `xf3_angle`, etc. into (transform_index, field_offset).
+fn try_parse_xf(name: &str) -> Option<(usize, usize)> {
     let rest = name.strip_prefix("xf")?;
     let (digit, field) = rest.split_once('_')?;
     let xf: usize = digit.parse().ok()?;
-    if xf >= NUM_TRANSFORMS {
-        return None;
-    }
     let field_offset = xf_field_index(field)?;
-    Some(XF_BASE + xf * PARAMS_PER_XF + field_offset)
+    Some((xf, field_offset))
 }
