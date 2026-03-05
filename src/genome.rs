@@ -1,3 +1,4 @@
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -153,5 +154,80 @@ impl FlameGenome {
                 },
             ],
         }
+    }
+
+    pub fn mutate(&self) -> Self {
+        let mut child = self.clone();
+        let mut rng = rand::rng();
+        let num_mutations = rng.random_range(1..=3);
+
+        for _ in 0..num_mutations {
+            match rng.random_range(0..5) {
+                0 => child.mutate_perturb(&mut rng),
+                1 => child.mutate_swap_variations(&mut rng),
+                2 => child.mutate_rotate_colors(&mut rng),
+                3 => child.mutate_shuffle_transforms(&mut rng),
+                _ => child.mutate_kifs_drift(&mut rng),
+            }
+        }
+
+        child.name = format!("mutant-{}", rng.random_range(1000..9999u32));
+        child
+    }
+
+    fn mutate_perturb(&mut self, rng: &mut impl Rng) {
+        let idx = rng.random_range(0..self.transforms.len());
+        let xf = &mut self.transforms[idx];
+        match rng.random_range(0..3) {
+            0 => xf.angle += rng.random_range(-0.4..0.4),
+            1 => xf.scale = (xf.scale + rng.random_range(-0.15..0.15)).clamp(0.3, 0.95),
+            _ => {
+                xf.offset[0] += rng.random_range(-0.2..0.2);
+                xf.offset[1] += rng.random_range(-0.2..0.2);
+            }
+        }
+    }
+
+    fn mutate_swap_variations(&mut self, rng: &mut impl Rng) {
+        let idx = rng.random_range(0..self.transforms.len());
+        let xf = &mut self.transforms[idx];
+        let mut vars = [
+            xf.linear,
+            xf.sinusoidal,
+            xf.spherical,
+            xf.swirl,
+            xf.horseshoe,
+            xf.handkerchief,
+        ];
+        let a = rng.random_range(0..6);
+        let b = rng.random_range(0..6);
+        vars.swap(a, b);
+        xf.linear = vars[0];
+        xf.sinusoidal = vars[1];
+        xf.spherical = vars[2];
+        xf.swirl = vars[3];
+        xf.horseshoe = vars[4];
+        xf.handkerchief = vars[5];
+    }
+
+    fn mutate_rotate_colors(&mut self, rng: &mut impl Rng) {
+        let shift = rng.random_range(-0.2..0.2);
+        for xf in &mut self.transforms {
+            xf.color = (xf.color + shift).rem_euclid(1.0);
+        }
+    }
+
+    fn mutate_shuffle_transforms(&mut self, rng: &mut impl Rng) {
+        if self.transforms.len() < 2 {
+            return;
+        }
+        let a = rng.random_range(0..self.transforms.len());
+        let b = rng.random_range(0..self.transforms.len());
+        self.transforms.swap(a, b);
+    }
+
+    fn mutate_kifs_drift(&mut self, rng: &mut impl Rng) {
+        self.kifs.fold_angle += rng.random_range(-0.1..0.1);
+        self.kifs.scale = (self.kifs.scale + rng.random_range(-0.15..0.15)).clamp(1.3, 2.5);
     }
 }
