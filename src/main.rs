@@ -15,6 +15,8 @@ mod audio;
 mod audio_weights;
 mod genome;
 use crate::genome::FlameGenome;
+use crate::audio::{AudioCapture, AudioProcessor};
+use crate::audio_weights::AudioWeights;
 
 // ── Uniforms ──
 
@@ -517,6 +519,14 @@ fn load_params() -> [f32; 64] {
     params
 }
 
+fn audio_weights_path() -> PathBuf {
+    project_dir().join("audio_weights.json")
+}
+
+fn load_audio_weights() -> AudioWeights {
+    AudioWeights::load(&audio_weights_path()).unwrap_or_default()
+}
+
 fn create_histogram_buffer(
     device: &wgpu::Device,
     w: u32,
@@ -682,6 +692,11 @@ struct App {
     genome: FlameGenome,
     genome_history: Vec<[f32; 64]>,
     morph_rate_idx: usize,
+    audio_capture: Option<AudioCapture>,
+    audio_processor: AudioProcessor,
+    audio_weights: AudioWeights,
+    audio_enabled: bool,
+    mutation_accum: f32,
 }
 
 const MORPH_RATES: [f32; 15] = [
@@ -705,6 +720,11 @@ impl App {
             genome,
             genome_history: Vec::new(),
             morph_rate_idx: 7, // MORPH_RATES[7] = 2.0
+            audio_capture: None,
+            audio_processor: AudioProcessor::new(),
+            audio_weights: load_audio_weights(),
+            audio_enabled: true,
+            mutation_accum: 0.0,
         }
     }
 
@@ -717,6 +737,7 @@ impl App {
         let mut reload_shader = false;
         let mut reload_compute = false;
         let mut reload_params = false;
+        let mut reload_weights = false;
         let shader = shader_path();
         let compute = compute_path();
         let params = params_path();
@@ -729,6 +750,9 @@ impl App {
             }
             if path.ends_with(params.file_name().unwrap()) {
                 reload_params = true;
+            }
+            if path.ends_with("audio_weights.json") {
+                reload_weights = true;
             }
         }
         if reload_shader {
@@ -748,6 +772,10 @@ impl App {
             }
             eprintln!("[params] reloaded (overriding global/kifs)");
         }
+        if reload_weights {
+            self.audio_weights = load_audio_weights();
+            eprintln!("[weights] reloaded");
+        }
     }
 }
 
@@ -764,7 +792,7 @@ impl ApplicationHandler for App {
         self.window = Some(window);
 
         // Watch all shader files + params
-        let paths = vec![shader_path(), compute_path(), params_path()];
+        let paths = vec![shader_path(), compute_path(), params_path(), audio_weights_path()];
         match FileWatcher::new(&paths) {
             Ok(w) => self.watcher = Some(w),
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
@@ -778,6 +806,15 @@ impl ApplicationHandler for App {
                 self.genome = g;
                 self.target_params = self.genome.flatten();
             }
+        }
+
+        // Start audio capture
+        match AudioCapture::new() {
+            Ok(cap) => {
+                eprintln!("[audio] capture started ({}Hz)", cap.sample_rate);
+                self.audio_capture = Some(cap);
+            }
+            Err(e) => eprintln!("[audio] capture failed: {e} (visuals-only mode)"),
         }
 
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
@@ -883,6 +920,10 @@ impl ApplicationHandler for App {
                         }
                         eprintln!("[morph] rate = {} (slower)", MORPH_RATES[self.morph_rate_idx]);
                     }
+                    "a" => {
+                        self.audio_enabled = !self.audio_enabled;
+                        eprintln!("[audio] {}", if self.audio_enabled { "enabled" } else { "disabled" });
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -890,15 +931,56 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 self.check_file_changes();
 
+                let now = Instant::now();
+                let dt = now.duration_since(self.last_frame_time).as_secs_f32().max(0.001);
+                self.last_frame_time = now;
+
+                // Process audio and apply weight matrix
+                if self.audio_enabled {
+                    if let Some(ref capture) = self.audio_capture {
+                        self.audio_processor.process(capture, dt);
+                    }
+
+                    let features = &self.audio_processor.features;
+                    let base = self.genome.flatten();
+                    let w = &self.audio_weights;
+
+                    // Apply weight matrix offsets to target_params
+                    self.target_params[2] = w.clamp("trail", base[2] + w.offset("trail", features));
+                    self.target_params[3] = w.clamp("flame_bright", base[3] + w.offset("flame_bright", features));
+                    self.target_params[4] = w.clamp("kifs_fold", base[4] + w.offset("kifs_fold", features));
+                    self.target_params[5] = w.clamp("kifs_scale", base[5] + w.offset("kifs_scale", features));
+                    self.target_params[6] = w.clamp("kifs_bright", base[6] + w.offset("kifs_bright", features));
+                    self.target_params[7] = 1.0 + w.offset("drift_speed", features);
+                    self.target_params[56] = w.offset("color_shift", features);
+
+                    // Transform weights
+                    for i in 0..4 {
+                        let name = format!("xf{}_weight", i);
+                        let base_idx = 8 + i * 12;
+                        self.target_params[base_idx] = (base[base_idx] + w.offset(&name, features)).max(0.0);
+                    }
+
+                    // Mutation trigger
+                    self.mutation_accum += w.offset("mutation_trigger", features) * dt;
+                    if self.mutation_accum >= 1.0 {
+                        self.mutation_accum = 0.0;
+                        let old = self.genome.flatten();
+                        self.genome_history.push(old);
+                        if self.genome_history.len() > 10 {
+                            self.genome_history.remove(0);
+                        }
+                        self.genome = self.genome.mutate();
+                        eprintln!("[auto-evolve] → {}", self.genome.name);
+                    }
+                }
+
                 let gpu = match &mut self.gpu {
                     Some(g) => g,
                     None => return,
                 };
 
                 // Smooth param interpolation
-                let now = Instant::now();
-                let dt = now.duration_since(self.last_frame_time).as_secs_f32();
-                self.last_frame_time = now;
                 let rate = 1.0 - (-dt * MORPH_RATES[self.morph_rate_idx]).exp();
                 for i in 0..64 {
                     self.params[i] += (self.target_params[i] - self.params[i]) * rate;
