@@ -1,13 +1,13 @@
-// ── Fractal Flame: IFS Feedback ──
+// ── Kaleidoscopic IFS Fractal with Flow Trails ──
 //
-// Each frame: transform pixel coords through IFS functions,
-// sample previous frame at those positions, accumulate.
-// A seed feeds energy; the fractal attractor emerges over time.
+// Fold + rotate + scale iterations create fractal structure.
+// Orbit trap coloring + cosine palette for rich color.
+// Feedback with warped sampling for flowing trails.
 //
-// params[0] = evolution speed (0.2)
-// params[1] = nonlinear variation amount (0.3)
-// params[2] = feedback gain per transform (0.4)
-// params[3] = color cycle speed (0.1)
+// params[0] = evolution speed (0.15)
+// params[1] = fold angle, radians/PI (0.62)
+// params[2] = iteration scale (1.8)
+// params[3] = trail persistence (0.92)
 
 struct Uniforms {
     time: f32,
@@ -22,7 +22,8 @@ struct Uniforms {
 @group(0) @binding(1) var prev_frame: texture_2d<f32>;
 @group(0) @binding(2) var prev_sampler: sampler;
 
-const PI: f32 = 3.14159265;
+const PI: f32  = 3.14159265;
+const TAU: f32 = 6.28318530;
 
 fn param(i: i32) -> f32 { return u.params[i / 4][i % 4]; }
 
@@ -31,28 +32,13 @@ fn rot2(a: f32) -> mat2x2<f32> {
     return mat2x2(c, -s, s, c);
 }
 
-// Map centered coords back to texture UV (0-1)
-fn to_tex(p: vec2<f32>) -> vec2<f32> {
-    let aspect = u.resolution.x / u.resolution.y;
-    return p * vec2(1.0 / aspect, 1.0) * 0.5 + 0.5;
-}
-
-// HSV to RGB
-fn hsv(h: f32, s: f32, v: f32) -> vec3<f32> {
-    let c = v * s;
-    let x = c * (1.0 - abs(((h * 6.0) % 2.0) - 1.0));
-    let m = v - c;
-    let hi = i32(floor(h * 6.0)) % 6;
-    var rgb = vec3(0.0);
-    switch (hi) {
-        case 0  { rgb = vec3(c, x, 0.0); }
-        case 1  { rgb = vec3(x, c, 0.0); }
-        case 2  { rgb = vec3(0.0, c, x); }
-        case 3  { rgb = vec3(0.0, x, c); }
-        case 4  { rgb = vec3(x, 0.0, c); }
-        default { rgb = vec3(c, 0.0, x); }
-    }
-    return rgb + m;
+// Cosine palette (Inigo Quilez)
+fn palette(t: f32) -> vec3<f32> {
+    let a = vec3(0.5, 0.5, 0.5);
+    let b = vec3(0.5, 0.5, 0.5);
+    let c = vec3(1.0, 1.0, 1.0);
+    let d = vec3(0.00, 0.33, 0.67);
+    return a + b * cos(TAU * (c * t + d));
 }
 
 @vertex
@@ -64,55 +50,82 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
 
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
-    let uv = (pos.xy - u.resolution * 0.5) / u.resolution.y;
+    let uv = (pos.xy - u.resolution * 0.5) / u.resolution.y * 2.5;
+    let tex_uv = pos.xy / u.resolution;
 
-    let speed     = param(0);
-    let var_amt   = param(1);
-    let gain      = param(2);
-    let color_spd = param(3);
+    let speed      = param(0);
+    let fold_param = param(1);
+    let ifs_scale  = param(2);
+    let trail      = param(3);
 
     let t = u.time * speed;
 
-    // ── Transform 1: affine + sinusoidal variation ──
-    let a1 = rot2(0.7 + t * 0.13) * uv * 0.55
-           + vec2(0.3 * cos(t * 0.7), 0.2 * sin(t * 0.5));
-    let s1 = mix(a1, vec2(sin(a1.x * PI), sin(a1.y * PI)), var_amt);
+    // ── KIFS iteration ──
+    var p = uv;
+    var min_trap = 100.0;       // orbit trap: closest approach
+    var trap_idx = 0.0;         // which iteration hit the trap
+    var line_trap = 100.0;      // distance to y-axis trap
+    var total_scale = 1.0;
 
-    // ── Transform 2: affine + swirl variation ──
-    let a2 = rot2(-0.9 + t * 0.17) * uv * 0.6
-           + vec2(-0.25 + 0.1 * sin(t * 0.3), 0.3 * cos(t * 0.4));
-    let r2 = dot(a2, a2);
-    let sw = vec2(a2.x * sin(r2) - a2.y * cos(r2),
-                  a2.x * cos(r2) + a2.y * sin(r2));
-    let s2 = mix(a2, sw, var_amt);
+    let base_angle = fold_param * PI;
 
-    // ── Transform 3: affine + spherical variation ──
-    let a3 = rot2(2.1 + t * 0.09) * uv * 0.5
-           + vec2(0.15 * sin(t * 0.6), -0.25 + 0.1 * cos(t * 0.8));
-    let s3 = mix(a3, a3 / (dot(a3, a3) + 1e-4), var_amt);
+    for (var i = 0; i < 22; i++) {
+        // Absolute fold — creates kaleidoscopic symmetry
+        p = abs(p);
 
-    // ── Sample previous frame at transformed positions ──
-    let c1 = textureSample(prev_frame, prev_sampler, to_tex(s1)).rgb;
-    let c2 = textureSample(prev_frame, prev_sampler, to_tex(s2)).rgb;
-    let c3 = textureSample(prev_frame, prev_sampler, to_tex(s3)).rgb;
+        // Diagonal fold — ensures consistent orientation
+        if (p.x < p.y) { p = p.yx; }
 
-    // ── Accumulate brightness ──
-    var col = (c1 + c2 + c3) * gain;
+        // Rotating fold axis — this is where the magic happens
+        let angle = base_angle + f32(i) * 0.18 + sin(t * 0.3 + f32(i) * 0.4) * 0.15;
+        p = rot2(angle) * p;
 
-    // ── Seed: orbiting dot that feeds energy into the system ──
-    let seed_pos = vec2(0.1 * cos(t * 0.5), 0.1 * sin(t * 0.7));
-    let d = length(uv - seed_pos);
-    col += vec3(smoothstep(0.02, 0.0, d) * 0.4);
+        // Scale and translate — drives the self-similarity
+        let offset = vec2(
+            1.0 + 0.15 * sin(t * 0.2 + f32(i) * 0.5),
+            0.8 + 0.1 * cos(t * 0.25 + f32(i) * 0.3)
+        );
+        p = p * ifs_scale - offset;
 
-    // ── Color from intensity ──
-    // Use log-density like real fractal flames
-    let density = length(col);
-    let log_d = log(1.0 + density * 10.0) / log(11.0);
-    let hue = fract(log_d * 2.0 + u.time * color_spd);
-    let final_col = hsv(hue, 0.75, log_d);
+        total_scale *= ifs_scale;
 
-    // Soft tonemap to prevent blowout
-    let mapped = final_col / (1.0 + final_col);
+        // Orbit trap: track closest approach to origin
+        let d = length(p) / total_scale;
+        if (d < min_trap) {
+            min_trap = d;
+            trap_idx = f32(i) + d * 3.0;
+        }
 
-    return vec4(mapped, 1.0);
+        // Line trap: distance to y-axis (creates ribbon-like structures)
+        let ld = abs(p.x) / total_scale;
+        line_trap = min(line_trap, ld);
+    }
+
+    // ── Coloring ──
+    // Combine point trap and line trap for rich detail
+    let point_glow = exp(-min_trap * 6.0);
+    let line_glow  = exp(-line_trap * 10.0) * 0.7;
+
+    let hue = fract(trap_idx * 0.07 + t * 0.04);
+    let base_color = palette(hue);
+
+    let line_hue = fract(trap_idx * 0.12 + 0.5 + t * 0.03);
+    let line_color = palette(line_hue);
+
+    var col = base_color * point_glow + line_color * line_glow;
+
+    // ── Feedback: additive accumulation like real flame density ──
+    let flow = vec2(
+        sin(uv.y * 3.0 + t * 2.5) * 0.002,
+        cos(uv.x * 3.0 + t * 2.5) * 0.002
+    );
+    let prev = textureSample(prev_frame, prev_sampler, tex_uv + flow).rgb;
+
+    // Additive: new fractal adds to decaying history (density builds up)
+    col = col * 0.35 + prev * trail;
+
+    // Log-density tonemap (like real fractal flames)
+    col = log(1.0 + col * 4.0) / log(5.0);
+
+    return vec4(col, 1.0);
 }
