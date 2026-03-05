@@ -417,13 +417,7 @@ impl Gpu {
         );
     }
 
-    fn render(&mut self, uniforms: &Uniforms) {
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::bytes_of(uniforms),
-        );
-
+    fn render(&mut self) {
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
             Err(_) => {
@@ -745,6 +739,7 @@ struct App {
     audio_info: bool,
     audio_info_timer: f32,
     mutation_accum: f32,
+    last_mutation_time: f32,
 }
 
 const MORPH_RATES: [f32; 15] = [
@@ -779,6 +774,7 @@ impl App {
             audio_info: false,
             audio_info_timer: 0.0,
             mutation_accum: 0.0,
+            last_mutation_time: 0.0,
         }
     }
 
@@ -924,6 +920,7 @@ impl ApplicationHandler for App {
                         self.genome_history.remove(0);
                     }
                     self.genome = self.genome.mutate();
+                    self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.target_globals = self.genome.flatten_globals();
                     self.target_xf_params = self.genome.flatten_transforms();
                     if self.genome.transforms.len() != self.num_transforms {
@@ -1028,13 +1025,16 @@ impl ApplicationHandler for App {
                 // Apply weight matrix (audio features from background thread, plus time)
                 if self.audio_enabled {
                     let time = self.start.elapsed().as_secs_f32();
+                    let time_since_mutation = time - self.last_mutation_time;
+                    let time_signals = crate::weights::TimeSignals::compute(time, time_since_mutation);
+
                     // Option A: temporarily skip per-param weights for the split.
                     // Set targets directly from genome; Task 6 will split the weights system.
                     self.target_globals = self.genome.flatten_globals();
                     self.target_xf_params = self.genome.flatten_transforms();
 
                     // Auto-evolve via mutation_rate
-                    let mr = self.weights.mutation_rate(&self.audio_features, time);
+                    let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);
                     self.mutation_accum += mr * dt;
                     if self.mutation_accum >= 1.0 {
                         self.mutation_accum = 0.0;
@@ -1043,6 +1043,7 @@ impl ApplicationHandler for App {
                             self.genome_history.remove(0);
                         }
                         self.genome = self.genome.mutate();
+                        self.last_mutation_time = self.start.elapsed().as_secs_f32();
                         self.target_globals = self.genome.flatten_globals();
                         self.target_xf_params = self.genome.flatten_transforms();
                         if self.genome.transforms.len() != self.num_transforms {
@@ -1105,7 +1106,7 @@ impl ApplicationHandler for App {
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
                 gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(&self.xf_params));
 
-                gpu.render(&uniforms);
+                gpu.render();
                 self.frame += 1;
 
                 if let Some(w) = &self.window {
