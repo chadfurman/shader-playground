@@ -6,8 +6,9 @@ use std::{fs, mem};
 use bytemuck::{Pod, Zeroable};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
 use winit::event_loop::EventLoop;
+use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowAttributes};
 
 mod genome;
@@ -802,6 +803,80 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {}
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        logical_key,
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => match logical_key {
+                Key::Named(NamedKey::Space) => {
+                    // Evolve: mutate and crossfade
+                    let old_params = self.genome.flatten();
+                    self.genome_history.push(old_params);
+                    if self.genome_history.len() > 10 {
+                        self.genome_history.remove(0);
+                    }
+                    self.genome = self.genome.mutate();
+                    self.target_params = self.genome.flatten();
+                    eprintln!("[evolve] → {}", self.genome.name);
+                }
+                Key::Named(NamedKey::Backspace) => {
+                    // Revert to previous genome
+                    if let Some(prev) = self.genome_history.pop() {
+                        self.target_params = prev;
+                        eprintln!("[revert] back to previous");
+                    }
+                }
+                Key::Character(ref c) => match c.as_str() {
+                    "s" => {
+                        let dir = project_dir().join("genomes");
+                        match self.genome.save(&dir) {
+                            Ok(p) => eprintln!("[save] {}", p.display()),
+                            Err(e) => eprintln!("[save] error: {e}"),
+                        }
+                    }
+                    "l" => {
+                        let dir = project_dir().join("genomes");
+                        match FlameGenome::load_random(&dir) {
+                            Ok(g) => {
+                                let old = self.genome.flatten();
+                                self.genome_history.push(old);
+                                eprintln!("[load] {}", g.name);
+                                self.genome = g;
+                                self.target_params = self.genome.flatten();
+                            }
+                            Err(e) => eprintln!("[load] error: {e}"),
+                        }
+                    }
+                    "1" | "2" | "3" | "4" => {
+                        let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
+                        let base = 8 + idx * 12;
+                        // Toggle weight: 0.0 <-> 0.25
+                        if self.target_params[base] < 0.01 {
+                            self.target_params[base] = 0.25;
+                        } else {
+                            self.target_params[base] = 0.0;
+                        }
+                        eprintln!(
+                            "[solo] transform {} = {}",
+                            idx, self.target_params[base]
+                        );
+                    }
+                    "=" | "+" => {
+                        self.morph_rate = (self.morph_rate - 1.0).max(0.5);
+                        eprintln!("[morph] rate = {} (slower)", self.morph_rate);
+                    }
+                    "-" => {
+                        self.morph_rate = (self.morph_rate + 1.0).min(20.0);
+                        eprintln!("[morph] rate = {} (faster)", self.morph_rate);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            },
             WindowEvent::RedrawRequested => {
                 self.check_file_changes();
 
