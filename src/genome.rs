@@ -107,7 +107,7 @@ impl FlameGenome {
                     weight: 0.25,
                     angle: 0.6,
                     scale: 0.65,
-                    offset: [0.4, 0.15],
+                    offset: [1.0, 0.4],
                     color: 0.0,
                     linear: 0.0,
                     sinusoidal: 0.5,
@@ -120,7 +120,7 @@ impl FlameGenome {
                     weight: 0.25,
                     angle: -1.0,
                     scale: 0.70,
-                    offset: [-0.3, 0.3],
+                    offset: [-0.8, 0.9],
                     color: 0.33,
                     linear: 0.0,
                     sinusoidal: 0.0,
@@ -133,7 +133,7 @@ impl FlameGenome {
                     weight: 0.25,
                     angle: 1.7,
                     scale: 0.60,
-                    offset: [-0.1, -0.35],
+                    offset: [-0.5, -1.0],
                     color: 0.67,
                     linear: 0.0,
                     sinusoidal: 0.3,
@@ -146,7 +146,7 @@ impl FlameGenome {
                     weight: 0.25,
                     angle: 0.0,
                     scale: 0.82,
-                    offset: [0.0, 0.0],
+                    offset: [0.6, -0.7],
                     color: 0.85,
                     linear: 0.6,
                     sinusoidal: 0.0,
@@ -216,8 +216,8 @@ impl FlameGenome {
             0 => xf.angle += rng.random_range(-0.4..0.4),
             1 => xf.scale = (xf.scale + rng.random_range(-0.15..0.15)).clamp(0.3, 0.95),
             _ => {
-                xf.offset[0] += rng.random_range(-0.2..0.2);
-                xf.offset[1] += rng.random_range(-0.2..0.2);
+                xf.offset[0] += rng.random_range(-0.4..0.4);
+                xf.offset[1] += rng.random_range(-0.4..0.4);
             }
         }
     }

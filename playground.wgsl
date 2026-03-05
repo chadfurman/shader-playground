@@ -133,10 +133,20 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let density = f32(histogram[buf_idx]);
     let color_sum = f32(histogram[buf_idx + 1u]);
 
-    let log_d = log(1.0 + density) / 5.0;
+    // Log-density with soft cap to prevent blowout in overlapping cores
+    let log_d = min(log(1.0 + density) / 5.0, 1.2);
     let avg_color = select(0.5, color_sum / max(density * 1000.0, 1.0), density > 0.0);
 
-    let flame = palette(avg_color + u.time * 0.02) * log_d * flame_bright;
+    // Sample neighbors for density gradient (edge detection for volume feel)
+    let d_right = f32(histogram[((px.y * w + min(px.x + 1u, w - 1u)) * 2u)]);
+    let d_up    = f32(histogram[((min(px.y + 1u, u32(u.resolution.y) - 1u) * w + px.x) * 2u)]);
+    let grad = length(vec2(density - d_right, density - d_up));
+    let edge = smoothstep(0.0, 50.0, grad);
+
+    // Volumetric look: edges bright+sharp, cores darker+richer
+    let core_color = palette(avg_color + u.time * 0.02);
+    let brightness = mix(log_d * 0.6, log_d * 1.2, edge);
+    let flame = core_color * brightness * flame_bright;
 
     // ── Combine: additive blend ──
     var col = flame + bg;

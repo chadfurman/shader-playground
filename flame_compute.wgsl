@@ -147,8 +147,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         p = apply_xform(p, tidx, t);
 
-        // Standard flame color blending
-        color_idx = (color_idx + xform_color(tidx)) * 0.5;
+        // Color blending: weight toward current transform for distinct tendrils
+        color_idx = color_idx * 0.3 + xform_color(tidx) * 0.7;
 
         // Skip transient
         if (i < 20u) { continue; }
