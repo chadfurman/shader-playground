@@ -20,7 +20,7 @@ struct Uniforms {
     resolution: [f32; 2],
     mouse: [f32; 2],
     _pad: [f32; 2],
-    params: [[f32; 4]; 4], // 16 floats as 4 vec4s
+    params: [[f32; 4]; 4],
 }
 
 // ── File Watcher ──
@@ -78,6 +78,7 @@ struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    // Render pipeline
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group_a: wgpu::BindGroup,
@@ -88,6 +89,12 @@ struct Gpu {
     ping: bool,
     pipeline_layout: wgpu::PipelineLayout,
     sampler: wgpu::Sampler,
+    // Compute pipeline (fractal flame)
+    compute_pipeline: wgpu::ComputePipeline,
+    compute_bind_group_layout: wgpu::BindGroupLayout,
+    compute_bind_group: wgpu::BindGroup,
+    compute_pipeline_layout: wgpu::PipelineLayout,
+    histogram_buffer: wgpu::Buffer,
 }
 
 impl Gpu {
@@ -136,9 +143,17 @@ impl Gpu {
             ..Default::default()
         });
 
+        // Histogram buffer: 2 u32s per pixel (density + color_sum)
+        let histogram_buffer = create_histogram_buffer(
+            &device,
+            config.width,
+            config.height,
+        );
+
+        // ── Render bind group layout (uniform + prev_frame + sampler + histogram read) ──
         let bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("main"),
+                label: Some("render"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
@@ -171,13 +186,58 @@ impl Gpu {
                         ),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        // ── Compute bind group layout (histogram rw + uniform) ──
+        let compute_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("compute"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
         let pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("main"),
+                label: Some("render"),
                 bind_group_layouts: &[&bind_group_layout],
+                immediate_size: 0,
+            });
+
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("compute"),
+                bind_group_layouts: &[&compute_bind_group_layout],
                 immediate_size: 0,
             });
 
@@ -185,26 +245,42 @@ impl Gpu {
             create_frame_textures(&device, config.width, config.height, format);
 
         let shader_src = load_shader_source();
-        let pipeline = create_pipeline(
+        let pipeline = create_render_pipeline(
             &device,
             &pipeline_layout,
             &shader_src,
             format,
         );
 
-        let bind_group_a = create_bind_group(
+        let compute_src = load_compute_source();
+        let compute_pipeline = create_compute_pipeline(
             &device,
-            &bind_group_layout,
-            &uniform_buffer,
-            &frame_b, // read B when rendering to A
-            &sampler,
+            &compute_pipeline_layout,
+            &compute_src,
         );
-        let bind_group_b = create_bind_group(
+
+        let bind_group_a = create_render_bind_group(
             &device,
             &bind_group_layout,
             &uniform_buffer,
-            &frame_a, // read A when rendering to B
+            &frame_b,
             &sampler,
+            &histogram_buffer,
+        );
+        let bind_group_b = create_render_bind_group(
+            &device,
+            &bind_group_layout,
+            &uniform_buffer,
+            &frame_a,
+            &sampler,
+            &histogram_buffer,
+        );
+
+        let compute_bind_group = create_compute_bind_group(
+            &device,
+            &compute_bind_group_layout,
+            &histogram_buffer,
+            &uniform_buffer,
         );
 
         Self {
@@ -222,6 +298,11 @@ impl Gpu {
             ping: true,
             pipeline_layout,
             sampler,
+            compute_pipeline,
+            compute_bind_group_layout,
+            compute_bind_group,
+            compute_pipeline_layout,
+            histogram_buffer,
         }
     }
 
@@ -232,6 +313,7 @@ impl Gpu {
         self.config.width = w;
         self.config.height = h;
         self.surface.configure(&self.device, &self.config);
+
         let (a, b) = create_frame_textures(
             &self.device,
             w,
@@ -240,11 +322,15 @@ impl Gpu {
         );
         self.frame_a = a;
         self.frame_b = b;
+
+        // Recreate histogram for new dimensions
+        self.histogram_buffer = create_histogram_buffer(&self.device, w, h);
+
         self.rebuild_bind_groups();
     }
 
     fn reload_shader(&mut self, src: &str) {
-        self.pipeline = create_pipeline(
+        self.pipeline = create_render_pipeline(
             &self.device,
             &self.pipeline_layout,
             src,
@@ -252,20 +338,36 @@ impl Gpu {
         );
     }
 
+    fn reload_compute_shader(&mut self, src: &str) {
+        self.compute_pipeline = create_compute_pipeline(
+            &self.device,
+            &self.compute_pipeline_layout,
+            src,
+        );
+    }
+
     fn rebuild_bind_groups(&mut self) {
-        self.bind_group_a = create_bind_group(
+        self.bind_group_a = create_render_bind_group(
             &self.device,
             &self.bind_group_layout,
             &self.uniform_buffer,
             &self.frame_b,
             &self.sampler,
+            &self.histogram_buffer,
         );
-        self.bind_group_b = create_bind_group(
+        self.bind_group_b = create_render_bind_group(
             &self.device,
             &self.bind_group_layout,
             &self.uniform_buffer,
             &self.frame_a,
             &self.sampler,
+            &self.histogram_buffer,
+        );
+        self.compute_bind_group = create_compute_bind_group(
+            &self.device,
+            &self.compute_bind_group_layout,
+            &self.histogram_buffer,
+            &self.uniform_buffer,
         );
     }
 
@@ -285,7 +387,6 @@ impl Gpu {
         };
         let screen_view = frame.texture.create_view(&Default::default());
 
-        // Pick which feedback texture to render to and which bind group to use
         let (target_view, bind_group) = if self.ping {
             (&self.frame_a, &self.bind_group_a)
         } else {
@@ -294,7 +395,23 @@ impl Gpu {
 
         let mut encoder = self.device.create_command_encoder(&Default::default());
 
-        // Render to feedback texture
+        // 1. Clear histogram
+        encoder.clear_buffer(&self.histogram_buffer, 0, None);
+
+        // 2. Compute pass: run the chaos game
+        {
+            let mut cpass = encoder.begin_compute_pass(
+                &wgpu::ComputePassDescriptor {
+                    label: Some("flame"),
+                    ..Default::default()
+                },
+            );
+            cpass.set_pipeline(&self.compute_pipeline);
+            cpass.set_bind_group(0, &self.compute_bind_group, &[]);
+            cpass.dispatch_workgroups(512, 1, 1); // 512 * 256 = 131K threads
+        }
+
+        // 3. Render to feedback texture
         {
             let mut pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -317,7 +434,7 @@ impl Gpu {
             pass.draw(0..3, 0..1);
         }
 
-        // Copy feedback texture to screen
+        // 4. Copy to screen
         {
             let mut pass =
                 encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -349,14 +466,12 @@ impl Gpu {
 // ── Helper Functions ──
 
 fn project_dir() -> PathBuf {
-    // Find the directory containing Cargo.toml
     let mut dir = std::env::current_dir().unwrap();
     loop {
         if dir.join("Cargo.toml").exists() {
             return dir;
         }
         if !dir.pop() {
-            // Fallback to cwd
             return std::env::current_dir().unwrap();
         }
     }
@@ -366,6 +481,10 @@ fn shader_path() -> PathBuf {
     project_dir().join("playground.wgsl")
 }
 
+fn compute_path() -> PathBuf {
+    project_dir().join("flame_compute.wgsl")
+}
+
 fn params_path() -> PathBuf {
     project_dir().join("params.json")
 }
@@ -373,6 +492,11 @@ fn params_path() -> PathBuf {
 fn load_shader_source() -> String {
     fs::read_to_string(shader_path())
         .unwrap_or_else(|_| include_str!("../playground.wgsl").to_string())
+}
+
+fn load_compute_source() -> String {
+    fs::read_to_string(compute_path())
+        .unwrap_or_else(|_| include_str!("../flame_compute.wgsl").to_string())
 }
 
 fn load_params() -> [f32; 16] {
@@ -385,6 +509,20 @@ fn load_params() -> [f32; 16] {
         }
     }
     params
+}
+
+fn create_histogram_buffer(
+    device: &wgpu::Device,
+    w: u32,
+    h: u32,
+) -> wgpu::Buffer {
+    let pixel_count = w.max(1) as u64 * h.max(1) as u64;
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("histogram"),
+        size: pixel_count * 2 * 4, // 2 u32s per pixel
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
 }
 
 fn create_frame_textures(
@@ -413,15 +551,16 @@ fn create_frame_textures(
     (a, b)
 }
 
-fn create_bind_group(
+fn create_render_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
     uniform_buffer: &wgpu::Buffer,
     prev_frame: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
+    histogram: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("main"),
+        label: Some("render"),
         layout,
         entries: &[
             wgpu::BindGroupEntry {
@@ -436,11 +575,37 @@ fn create_bind_group(
                 binding: 2,
                 resource: wgpu::BindingResource::Sampler(sampler),
             },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: histogram.as_entire_binding(),
+            },
         ],
     })
 }
 
-fn create_pipeline(
+fn create_compute_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    histogram: &wgpu::Buffer,
+    uniform_buffer: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("compute"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: histogram.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+        ],
+    })
+}
+
+fn create_render_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
     shader_src: &str,
@@ -473,6 +638,25 @@ fn create_pipeline(
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
         multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn create_compute_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader_src: &str,
+) -> wgpu::ComputePipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("flame_compute"),
+        source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+    });
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("flame"),
+        layout: Some(layout),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
         cache: None,
     })
 }
@@ -514,12 +698,17 @@ impl App {
         };
         let changed = watcher.changed_files();
         let mut reload_shader = false;
+        let mut reload_compute = false;
         let mut reload_params = false;
         let shader = shader_path();
+        let compute = compute_path();
         let params = params_path();
         for path in &changed {
             if path.ends_with(shader.file_name().unwrap()) {
                 reload_shader = true;
+            }
+            if path.ends_with(compute.file_name().unwrap()) {
+                reload_compute = true;
             }
             if path.ends_with(params.file_name().unwrap()) {
                 reload_params = true;
@@ -529,6 +718,11 @@ impl App {
             let src = load_shader_source();
             self.gpu.as_mut().unwrap().reload_shader(&src);
             eprintln!("[shader] reloaded");
+        }
+        if reload_compute {
+            let src = load_compute_source();
+            self.gpu.as_mut().unwrap().reload_compute_shader(&src);
+            eprintln!("[compute] reloaded");
         }
         if reload_params {
             self.target_params = load_params();
@@ -549,14 +743,14 @@ impl ApplicationHandler for App {
         self.gpu = Some(Gpu::create(window.clone()));
         self.window = Some(window);
 
-        // Start file watcher
-        let paths = vec![shader_path(), params_path()];
+        // Watch all shader files + params
+        let paths = vec![shader_path(), compute_path(), params_path()];
         match FileWatcher::new(&paths) {
             Ok(w) => self.watcher = Some(w),
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
         }
 
-        eprintln!("shader playground running — edit playground.wgsl");
+        eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
     }
 
     fn window_event(
@@ -584,9 +778,7 @@ impl ApplicationHandler for App {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } => {
-                // Could use for interaction later
-            }
+            } => {}
             WindowEvent::RedrawRequested => {
                 self.check_file_changes();
 
@@ -595,11 +787,11 @@ impl ApplicationHandler for App {
                     None => return,
                 };
 
-                // Smooth param interpolation (~0.5s to reach target)
+                // Smooth param interpolation
                 let now = Instant::now();
                 let dt = now.duration_since(self.last_frame_time).as_secs_f32();
                 self.last_frame_time = now;
-                let rate = 1.0 - (-dt * 5.0_f32).exp(); // exponential ease, ~5x/sec
+                let rate = 1.0 - (-dt * 5.0_f32).exp();
                 for i in 0..16 {
                     self.params[i] += (self.target_params[i] - self.params[i]) * rate;
                 }
