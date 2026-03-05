@@ -210,3 +210,113 @@ where
         )
         .map_err(|e| format!("build stream: {e}"))
 }
+
+// ── Audio Processing ──
+
+const BEAT_DECAY: f32 = 0.15;
+const SMOOTH_ATTACK: f32 = 0.85;
+const SMOOTH_RELEASE: f32 = 0.97;
+const TARGET_ENERGY: f32 = 0.05;
+const MAX_GAIN: f32 = 50.0;
+const GAIN_ATTACK: f32 = 0.05;
+const GAIN_RELEASE: f32 = 0.003;
+const NOISE_GATE: f32 = 0.0001;
+
+pub struct AudioProcessor {
+    analyzer: AudioAnalyzer,
+    pub features: AudioFeatures,
+    peak_energy: f32,
+    auto_gain: f32,
+    prev_energy_gained: f32,
+    sample_buf: Vec<f32>,
+}
+
+impl AudioProcessor {
+    pub fn new() -> Self {
+        Self {
+            analyzer: AudioAnalyzer::new(2048),
+            features: AudioFeatures::default(),
+            peak_energy: 0.01,
+            auto_gain: 1.0,
+            prev_energy_gained: 0.0,
+            sample_buf: Vec::with_capacity(BUFFER_SIZE),
+        }
+    }
+
+    pub fn process(&mut self, capture: &AudioCapture, dt: f32) {
+        capture.get_samples(&mut self.sample_buf);
+        if self.sample_buf.is_empty() {
+            self.decay_features(dt);
+            return;
+        }
+
+        let result = self.analyzer.analyze(&self.sample_buf);
+
+        // Auto-gain: track peak energy and normalize
+        let rate = if result.energy > self.peak_energy {
+            GAIN_ATTACK
+        } else {
+            GAIN_RELEASE
+        };
+        self.peak_energy += (result.energy - self.peak_energy) * rate;
+        self.peak_energy = self.peak_energy.max(0.001);
+        let target_gain = (TARGET_ENERGY / self.peak_energy).clamp(1.0, MAX_GAIN);
+        self.auto_gain += (target_gain - self.auto_gain) * 0.02;
+
+        let gain = self.auto_gain;
+        let gate = if result.energy > NOISE_GATE { 1.0 } else { 0.0 };
+
+        // Asymmetric smoothing (fast attack, slow release)
+        let f = &mut self.features;
+        f.bass = smooth(f.bass, result.bass * gain * gate);
+        f.mids = smooth(f.mids, result.mids * gain * gate);
+        f.highs = smooth(f.highs, result.highs * gain * gate);
+        f.energy = smooth(f.energy, result.energy * gain * gate);
+
+        // Beat detection: energy spike relative to recent average
+        let gained_energy = result.energy * gain;
+        if gained_energy > self.prev_energy_gained * 1.3 && gained_energy > 0.008 {
+            f.beat = 1.0;
+        } else {
+            f.beat = (f.beat - BEAT_DECAY).max(0.0);
+        }
+        self.prev_energy_gained = self.prev_energy_gained * 0.9 + gained_energy * 0.1;
+
+        self.update_envelopes(dt);
+    }
+
+    fn decay_features(&mut self, dt: f32) {
+        let f = &mut self.features;
+        f.bass = smooth(f.bass, 0.0);
+        f.mids = smooth(f.mids, 0.0);
+        f.highs = smooth(f.highs, 0.0);
+        f.energy = smooth(f.energy, 0.0);
+        f.beat = (f.beat - BEAT_DECAY).max(0.0);
+        self.update_envelopes(dt);
+    }
+
+    fn update_envelopes(&mut self, dt: f32) {
+        let f = &mut self.features;
+
+        // Beat accumulator: +0.05 on beat, 6s exponential decay
+        if f.beat >= 1.0 {
+            f.beat_accum = (f.beat_accum + 0.05).min(1.0);
+        }
+        f.beat_accum *= (-dt / 6.0).exp();
+
+        // Beat pulse: snap to 1.0 on beat, 1.5s exponential decay
+        if f.beat >= 1.0 {
+            f.beat_pulse = 1.0;
+        }
+        f.beat_pulse *= (-dt / 1.5).exp();
+    }
+}
+
+fn smooth(current: f32, target: f32) -> f32 {
+    let retain = if target > current {
+        SMOOTH_ATTACK
+    } else {
+        SMOOTH_RELEASE
+    };
+    current * retain + target * (1.0 - retain)
+}
