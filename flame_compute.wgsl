@@ -3,10 +3,17 @@
 // Runs the chaos game: each thread iterates a random point
 // through IFS transforms, plotting to an atomic histogram.
 //
-// params[0] = evolution speed
-// params[1] = variation amount (0=affine, 1=full nonlinear)
-// params[2] = zoom
-// params[3] = (reserved for display shader)
+// Param layout (from FlameGenome):
+//   [0]  speed
+//   [1]  zoom
+//   [2]  trail (used by fragment shader)
+//   [3]  flame_brightness (used by fragment shader)
+//   [4-6] kifs params (used by fragment shader)
+//   [7]  reserved
+//   [8..19]  transform 0: weight, angle, scale, ox, oy, color, w_lin, w_sin, w_sph, w_swi, w_hor, w_han
+//   [20..31] transform 1
+//   [32..43] transform 2
+//   [44..55] transform 3
 
 struct Uniforms {
     time: f32,
@@ -73,54 +80,47 @@ fn V_polar(p: vec2<f32>) -> vec2<f32> {
     return vec2(atan2(p.y, p.x) / PI, length(p) - 1.0);
 }
 
-// ── IFS Transforms ──
-// 4 transforms, each with different affine + variation blend
+// ── IFS Transforms (param-driven) ──
+// Each transform occupies 12 floats starting at param(8 + idx * 12):
+//   weight, angle, scale, ox, oy, color, w_lin, w_sin, w_sph, w_swi, w_hor, w_han
 
-fn apply_xform(p: vec2<f32>, idx: i32, t: f32, v: f32) -> vec2<f32> {
-    var q: vec2<f32>;
+fn apply_xform(p: vec2<f32>, idx: i32, t: f32) -> vec2<f32> {
+    let base = 8 + idx * 12;
+    let angle  = param(base + 1);
+    let scale  = param(base + 2);
+    let ox     = param(base + 3);
+    let oy     = param(base + 4);
+    let w_lin  = param(base + 6);
+    let w_sin  = param(base + 7);
+    let w_sph  = param(base + 8);
+    let w_swi  = param(base + 9);
+    let w_hor  = param(base + 10);
+    let w_han  = param(base + 11);
 
-    switch (idx) {
-        case 0 {
-            // "Flame tendril" — sinusoidal + swirl
-            q = rot2(0.6 + t * 0.07) * p * 0.65 + vec2(0.4, 0.15 + 0.1 * sin(t * 0.3));
-            let varied = V_sinusoidal(q) * 0.5 + V_swirl(q) * 0.5;
-            return mix(q, varied, v);
-        }
-        case 1 {
-            // "Spiral arm" — spherical + horseshoe
-            q = rot2(-1.0 + t * 0.11) * p * 0.70 + vec2(-0.3 + 0.05 * cos(t * 0.4), 0.3);
-            let varied = V_spherical(q) * 0.6 + V_horseshoe(q) * 0.4;
-            return mix(q, varied, v);
-        }
-        case 2 {
-            // "Organic curl" — handkerchief
-            q = rot2(1.7 + t * 0.09) * p * 0.60 + vec2(-0.1, -0.35 + 0.08 * sin(t * 0.5));
-            let varied = V_handkerchief(q) * 0.7 + V_sinusoidal(q) * 0.3;
-            return mix(q, varied, v);
-        }
-        default {
-            // "Background weave" — polar + linear
-            q = rot2(t * 0.04) * p * 0.82 + vec2(0.05 * sin(t * 0.2), 0.0);
-            let varied = V_polar(q);
-            return mix(q, varied, v * 0.4);
-        }
-    }
+    // Affine transform (angle drifts slowly with time)
+    let q = rot2(angle + t * 0.07 * f32(idx + 1)) * p * scale
+          + vec2(ox + 0.05 * sin(t * 0.3 * f32(idx + 1)),
+                 oy + 0.05 * cos(t * 0.4 * f32(idx + 1)));
+
+    // Weighted sum of variations
+    var v = q * w_lin;
+    v += V_sinusoidal(q)    * w_sin;
+    v += V_spherical(q)     * w_sph;
+    v += V_swirl(q)         * w_swi;
+    v += V_horseshoe(q)     * w_hor;
+    v += V_handkerchief(q)  * w_han;
+
+    return v;
 }
 
 fn xform_color(idx: i32) -> f32 {
-    switch (idx) {
-        case 0  { return 0.0; }
-        case 1  { return 0.33; }
-        case 2  { return 0.67; }
-        default { return 0.85; }
-    }
+    return param(8 + idx * 12 + 5);
 }
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let speed = param(0);
-    let var_amt = param(1);
-    let zoom = param(2);
+    let zoom = param(1);
     let t = u.time * speed;
 
     var rng = gid.x * 2654435761u + u.frame * 7919u + 12345u;
@@ -132,14 +132,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let h = u32(u.resolution.y);
 
     for (var i = 0u; i < 200u; i++) {
-        // Pick random transform
+        // Pick transform weighted by genome weights
         let r = randf(&rng);
+        let w0 = param(8);
+        let w1 = param(20);
+        let w2 = param(32);
+        let w3 = param(44);
+        let total = w0 + w1 + w2 + w3;
+        let rn = r * total;
         var tidx = 0;
-        if (r > 0.25) { tidx = 1; }
-        if (r > 0.5) { tidx = 2; }
-        if (r > 0.75) { tidx = 3; }
+        if (rn > w0) { tidx = 1; }
+        if (rn > w0 + w1) { tidx = 2; }
+        if (rn > w0 + w1 + w2) { tidx = 3; }
 
-        p = apply_xform(p, tidx, t, var_amt);
+        p = apply_xform(p, tidx, t);
 
         // Standard flame color blending
         color_idx = (color_idx + xform_color(tidx)) * 0.5;
