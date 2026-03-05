@@ -4,14 +4,16 @@
 // Background: KIFS fractal runs per-pixel in fragment shader
 // Both blend with feedback for persistence.
 //
-// params[0]  = speed (shared)
-// params[1]  = flame variation amount
-// params[2]  = flame zoom
-// params[3]  = trail persistence (0.94)
-// params[4]  = KIFS fold angle (0.62)
-// params[5]  = KIFS scale (1.8)
-// params[6]  = KIFS brightness (0.3)
-// params[7]  = flame brightness (0.4)
+// Param layout (from FlameGenome):
+//   [0]  speed
+//   [1]  zoom (used by compute shader)
+//   [2]  trail persistence
+//   [3]  flame brightness
+//   [4]  KIFS fold angle
+//   [5]  KIFS scale
+//   [6]  KIFS brightness
+//   [7]  reserved
+//   [8+] transform data (used by compute shader)
 
 struct Uniforms {
     time: f32,
@@ -114,12 +116,12 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let uv = (pos.xy - u.resolution * 0.5) / u.resolution.y * 2.5;
     let tex_uv = pos.xy / u.resolution;
 
-    let speed      = param(0);
-    let trail       = param(3);
-    let kifs_fold   = param(4);
-    let kifs_scale  = param(5);
-    let kifs_bright = param(6);
-    let flame_bright = param(7);
+    let speed        = param(0);
+    let trail        = param(2);
+    let flame_bright = param(3);
+    let kifs_fold    = param(4);
+    let kifs_scale   = param(5);
+    let kifs_bright  = param(6);
 
     let t = u.time * speed;
 
