@@ -12,6 +12,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowAttributes};
 
 mod audio;
+mod audio_weights;
 mod genome;
 use crate::genome::FlameGenome;
 
