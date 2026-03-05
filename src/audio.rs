@@ -1,9 +1,12 @@
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, StreamTrait};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
+use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AudioFeatures {
     pub bass: f32,
     pub mids: f32,
@@ -109,56 +112,18 @@ enum StreamHolder {
 pub struct AudioCapture {
     buffer: Arc<Mutex<Vec<f32>>>,
     _stream: StreamHolder,
-    pub sample_rate: u32,
 }
 
 impl AudioCapture {
-    /// List devices, let user pick. Option 0 = System Audio (SCK).
-    pub fn select_and_start() -> Result<Self, String> {
-        let host = cpal::default_host();
-        let devices: Vec<_> = host
-            .input_devices()
-            .map_err(|e| format!("enumerate devices: {e}"))?
-            .collect();
-
-        eprintln!("\n── Audio Devices ──");
-        eprintln!("  [0] System Audio (ScreenCaptureKit)");
-        for (i, dev) in devices.iter().enumerate() {
-            let name = dev.name().unwrap_or_else(|_| "???".into());
-            let config_info = match dev.default_input_config() {
-                Ok(c) => format!("{}Hz {:?}", c.sample_rate(), c.sample_format()),
-                Err(_) => "no config".into(),
-            };
-            eprintln!("  [{}] {name} ({config_info})", i + 1);
-        }
-        eprintln!("  [Enter] = System Audio");
-        eprint!("Select device: ");
-
-        let mut input = String::new();
-        std::io::stdin()
-            .read_line(&mut input)
-            .map_err(|e| format!("read stdin: {e}"))?;
-        let input = input.trim();
-
-        // Default or "0" → SCK system audio
-        if input.is_empty() || input == "0" {
-            return Self::new_system_audio();
-        }
-
-        let idx: usize = input
-            .parse()
-            .map_err(|_| format!("invalid number: {input}"))?;
-        let dev_idx = idx - 1; // offset by 1 since [0] is SCK
-        let device = devices
-            .into_iter()
-            .nth(dev_idx)
-            .ok_or_else(|| format!("device {idx} not found"))?;
-
+    /// Construct from a cpal device selected by the device picker.
+    pub fn from_device(device: cpal::Device, is_input: bool) -> Result<Self, String> {
         let name = device.name().unwrap_or_else(|_| "???".into());
-        let config = device
-            .default_input_config()
-            .map_err(|e| format!("input config for {name}: {e}"))?;
-
+        let config = if is_input {
+            device.default_input_config()
+        } else {
+            device.default_output_config()
+        }
+        .map_err(|e| format!("config for {name}: {e}"))?;
         eprintln!("[audio] using: {name} ({}Hz)", config.sample_rate());
         Self::build_cpal_capture(&device, &config)
     }
@@ -168,10 +133,10 @@ impl AudioCapture {
         let buffer = Arc::new(Mutex::new(Vec::with_capacity(BUFFER_SIZE)));
         let (stream, rate) =
             crate::sck_audio::start_system_audio_capture(buffer.clone(), BUFFER_SIZE)?;
+        let _ = rate; // logged by sck_audio
         Ok(Self {
             _stream: StreamHolder::Sck(stream),
             buffer,
-            sample_rate: rate,
         })
     }
 
@@ -200,10 +165,10 @@ impl AudioCapture {
 
         stream.play().map_err(|e| format!("play: {e}"))?;
 
+        eprintln!("[audio] sample rate: {sample_rate}Hz");
         Ok(Self {
             buffer,
             _stream: StreamHolder::Cpal(stream),
-            sample_rate,
         })
     }
 
@@ -352,4 +317,30 @@ fn smooth(current: f32, target: f32) -> f32 {
         SMOOTH_RELEASE
     };
     current * retain + target * (1.0 - retain)
+}
+
+// ── Background Audio Thread ──
+
+/// Spawn a background thread that processes audio and writes features to a JSON file at ~30Hz.
+pub fn spawn_audio_thread(capture: AudioCapture, features_path: PathBuf) {
+    std::thread::spawn(move || {
+        let mut processor = AudioProcessor::new();
+        let mut last = Instant::now();
+        loop {
+            std::thread::sleep(Duration::from_millis(33));
+            let now = Instant::now();
+            let dt = now.duration_since(last).as_secs_f32();
+            last = now;
+
+            processor.process(&capture, dt);
+
+            // Atomic write: temp file then rename
+            if let Ok(json) = serde_json::to_string_pretty(&processor.features) {
+                let tmp = features_path.with_extension("tmp");
+                if std::fs::write(&tmp, &json).is_ok() {
+                    let _ = std::fs::rename(&tmp, &features_path);
+                }
+            }
+        }
+    });
 }

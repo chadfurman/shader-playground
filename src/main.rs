@@ -12,12 +12,13 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowAttributes};
 
 mod audio;
-mod audio_weights;
+mod device_picker;
 mod genome;
 mod sck_audio;
+mod weights;
 use crate::genome::FlameGenome;
-use crate::audio::{AudioCapture, AudioProcessor};
-use crate::audio_weights::AudioWeights;
+use crate::audio::{AudioCapture, AudioFeatures};
+use crate::weights::Weights;
 
 // ── Uniforms ──
 
@@ -520,12 +521,16 @@ fn load_params() -> [f32; 64] {
     params
 }
 
-fn audio_weights_path() -> PathBuf {
-    project_dir().join("audio_weights.json")
+fn weights_path() -> PathBuf {
+    project_dir().join("weights.json")
 }
 
-fn load_audio_weights() -> AudioWeights {
-    AudioWeights::load(&audio_weights_path()).unwrap_or_default()
+fn audio_features_path() -> PathBuf {
+    project_dir().join("audio_features.json")
+}
+
+fn load_weights() -> Weights {
+    Weights::load(&weights_path()).unwrap_or_default()
 }
 
 fn create_histogram_buffer(
@@ -693,9 +698,8 @@ struct App {
     genome: FlameGenome,
     genome_history: Vec<[f32; 64]>,
     morph_rate_idx: usize,
-    audio_capture: Option<AudioCapture>,
-    audio_processor: AudioProcessor,
-    audio_weights: AudioWeights,
+    audio_features: AudioFeatures,
+    weights: Weights,
     audio_enabled: bool,
     audio_info: bool,
     audio_info_timer: f32,
@@ -723,9 +727,8 @@ impl App {
             genome,
             genome_history: Vec::new(),
             morph_rate_idx: 7, // MORPH_RATES[7] = 2.0
-            audio_capture: None,
-            audio_processor: AudioProcessor::new(),
-            audio_weights: load_audio_weights(),
+            audio_features: AudioFeatures::default(),
+            weights: load_weights(),
             audio_enabled: true,
             audio_info: false,
             audio_info_timer: 0.0,
@@ -743,6 +746,7 @@ impl App {
         let mut reload_compute = false;
         let mut reload_params = false;
         let mut reload_weights = false;
+        let mut reload_features = false;
         let shader = shader_path();
         let compute = compute_path();
         let params = params_path();
@@ -756,8 +760,11 @@ impl App {
             if path.ends_with(params.file_name().unwrap()) {
                 reload_params = true;
             }
-            if path.ends_with("audio_weights.json") {
+            if path.ends_with("weights.json") {
                 reload_weights = true;
+            }
+            if path.ends_with("audio_features.json") {
+                reload_features = true;
             }
         }
         if reload_shader {
@@ -778,8 +785,15 @@ impl App {
             eprintln!("[params] reloaded (overriding global/kifs)");
         }
         if reload_weights {
-            self.audio_weights = load_audio_weights();
+            self.weights = load_weights();
             eprintln!("[weights] reloaded");
+        }
+        if reload_features {
+            if let Ok(json) = fs::read_to_string(audio_features_path()) {
+                if let Ok(f) = serde_json::from_str::<AudioFeatures>(&json) {
+                    self.audio_features = f;
+                }
+            }
         }
     }
 }
@@ -797,7 +811,7 @@ impl ApplicationHandler for App {
         self.window = Some(window);
 
         // Watch all shader files + params
-        let paths = vec![shader_path(), compute_path(), params_path(), audio_weights_path()];
+        let paths = vec![shader_path(), compute_path(), params_path(), weights_path(), audio_features_path()];
         match FileWatcher::new(&paths) {
             Ok(w) => self.watcher = Some(w),
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
@@ -812,8 +826,6 @@ impl ApplicationHandler for App {
                 self.target_params = self.genome.flatten();
             }
         }
-
-        // Audio capture was already started in main() via device selection
 
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
     }
@@ -937,68 +949,15 @@ impl ApplicationHandler for App {
                 let dt = now.duration_since(self.last_frame_time).as_secs_f32().max(0.001);
                 self.last_frame_time = now;
 
-                // Process audio and apply weight matrix
+                // Apply weight matrix (audio features from background thread, plus time)
                 if self.audio_enabled {
-                    if let Some(ref capture) = self.audio_capture {
-                        self.audio_processor.process(capture, dt);
-                    }
-
-                    let features = &self.audio_processor.features;
+                    let time = self.start.elapsed().as_secs_f32();
                     let base = self.genome.flatten();
-                    let w = &self.audio_weights;
+                    self.target_params = self.weights.apply(&base, &self.audio_features, time);
 
-                    // Apply weight matrix offsets to target_params
-                    self.target_params[2] = w.clamp("trail", base[2] + w.offset("trail", features));
-                    self.target_params[3] = w.clamp("flame_bright", base[3] + w.offset("flame_bright", features));
-                    self.target_params[4] = w.clamp("kifs_fold", base[4] + w.offset("kifs_fold", features));
-                    self.target_params[5] = w.clamp("kifs_scale", base[5] + w.offset("kifs_scale", features));
-                    self.target_params[6] = w.clamp("kifs_bright", base[6] + w.offset("kifs_bright", features));
-                    self.target_params[7] = 1.0 + w.offset("drift_speed", features);
-                    self.target_params[56] = w.offset("color_shift", features);
-
-                    // Transform weights
-                    for i in 0..4 {
-                        let name = format!("xf{}_weight", i);
-                        let base_idx = 8 + i * 12;
-                        self.target_params[base_idx] = (base[base_idx] + w.offset(&name, features)).max(0.0);
-                    }
-
-                    // Info mode: print features + offsets with meters every 0.5s
-                    if self.audio_info {
-                        self.audio_info_timer += dt;
-                        if self.audio_info_timer >= 0.5 {
-                            self.audio_info_timer = 0.0;
-                            let bar = |v: f32, width: usize| -> String {
-                                let filled = ((v.clamp(0.0, 1.0)) * width as f32) as usize;
-                                format!("[{}{}]", "█".repeat(filled), "░".repeat(width - filled))
-                            };
-                            eprintln!(
-                                "[info] bass {} {:.3}  mids {} {:.3}  highs {} {:.3}  nrg {} {:.3}",
-                                bar(features.bass, 10), features.bass,
-                                bar(features.mids, 10), features.mids,
-                                bar(features.highs, 10), features.highs,
-                                bar(features.energy, 10), features.energy,
-                            );
-                            eprintln!(
-                                "[info] beat {} {:.2}  accum {} {:.2}  pulse {} {:.2}",
-                                bar(features.beat, 8), features.beat,
-                                bar(features.beat_accum, 8), features.beat_accum,
-                                bar(features.beat_pulse, 8), features.beat_pulse,
-                            );
-                            eprintln!(
-                                "[info] offsets: fold={:+.3} scale={:+.3} bright={:+.3} trail={:+.3} drift={:+.3} color={:+.3}",
-                                w.offset("kifs_fold", features),
-                                w.offset("kifs_scale", features),
-                                w.offset("kifs_bright", features),
-                                w.offset("trail", features),
-                                w.offset("drift_speed", features),
-                                w.offset("color_shift", features),
-                            );
-                        }
-                    }
-
-                    // Mutation trigger
-                    self.mutation_accum += w.offset("mutation_trigger", features) * dt;
+                    // Auto-evolve via mutation_rate
+                    let mr = self.weights.mutation_rate(&self.audio_features, time);
+                    self.mutation_accum += mr * dt;
                     if self.mutation_accum >= 1.0 {
                         self.mutation_accum = 0.0;
                         let old = self.genome.flatten();
@@ -1008,6 +967,19 @@ impl ApplicationHandler for App {
                         }
                         self.genome = self.genome.mutate();
                         eprintln!("[auto-evolve] → {}", self.genome.name);
+                    }
+
+                    // Info mode
+                    if self.audio_info {
+                        self.audio_info_timer += dt;
+                        if self.audio_info_timer >= 0.5 {
+                            self.audio_info_timer = 0.0;
+                            let f = &self.audio_features;
+                            eprintln!(
+                                "[info] bass={:.3} mids={:.3} highs={:.3} energy={:.3} beat={:.2} accum={:.2} pulse={:.2}",
+                                f.bass, f.mids, f.highs, f.energy, f.beat, f.beat_accum, f.beat_pulse
+                            );
+                        }
                     }
                 }
 
@@ -1058,17 +1030,38 @@ impl ApplicationHandler for App {
 fn main() {
     env_logger::init();
 
-    // Select audio device before opening the window
-    let audio_capture = match AudioCapture::select_and_start() {
-        Ok(cap) => Some(cap),
-        Err(e) => {
-            eprintln!("[audio] capture failed: {e} (visuals-only mode)");
+    // Interactive device picker before opening the window
+    let capture = match device_picker::run() {
+        device_picker::Selection::SystemAudio => {
+            match AudioCapture::new_system_audio() {
+                Ok(cap) => Some(cap),
+                Err(e) => {
+                    eprintln!("[audio] SCK capture failed: {e} (visuals-only mode)");
+                    None
+                }
+            }
+        }
+        device_picker::Selection::CpalDevice(device, is_input) => {
+            match AudioCapture::from_device(device, is_input) {
+                Ok(cap) => Some(cap),
+                Err(e) => {
+                    eprintln!("[audio] capture failed: {e} (visuals-only mode)");
+                    None
+                }
+            }
+        }
+        device_picker::Selection::Cancelled => {
+            eprintln!("[audio] cancelled — visuals-only mode");
             None
         }
     };
 
+    // Spawn background audio processing thread
+    if let Some(capture) = capture {
+        audio::spawn_audio_thread(capture, audio_features_path());
+    }
+
     let event_loop = EventLoop::new().unwrap();
     let mut app = App::new();
-    app.audio_capture = audio_capture;
     event_loop.run_app(&mut app).unwrap();
 }

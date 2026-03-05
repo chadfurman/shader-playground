@@ -1,0 +1,71 @@
+{
+  "_doc": {
+    "_signals": "bass, mids, highs, energy, beat, beat_accum, time — each maps param names to weights. Unspecified = 0.",
+    "_formula": "final[i] = genome_base[i] + (bass_w * bass + mids_w * mids + ... + time_w * time) / 7",
+    "_wildcards": "xfN_ expands to all transforms (xf0-xf3) with per-transform randomized scaling (0.5x-1.5x). You can also use xf0_, xf1_, etc. for specific transforms.",
+    "_params": {
+      "speed":            "Global animation speed",
+      "zoom":             "Camera zoom level",
+      "trail":            "Feedback trail decay (lower = longer trails)",
+      "flame_brightness": "Overall flame brightness",
+      "kifs_fold":        "KIFS folding angle",
+      "kifs_scale":       "KIFS scale factor",
+      "kifs_brightness":  "KIFS geometry brightness",
+      "drift_speed":      "Orbital drift speed multiplier",
+      "color_shift":      "Hue shift applied to flame palette",
+      "xfN_weight":       "All transforms blend weight",
+      "xfN_angle":        "All transforms rotation angle",
+      "xfN_scale":        "All transforms scale factor",
+      "xfN_offset_x":     "All transforms X translation",
+      "xfN_offset_y":     "All transforms Y translation",
+      "xfN_color":        "All transforms palette index",
+      "xfN_linear":       "All transforms linear variation",
+      "xfN_sinusoidal":   "All transforms sinusoidal variation",
+      "xfN_spherical":    "All transforms spherical variation",
+      "xfN_swirl":        "All transforms swirl variation",
+      "xfN_horseshoe":    "All transforms horseshoe variation",
+      "xfN_handkerchief": "All transforms handkerchief variation",
+      "mutation_rate":     "Virtual — auto-evolve accumulator (triggers mutate at 1.0)"
+    }
+  },
+  "bass": {
+    "kifs_fold": 0.4,
+    "xfN_weight": 0.5,
+    "xfN_swirl": 0.3,
+    "color_shift": -0.6
+  },
+  "mids": {
+    "xfN_sinusoidal": 0.4,
+    "xfN_angle": 0.3
+  },
+  "highs": {
+    "xfN_spherical": 0.3,
+    "color_shift": 0.3
+  },
+  "energy": {
+    "flame_brightness": 0.9,
+    "kifs_scale": 0.2,
+    "kifs_brightness": 0.4,
+    "drift_speed": 1.8,
+    "xfN_weight": 0.3,
+    "xfN_scale": 0.2,
+    "xfN_linear": 0.2,
+    "mutation_rate": 0.1
+  },
+  "beat": {
+    "xfN_horseshoe": 0.5,
+    "xfN_handkerchief": 0.4
+  },
+  "beat_accum": {
+    "trail": 0.6,
+    "xfN_offset_x": 0.2,
+    "xfN_offset_y": 0.2,
+    "mutation_rate": 1.0
+  },
+  "time": {
+    "kifs_fold": 0.3,
+    "kifs_scale": 0.2,
+    "xfN_angle": 0.05,
+    "color_shift": 0.1
+  }
+}
