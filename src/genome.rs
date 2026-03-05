@@ -232,6 +232,22 @@ impl FlameGenome {
             }
         }
 
+        // Add/remove transforms biased toward 6-16 sweet spot
+        let n = child.transforms.len();
+        let (add_chance, remove_chance) = if n < 6 {
+            (0.40, 0.05)
+        } else if n <= 16 {
+            (0.15, 0.15)
+        } else {
+            (0.05, 0.40)
+        };
+        let roll: f32 = rng.random();
+        if roll < add_chance {
+            child.mutate_add_transform(&mut rng);
+        } else if roll < add_chance + remove_chance {
+            child.mutate_remove_transform(&mut rng);
+        }
+
         child.name = format!("mutant-{}", rng.random_range(1000..9999u32));
         child
     }
@@ -292,5 +308,30 @@ impl FlameGenome {
     fn mutate_kifs_drift(&mut self, rng: &mut impl Rng) {
         self.kifs.fold_angle += rng.random_range(-0.1..0.1);
         self.kifs.scale = (self.kifs.scale + rng.random_range(-0.15..0.15)).clamp(1.3, 2.5);
+    }
+
+    fn mutate_add_transform(&mut self, rng: &mut impl Rng) {
+        if self.transforms.is_empty() { return; }
+        // Clone a random existing transform with perturbations
+        let source_idx = rng.random_range(0..self.transforms.len());
+        let mut new_xf = self.transforms[source_idx].clone();
+        new_xf.weight = 0.05; // start small, fades in via morph
+        new_xf.angle += rng.random_range(-0.3..0.3);
+        new_xf.scale = (new_xf.scale + rng.random_range(-0.1..0.1)).clamp(0.3, 0.95);
+        new_xf.offset[0] += rng.random_range(-0.3..0.3);
+        new_xf.offset[1] += rng.random_range(-0.3..0.3);
+        new_xf.color = rng.random_range(0.0..1.0);
+        self.transforms.push(new_xf);
+    }
+
+    fn mutate_remove_transform(&mut self, _rng: &mut impl Rng) {
+        if self.transforms.len() <= 2 { return; } // keep at least 2
+        // Remove the lowest-weight transform
+        if let Some((min_idx, _)) = self.transforms.iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.weight.partial_cmp(&b.weight).unwrap())
+        {
+            self.transforms.remove(min_idx);
+        }
     }
 }
