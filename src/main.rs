@@ -487,10 +487,13 @@ struct App {
     frame: u32,
     mouse: [f32; 2],
     params: [f32; 16],
+    target_params: [f32; 16],
+    last_frame_time: Instant,
 }
 
 impl App {
     fn new() -> Self {
+        let initial = load_params();
         Self {
             gpu: None,
             window: None,
@@ -498,7 +501,9 @@ impl App {
             start: Instant::now(),
             frame: 0,
             mouse: [0.5, 0.5],
-            params: load_params(),
+            params: initial,
+            target_params: initial,
+            last_frame_time: Instant::now(),
         }
     }
 
@@ -526,8 +531,8 @@ impl App {
             eprintln!("[shader] reloaded");
         }
         if reload_params {
-            self.params = load_params();
-            eprintln!("[params] reloaded");
+            self.target_params = load_params();
+            eprintln!("[params] reloaded (morphing)");
         }
     }
 }
@@ -589,6 +594,15 @@ impl ApplicationHandler for App {
                     Some(g) => g,
                     None => return,
                 };
+
+                // Smooth param interpolation (~0.5s to reach target)
+                let now = Instant::now();
+                let dt = now.duration_since(self.last_frame_time).as_secs_f32();
+                self.last_frame_time = now;
+                let rate = 1.0 - (-dt * 5.0_f32).exp(); // exponential ease, ~5x/sec
+                for i in 0..16 {
+                    self.params[i] += (self.target_params[i] - self.params[i]) * rate;
+                }
 
                 let flat_params: [[f32; 4]; 4] = [
                     [self.params[0], self.params[1], self.params[2], self.params[3]],
