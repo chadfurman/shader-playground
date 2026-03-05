@@ -545,16 +545,13 @@ fn load_compute_source() -> String {
         .unwrap_or_else(|_| include_str!("../flame_compute.wgsl").to_string())
 }
 
-fn load_params() -> [f32; 64] {
-    let mut params = [0.0f32; 64];
+fn load_params() -> Vec<f32> {
     if let Ok(json) = fs::read_to_string(params_path()) {
         if let Ok(vals) = serde_json::from_str::<Vec<f32>>(&json) {
-            for (i, v) in vals.iter().enumerate().take(64) {
-                params[i] = *v;
-            }
+            return vals;
         }
     }
-    params
+    Vec::new()
 }
 
 fn weights_path() -> PathBuf {
@@ -733,11 +730,14 @@ struct App {
     start: Instant,
     frame: u32,
     mouse: [f32; 2],
-    params: [f32; 64],
-    target_params: [f32; 64],
+    globals: [f32; 12],
+    target_globals: [f32; 12],
+    xf_params: Vec<f32>,
+    target_xf_params: Vec<f32>,
+    num_transforms: usize,
     last_frame_time: Instant,
     genome: FlameGenome,
-    genome_history: Vec<[f32; 64]>,
+    genome_history: Vec<FlameGenome>,
     morph_rate_idx: usize,
     audio_features: AudioFeatures,
     weights: Weights,
@@ -754,7 +754,9 @@ const MORPH_RATES: [f32; 15] = [
 impl App {
     fn new() -> Self {
         let genome = FlameGenome::default_genome();
-        let initial = genome.flatten();
+        let initial_globals = genome.flatten_globals();
+        let initial_xf = genome.flatten_transforms();
+        let num_transforms = genome.transforms.len();
         Self {
             gpu: None,
             window: None,
@@ -762,8 +764,11 @@ impl App {
             start: Instant::now(),
             frame: 0,
             mouse: [0.5, 0.5],
-            params: initial,
-            target_params: initial,
+            globals: initial_globals,
+            target_globals: initial_globals,
+            xf_params: initial_xf.clone(),
+            target_xf_params: initial_xf,
+            num_transforms,
             last_frame_time: Instant::now(),
             genome,
             genome_history: Vec::new(),
@@ -820,10 +825,11 @@ impl App {
         }
         if reload_params {
             let override_params = load_params();
-            for i in 0..8 {
-                self.target_params[i] = override_params[i];
+            // Override globals from params.json (first 12 entries map to globals)
+            for i in 0..12.min(override_params.len()) {
+                self.target_globals[i] = override_params[i];
             }
-            eprintln!("[params] reloaded (overriding global/kifs)");
+            eprintln!("[params] reloaded (overriding globals)");
         }
         if reload_weights {
             self.weights = load_weights();
@@ -864,7 +870,12 @@ impl ApplicationHandler for App {
             if let Ok(g) = FlameGenome::load_random(&genomes_dir) {
                 eprintln!("[genome] loaded: {}", g.name);
                 self.genome = g;
-                self.target_params = self.genome.flatten();
+                self.target_globals = self.genome.flatten_globals();
+                self.target_xf_params = self.genome.flatten_transforms();
+                self.num_transforms = self.genome.transforms.len();
+                if let Some(gpu) = &mut self.gpu {
+                    gpu.resize_transform_buffer(self.num_transforms);
+                }
             }
         }
 
@@ -908,19 +919,33 @@ impl ApplicationHandler for App {
             } => match logical_key {
                 Key::Named(NamedKey::Space) => {
                     // Evolve: mutate and crossfade
-                    let old_params = self.genome.flatten();
-                    self.genome_history.push(old_params);
+                    self.genome_history.push(self.genome.clone());
                     if self.genome_history.len() > 10 {
                         self.genome_history.remove(0);
                     }
                     self.genome = self.genome.mutate();
-                    self.target_params = self.genome.flatten();
+                    self.target_globals = self.genome.flatten_globals();
+                    self.target_xf_params = self.genome.flatten_transforms();
+                    if self.genome.transforms.len() != self.num_transforms {
+                        self.num_transforms = self.genome.transforms.len();
+                        if let Some(gpu) = &mut self.gpu {
+                            gpu.resize_transform_buffer(self.num_transforms);
+                        }
+                    }
                     eprintln!("[evolve] → {}", self.genome.name);
                 }
                 Key::Named(NamedKey::Backspace) => {
                     // Revert to previous genome
                     if let Some(prev) = self.genome_history.pop() {
-                        self.target_params = prev;
+                        self.genome = prev;
+                        self.target_globals = self.genome.flatten_globals();
+                        self.target_xf_params = self.genome.flatten_transforms();
+                        if self.genome.transforms.len() != self.num_transforms {
+                            self.num_transforms = self.genome.transforms.len();
+                            if let Some(gpu) = &mut self.gpu {
+                                gpu.resize_transform_buffer(self.num_transforms);
+                            }
+                        }
                         eprintln!("[revert] back to previous");
                     }
                 }
@@ -936,28 +961,38 @@ impl ApplicationHandler for App {
                         let dir = project_dir().join("genomes");
                         match FlameGenome::load_random(&dir) {
                             Ok(g) => {
-                                let old = self.genome.flatten();
-                                self.genome_history.push(old);
+                                self.genome_history.push(self.genome.clone());
+                                if self.genome_history.len() > 10 {
+                                    self.genome_history.remove(0);
+                                }
                                 eprintln!("[load] {}", g.name);
                                 self.genome = g;
-                                self.target_params = self.genome.flatten();
+                                self.target_globals = self.genome.flatten_globals();
+                                self.target_xf_params = self.genome.flatten_transforms();
+                                if self.genome.transforms.len() != self.num_transforms {
+                                    self.num_transforms = self.genome.transforms.len();
+                                    if let Some(gpu) = &mut self.gpu {
+                                        gpu.resize_transform_buffer(self.num_transforms);
+                                    }
+                                }
                             }
                             Err(e) => eprintln!("[load] error: {e}"),
                         }
                     }
                     "1" | "2" | "3" | "4" => {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
-                        let base = 8 + idx * 12;
-                        // Toggle weight: 0.0 <-> 0.25
-                        if self.target_params[base] < 0.01 {
-                            self.target_params[base] = 0.25;
-                        } else {
-                            self.target_params[base] = 0.0;
+                        if idx < self.num_transforms {
+                            let base = idx * 12; // weight is first field
+                            if self.target_xf_params[base] < 0.01 {
+                                self.target_xf_params[base] = 0.25;
+                            } else {
+                                self.target_xf_params[base] = 0.0;
+                            }
+                            eprintln!(
+                                "[solo] transform {} = {}",
+                                idx, self.target_xf_params[base]
+                            );
                         }
-                        eprintln!(
-                            "[solo] transform {} = {}",
-                            idx, self.target_params[base]
-                        );
                     }
                     "=" | "+" => {
                         if self.morph_rate_idx < MORPH_RATES.len() - 1 {
@@ -993,20 +1028,29 @@ impl ApplicationHandler for App {
                 // Apply weight matrix (audio features from background thread, plus time)
                 if self.audio_enabled {
                     let time = self.start.elapsed().as_secs_f32();
-                    let base = self.genome.flatten();
-                    self.target_params = self.weights.apply(&base, &self.audio_features, time);
+                    // Option A: temporarily skip per-param weights for the split.
+                    // Set targets directly from genome; Task 6 will split the weights system.
+                    self.target_globals = self.genome.flatten_globals();
+                    self.target_xf_params = self.genome.flatten_transforms();
 
                     // Auto-evolve via mutation_rate
                     let mr = self.weights.mutation_rate(&self.audio_features, time);
                     self.mutation_accum += mr * dt;
                     if self.mutation_accum >= 1.0 {
                         self.mutation_accum = 0.0;
-                        let old = self.genome.flatten();
-                        self.genome_history.push(old);
+                        self.genome_history.push(self.genome.clone());
                         if self.genome_history.len() > 10 {
                             self.genome_history.remove(0);
                         }
                         self.genome = self.genome.mutate();
+                        self.target_globals = self.genome.flatten_globals();
+                        self.target_xf_params = self.genome.flatten_transforms();
+                        if self.genome.transforms.len() != self.num_transforms {
+                            self.num_transforms = self.genome.transforms.len();
+                            if let Some(gpu) = &mut self.gpu {
+                                gpu.resize_transform_buffer(self.num_transforms);
+                            }
+                        }
                         eprintln!("[auto-evolve] → {}", self.genome.name);
                     }
 
@@ -1029,12 +1073,20 @@ impl ApplicationHandler for App {
                     None => return,
                 };
 
-                // Smooth param interpolation
+                // Morph globals
                 let rate = 1.0 - (-dt * MORPH_RATES[self.morph_rate_idx]).exp();
-                for i in 0..64 {
-                    self.params[i] += (self.target_params[i] - self.params[i]) * rate;
+                for i in 0..12 {
+                    self.globals[i] += (self.target_globals[i] - self.globals[i]) * rate;
+                }
+                // Morph transforms (handle different lengths)
+                let max_len = self.xf_params.len().max(self.target_xf_params.len());
+                self.xf_params.resize(max_len, 0.0);
+                self.target_xf_params.resize(max_len, 0.0);
+                for i in 0..max_len {
+                    self.xf_params[i] += (self.target_xf_params[i] - self.xf_params[i]) * rate;
                 }
 
+                // Write uniforms
                 let uniforms = Uniforms {
                     time: self.start.elapsed().as_secs_f32(),
                     frame: self.frame,
@@ -1043,21 +1095,15 @@ impl ApplicationHandler for App {
                         gpu.config.height as f32,
                     ],
                     mouse: self.mouse,
-                    transform_count: 4, // temporarily hardcoded until Task 3
+                    transform_count: self.num_transforms as u32,
                     _pad: 0,
-                    globals: [self.params[0], self.params[1], self.params[2], self.params[3]],
-                    kifs: [self.params[4], self.params[5], self.params[6], self.params[7]],
-                    extra: [self.params[56], 0.0, 0.0, 0.0], // color_shift was at index 56
+                    globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
+                    kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
+                    extra: [self.globals[8], 0.0, 0.0, 0.0],
                 };
 
-                // Extract transform data from old flat params (4 transforms at indices 8..56)
-                let mut xf_data = vec![0.0f32; 4 * 12];
-                for t in 0..4 {
-                    for f in 0..12 {
-                        xf_data[t * 12 + f] = self.params[8 + t * 12 + f];
-                    }
-                }
-                gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(&xf_data));
+                gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+                gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(&self.xf_params));
 
                 gpu.render(&uniforms);
                 self.frame += 1;

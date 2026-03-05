@@ -44,49 +44,6 @@ pub struct FlameGenome {
 }
 
 impl FlameGenome {
-    /// Flatten to [f32; 64] for the uniform buffer.
-    /// Layout:
-    ///   [0..=3]  global: speed, zoom, trail, flame_brightness
-    ///   [4..=6]  kifs: fold_angle, scale, brightness
-    ///   [7]      reserved (0.0)
-    ///   [8..=19]  transform 0 (12 floats)
-    ///   [20..=31] transform 1
-    ///   [32..=43] transform 2
-    ///   [44..=55] transform 3
-    pub fn flatten(&self) -> [f32; 64] {
-        let mut p = [0.0f32; 64];
-
-        // Global
-        p[0] = self.global.speed;
-        p[1] = self.global.zoom;
-        p[2] = self.global.trail;
-        p[3] = self.global.flame_brightness;
-
-        // KIFS
-        p[4] = self.kifs.fold_angle;
-        p[5] = self.kifs.scale;
-        p[6] = self.kifs.brightness;
-
-        // Transforms (up to 4)
-        for (i, xf) in self.transforms.iter().enumerate().take(4) {
-            let base = 8 + i * 12;
-            p[base] = xf.weight;
-            p[base + 1] = xf.angle;
-            p[base + 2] = xf.scale;
-            p[base + 3] = xf.offset[0];
-            p[base + 4] = xf.offset[1];
-            p[base + 5] = xf.color;
-            p[base + 6] = xf.linear;
-            p[base + 7] = xf.sinusoidal;
-            p[base + 8] = xf.spherical;
-            p[base + 9] = xf.swirl;
-            p[base + 10] = xf.horseshoe;
-            p[base + 11] = xf.handkerchief;
-        }
-
-        p
-    }
-
     /// Pack global params into a fixed [f32; 12] for the uniform buffer.
     /// Layout:
     ///   [0] speed  [1] zoom  [2] trail  [3] flame_brightness
