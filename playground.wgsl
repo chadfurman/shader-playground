@@ -3,34 +3,23 @@
 // Flame: reads compute histogram, log-density tonemapping
 // Background: KIFS fractal runs per-pixel in fragment shader
 // Both blend with feedback for persistence.
-//
-// Param layout (from FlameGenome):
-//   [0]  speed
-//   [1]  zoom (used by compute shader)
-//   [2]  trail persistence
-//   [3]  flame brightness
-//   [4]  KIFS fold angle
-//   [5]  KIFS scale
-//   [6]  KIFS brightness
-//   [7]  drift_speed (used by compute shader)
-//   [8+] transform data (used by compute shader)
-//   [56] color_shift
 
 struct Uniforms {
     time: f32,
     frame: u32,
     resolution: vec2<f32>,
     mouse: vec2<f32>,
-    _pad: vec2<f32>,
-    params: array<vec4<f32>, 16>,
+    transform_count: u32,
+    _pad: u32,
+    globals: vec4<f32>,
+    kifs: vec4<f32>,
+    extra: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var prev_frame: texture_2d<f32>;
 @group(0) @binding(2) var prev_sampler: sampler;
 @group(0) @binding(3) var<storage, read> histogram: array<u32>;
-
-fn param(i: i32) -> f32 { return u.params[i / 4][i % 4]; }
 
 const PI: f32  = 3.14159265;
 const TAU: f32 = 6.28318530;
@@ -117,13 +106,13 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let uv = (pos.xy - u.resolution * 0.5) / u.resolution.y * 2.5;
     let tex_uv = pos.xy / u.resolution;
 
-    let speed        = param(0);
-    let trail        = param(2);
-    let flame_bright = param(3);
-    let kifs_fold    = param(4);
-    let kifs_scale   = param(5);
-    let kifs_bright  = param(6);
-    let color_shift = param(56);
+    let speed        = u.globals.x;
+    let trail        = u.globals.z;
+    let flame_bright = u.globals.w;
+    let kifs_fold    = u.kifs.x;
+    let kifs_scale   = u.kifs.y;
+    let kifs_bright  = u.kifs.z;
+    let color_shift  = u.extra.x;
 
     let t = u.time * speed;
 

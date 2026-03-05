@@ -29,8 +29,11 @@ struct Uniforms {
     frame: u32,
     resolution: [f32; 2],
     mouse: [f32; 2],
-    _pad: [f32; 2],
-    params: [[f32; 4]; 16],
+    transform_count: u32,
+    _pad: u32,
+    globals: [f32; 4],   // speed, zoom, trail, flame_brightness
+    kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
+    extra: [f32; 4],      // color_shift, 0, 0, 0
 }
 
 // ── File Watcher ──
@@ -105,6 +108,7 @@ struct Gpu {
     compute_bind_group: wgpu::BindGroup,
     compute_pipeline_layout: wgpu::PipelineLayout,
     histogram_buffer: wgpu::Buffer,
+    transform_buffer: wgpu::Buffer,
 }
 
 impl Gpu {
@@ -160,6 +164,14 @@ impl Gpu {
             config.height,
         );
 
+        // Initial transform buffer (6 transforms * 12 floats * 4 bytes)
+        let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("transforms"),
+            size: (6 * 12 * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         // ── Render bind group layout (uniform + prev_frame + sampler + histogram read) ──
         let bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -209,7 +221,7 @@ impl Gpu {
                 ],
             });
 
-        // ── Compute bind group layout (histogram rw + uniform) ──
+        // ── Compute bind group layout (histogram rw + uniform + transforms) ──
         let compute_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("compute"),
@@ -229,6 +241,16 @@ impl Gpu {
                         visibility: wgpu::ShaderStages::COMPUTE,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
                             has_dynamic_offset: false,
                             min_binding_size: None,
                         },
@@ -291,6 +313,7 @@ impl Gpu {
             &compute_bind_group_layout,
             &histogram_buffer,
             &uniform_buffer,
+            &transform_buffer,
         );
 
         Self {
@@ -313,6 +336,7 @@ impl Gpu {
             compute_bind_group,
             compute_pipeline_layout,
             histogram_buffer,
+            transform_buffer,
         }
     }
 
@@ -356,6 +380,17 @@ impl Gpu {
         );
     }
 
+    fn resize_transform_buffer(&mut self, num_transforms: usize) {
+        let size = (num_transforms.max(1) * 12 * 4) as u64;
+        self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("transforms"),
+            size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.rebuild_bind_groups();
+    }
+
     fn rebuild_bind_groups(&mut self) {
         self.bind_group_a = create_render_bind_group(
             &self.device,
@@ -378,6 +413,7 @@ impl Gpu {
             &self.compute_bind_group_layout,
             &self.histogram_buffer,
             &self.uniform_buffer,
+            &self.transform_buffer,
         );
     }
 
@@ -610,6 +646,7 @@ fn create_compute_bind_group(
     layout: &wgpu::BindGroupLayout,
     histogram: &wgpu::Buffer,
     uniform_buffer: &wgpu::Buffer,
+    transform_buffer: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("compute"),
@@ -622,6 +659,10 @@ fn create_compute_bind_group(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: transform_buffer.as_entire_binding(),
             },
         ],
     })
@@ -994,13 +1035,6 @@ impl ApplicationHandler for App {
                     self.params[i] += (self.target_params[i] - self.params[i]) * rate;
                 }
 
-                let mut flat_params = [[0.0f32; 4]; 16];
-                for i in 0..16 {
-                    for j in 0..4 {
-                        flat_params[i][j] = self.params[i * 4 + j];
-                    }
-                }
-
                 let uniforms = Uniforms {
                     time: self.start.elapsed().as_secs_f32(),
                     frame: self.frame,
@@ -1009,9 +1043,21 @@ impl ApplicationHandler for App {
                         gpu.config.height as f32,
                     ],
                     mouse: self.mouse,
-                    _pad: [0.0; 2],
-                    params: flat_params,
+                    transform_count: 4, // temporarily hardcoded until Task 3
+                    _pad: 0,
+                    globals: [self.params[0], self.params[1], self.params[2], self.params[3]],
+                    kifs: [self.params[4], self.params[5], self.params[6], self.params[7]],
+                    extra: [self.params[56], 0.0, 0.0, 0.0], // color_shift was at index 56
                 };
+
+                // Extract transform data from old flat params (4 transforms at indices 8..56)
+                let mut xf_data = vec![0.0f32; 4 * 12];
+                for t in 0..4 {
+                    for f in 0..12 {
+                        xf_data[t * 12 + f] = self.params[8 + t * 12 + f];
+                    }
+                }
+                gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(&xf_data));
 
                 gpu.render(&uniforms);
                 self.frame += 1;
