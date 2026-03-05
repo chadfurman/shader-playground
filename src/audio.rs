@@ -238,7 +238,7 @@ impl AudioProcessor {
             features: AudioFeatures::default(),
             peak_energy: 0.01,
             auto_gain: 1.0,
-            prev_energy_gained: 0.0,
+            prev_energy_gained: 0.01,
             sample_buf: Vec::with_capacity(BUFFER_SIZE),
         }
     }
