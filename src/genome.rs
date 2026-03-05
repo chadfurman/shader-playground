@@ -46,13 +46,13 @@ pub struct FlameGenome {
 impl FlameGenome {
     /// Flatten to [f32; 64] for the uniform buffer.
     /// Layout:
-    ///   [0..3]   global: speed, zoom, trail, flame_brightness
-    ///   [4..6]   kifs: fold_angle, scale, brightness
+    ///   [0..=3]  global: speed, zoom, trail, flame_brightness
+    ///   [4..=6]  kifs: fold_angle, scale, brightness
     ///   [7]      reserved (0.0)
-    ///   [8..19]  transform 0 (12 floats)
-    ///   [20..31] transform 1
-    ///   [32..43] transform 2
-    ///   [44..55] transform 3
+    ///   [8..=19]  transform 0 (12 floats)
+    ///   [20..=31] transform 1
+    ///   [32..=43] transform 2
+    ///   [44..=55] transform 3
     pub fn flatten(&self) -> [f32; 64] {
         let mut p = [0.0f32; 64];
 
@@ -209,6 +209,7 @@ impl FlameGenome {
     }
 
     fn mutate_perturb(&mut self, rng: &mut impl Rng) {
+        if self.transforms.is_empty() { return; }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
         match rng.random_range(0..3) {
@@ -222,6 +223,7 @@ impl FlameGenome {
     }
 
     fn mutate_swap_variations(&mut self, rng: &mut impl Rng) {
+        if self.transforms.is_empty() { return; }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
         let mut vars = [
