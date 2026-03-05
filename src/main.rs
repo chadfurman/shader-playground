@@ -11,6 +11,7 @@ use winit::event_loop::EventLoop;
 use winit::window::{Window, WindowAttributes};
 
 mod genome;
+use crate::genome::FlameGenome;
 
 // ── Uniforms ──
 
@@ -675,11 +676,15 @@ struct App {
     params: [f32; 64],
     target_params: [f32; 64],
     last_frame_time: Instant,
+    genome: FlameGenome,
+    genome_history: Vec<[f32; 64]>,
+    morph_rate: f32,
 }
 
 impl App {
     fn new() -> Self {
-        let initial = load_params();
+        let genome = FlameGenome::default_genome();
+        let initial = genome.flatten();
         Self {
             gpu: None,
             window: None,
@@ -690,6 +695,9 @@ impl App {
             params: initial,
             target_params: initial,
             last_frame_time: Instant::now(),
+            genome,
+            genome_history: Vec::new(),
+            morph_rate: 5.0,
         }
     }
 
@@ -727,8 +735,11 @@ impl App {
             eprintln!("[compute] reloaded");
         }
         if reload_params {
-            self.target_params = load_params();
-            eprintln!("[params] reloaded (morphing)");
+            let override_params = load_params();
+            for i in 0..8 {
+                self.target_params[i] = override_params[i];
+            }
+            eprintln!("[params] reloaded (overriding global/kifs)");
         }
     }
 }
@@ -750,6 +761,16 @@ impl ApplicationHandler for App {
         match FileWatcher::new(&paths) {
             Ok(w) => self.watcher = Some(w),
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
+        }
+
+        // Try loading a random genome
+        let genomes_dir = project_dir().join("genomes");
+        if genomes_dir.exists() {
+            if let Ok(g) = FlameGenome::load_random(&genomes_dir) {
+                eprintln!("[genome] loaded: {}", g.name);
+                self.genome = g;
+                self.target_params = self.genome.flatten();
+            }
         }
 
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
@@ -793,7 +814,7 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = now.duration_since(self.last_frame_time).as_secs_f32();
                 self.last_frame_time = now;
-                let rate = 1.0 - (-dt * 5.0_f32).exp();
+                let rate = 1.0 - (-dt * self.morph_rate).exp();
                 for i in 0..64 {
                     self.params[i] += (self.target_params[i] - self.params[i]) * rate;
                 }
