@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +157,36 @@ impl FlameGenome {
                 },
             ],
         }
+    }
+
+    pub fn save(&self, dir: &Path) -> Result<PathBuf, String> {
+        fs::create_dir_all(dir).map_err(|e| format!("create dir: {e}"))?;
+        let filename = format!("{}.json", self.name);
+        let path = dir.join(filename);
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| format!("serialize: {e}"))?;
+        fs::write(&path, json).map_err(|e| format!("write: {e}"))?;
+        Ok(path)
+    }
+
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let json =
+            fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        serde_json::from_str(&json).map_err(|e| format!("parse {}: {e}", path.display()))
+    }
+
+    pub fn load_random(dir: &Path) -> Result<Self, String> {
+        use rand::prelude::IndexedRandom;
+        let entries: Vec<_> = fs::read_dir(dir)
+            .map_err(|e| format!("read dir: {e}"))?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+            .collect();
+        if entries.is_empty() {
+            return Err("no genomes found".into());
+        }
+        let entry = entries.choose(&mut rand::rng()).ok_or("empty")?;
+        Self::load(&entry.path())
     }
 
     pub fn mutate(&self) -> Self {
