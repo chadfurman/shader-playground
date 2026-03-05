@@ -1,6 +1,7 @@
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rustfft::{Fft, FftPlanner, num_complex::Complex};
 use std::f32::consts::PI;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Default)]
 pub struct AudioFeatures {
@@ -92,4 +93,120 @@ fn band_edge(half: usize, i: usize) -> usize {
     let frac = i as f32 / 16.0;
     let edge = (half as f32 * (2.0f32.powf(frac * 10.0) - 1.0) / 1023.0) as usize;
     edge.min(half)
+}
+
+// ── Audio Capture ──
+
+const BUFFER_SIZE: usize = 4096;
+
+pub struct AudioCapture {
+    buffer: Arc<Mutex<Vec<f32>>>,
+    _stream: cpal::Stream,
+    pub sample_rate: u32,
+}
+
+impl AudioCapture {
+    pub fn new() -> Result<Self, String> {
+        let host = cpal::default_host();
+
+        // Try loopback first (captures system audio on macOS via ProcessTap)
+        if let Some(device) = host.default_output_device() {
+            if let Ok(capture) = Self::from_output_device(&device) {
+                eprintln!("[audio] loopback capture active");
+                return Ok(capture);
+            }
+        }
+
+        // Fall back to mic
+        let device = host
+            .default_input_device()
+            .ok_or("no audio input device")?;
+        eprintln!("[audio] mic capture active");
+        Self::from_input_device(&device)
+    }
+
+    /// Build capture from an output device (loopback/system audio).
+    /// Uses the device's output config since it has no input scope.
+    fn from_output_device(device: &cpal::Device) -> Result<Self, String> {
+        let config = device
+            .default_output_config()
+            .map_err(|e| format!("output config: {e}"))?;
+        Self::build_capture(device, &config)
+    }
+
+    /// Build capture from an input device (microphone).
+    fn from_input_device(device: &cpal::Device) -> Result<Self, String> {
+        let config = device
+            .default_input_config()
+            .map_err(|e| format!("input config: {e}"))?;
+        Self::build_capture(device, &config)
+    }
+
+    fn build_capture(
+        device: &cpal::Device,
+        config: &cpal::SupportedStreamConfig,
+    ) -> Result<Self, String> {
+        let sample_rate = config.sample_rate();
+        let stream_config = config.config();
+        let buffer: Arc<Mutex<Vec<f32>>> =
+            Arc::new(Mutex::new(Vec::with_capacity(BUFFER_SIZE)));
+        let buf_clone = buffer.clone();
+
+        let stream = match config.sample_format() {
+            cpal::SampleFormat::F32 => {
+                build_stream::<f32>(device, &stream_config, buf_clone)
+            }
+            cpal::SampleFormat::I16 => {
+                build_stream::<i16>(device, &stream_config, buf_clone)
+            }
+            cpal::SampleFormat::U16 => {
+                build_stream::<u16>(device, &stream_config, buf_clone)
+            }
+            fmt => Err(format!("unsupported sample format: {fmt:?}")),
+        }?;
+
+        stream.play().map_err(|e| format!("play: {e}"))?;
+
+        Ok(Self {
+            buffer,
+            _stream: stream,
+            sample_rate,
+        })
+    }
+
+    pub fn get_samples(&self, dest: &mut Vec<f32>) {
+        if let Ok(mut buf) = self.buffer.lock() {
+            dest.clear();
+            dest.extend_from_slice(&buf);
+            buf.clear();
+        }
+    }
+}
+
+fn build_stream<T: cpal::SizedSample + cpal::Sample>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    buffer: Arc<Mutex<Vec<f32>>>,
+) -> Result<cpal::Stream, String>
+where
+    f32: cpal::FromSample<T>,
+{
+    device
+        .build_input_stream(
+            config,
+            move |data: &[T], _: &cpal::InputCallbackInfo| {
+                if let Ok(mut buf) = buffer.lock() {
+                    for &sample in data {
+                        buf.push(<f32 as cpal::FromSample<T>>::from_sample_(sample));
+                    }
+                    if buf.len() > BUFFER_SIZE {
+                        let excess = buf.len() - BUFFER_SIZE;
+                        buf.drain(..excess);
+                    }
+                }
+            },
+            |err| eprintln!("[audio] stream error: {err}"),
+            None,
+        )
+        .map_err(|e| format!("build stream: {e}"))
 }
