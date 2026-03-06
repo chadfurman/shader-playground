@@ -102,86 +102,88 @@ impl FlameGenome {
             kifs: KifsParams {
                 fold_angle: 0.62,
                 scale: 1.8,
-                brightness: 0.3,
+                brightness: 0.15, // lower to prevent whitewash
             },
+            // Electric Sheep-inspired: each transform is a specialist
+            // with one dominant variation, varied weights, and wide offsets
             transforms: vec![
-                FlameTransform {
-                    weight: 0.20,
+                FlameTransform { // dominant sinusoidal — wispy tendrils
+                    weight: 0.35,
                     angle: 0.6,
-                    scale: 0.65,
-                    offset: [1.0, 0.4],
+                    scale: 0.45,
+                    offset: [2.5, 0.8],
                     color: 0.0,
-                    linear: 0.0,
-                    sinusoidal: 0.5,
+                    linear: 0.1,
+                    sinusoidal: 0.9,
                     spherical: 0.0,
-                    swirl: 0.5,
+                    swirl: 0.0,
                     horseshoe: 0.0,
                     handkerchief: 0.0,
                 },
-                FlameTransform {
-                    weight: 0.20,
-                    angle: -1.0,
+                FlameTransform { // dominant spherical — inversion, pulls inward
+                    weight: 0.25,
+                    angle: -1.3,
+                    scale: 0.30,
+                    offset: [-1.8, 2.1],
+                    color: 0.25,
+                    linear: 0.0,
+                    sinusoidal: 0.0,
+                    spherical: 0.95,
+                    swirl: 0.05,
+                    horseshoe: 0.0,
+                    handkerchief: 0.0,
+                },
+                FlameTransform { // dominant swirl — spiral arms
+                    weight: 0.15,
+                    angle: 2.2,
                     scale: 0.70,
-                    offset: [-0.8, 0.9],
-                    color: 0.33,
-                    linear: 0.0,
-                    sinusoidal: 0.0,
-                    spherical: 0.6,
-                    swirl: 0.0,
-                    horseshoe: 0.4,
-                    handkerchief: 0.0,
-                },
-                FlameTransform {
-                    weight: 0.20,
-                    angle: 1.7,
-                    scale: 0.60,
-                    offset: [-0.5, -1.0],
-                    color: 0.67,
-                    linear: 0.0,
-                    sinusoidal: 0.3,
-                    spherical: 0.0,
-                    swirl: 0.0,
-                    horseshoe: 0.0,
-                    handkerchief: 0.7,
-                },
-                FlameTransform {
-                    weight: 0.20,
-                    angle: 0.0,
-                    scale: 0.82,
-                    offset: [0.6, -0.7],
-                    color: 0.85,
-                    linear: 0.6,
-                    sinusoidal: 0.0,
-                    spherical: 0.0,
-                    swirl: 0.0,
-                    horseshoe: 0.0,
-                    handkerchief: 0.0,
-                },
-                FlameTransform {
-                    weight: 0.20,
-                    angle: -0.5,
-                    scale: 0.55,
-                    offset: [0.3, 1.2],
-                    color: 0.15,
-                    linear: 0.3,
-                    sinusoidal: 0.0,
-                    spherical: 0.4,
-                    swirl: 0.0,
-                    horseshoe: 0.3,
-                    handkerchief: 0.0,
-                },
-                FlameTransform {
-                    weight: 0.20,
-                    angle: 2.1,
-                    scale: 0.72,
-                    offset: [-1.1, 0.2],
+                    offset: [-0.3, -2.5],
                     color: 0.50,
                     linear: 0.0,
-                    sinusoidal: 0.2,
+                    sinusoidal: 0.0,
                     spherical: 0.0,
-                    swirl: 0.6,
+                    swirl: 1.0,
                     horseshoe: 0.0,
-                    handkerchief: 0.2,
+                    handkerchief: 0.0,
+                },
+                FlameTransform { // dominant linear — contractive backbone
+                    weight: 0.10,
+                    angle: 0.0,
+                    scale: 0.85,
+                    offset: [0.4, -0.2],
+                    color: 0.75,
+                    linear: 1.0,
+                    sinusoidal: 0.0,
+                    spherical: 0.0,
+                    swirl: 0.0,
+                    horseshoe: 0.0,
+                    handkerchief: 0.0,
+                },
+                FlameTransform { // dominant handkerchief — chaotic detail
+                    weight: 0.05,
+                    angle: -0.7,
+                    scale: 0.20,
+                    offset: [3.0, 1.5],
+                    color: 0.15,
+                    linear: 0.0,
+                    sinusoidal: 0.0,
+                    spherical: 0.0,
+                    swirl: 0.0,
+                    horseshoe: 0.0,
+                    handkerchief: 1.0,
+                },
+                FlameTransform { // dominant horseshoe — distant structure
+                    weight: 0.10,
+                    angle: 1.5,
+                    scale: 0.15,
+                    offset: [-2.8, -1.0],
+                    color: 0.90,
+                    linear: 0.0,
+                    sinusoidal: 0.0,
+                    spherical: 0.0,
+                    swirl: 0.0,
+                    horseshoe: 1.0,
+                    handkerchief: 0.0,
                 },
             ],
         }
@@ -256,12 +258,35 @@ impl FlameGenome {
         if self.transforms.is_empty() { return; }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
-        match rng.random_range(0..3) {
-            0 => xf.angle += rng.random_range(-0.4..0.4),
-            1 => xf.scale = (xf.scale + rng.random_range(-0.15..0.15)).clamp(0.3, 0.95),
+        match rng.random_range(0..5) {
+            0 => xf.angle += rng.random_range(-0.8..0.8),
+            1 => xf.scale = (xf.scale + rng.random_range(-0.3..0.3)).clamp(0.05, 0.95),
+            2 => {
+                // Wider offset jumps for spatial spread
+                xf.offset[0] += rng.random_range(-1.5..1.5);
+                xf.offset[1] += rng.random_range(-1.5..1.5);
+            }
+            3 => {
+                // Weight redistribution — make some dominant, some subtle
+                xf.weight = (xf.weight * rng.random_range(0.3..3.0)).clamp(0.01, 0.8);
+            }
             _ => {
-                xf.offset[0] += rng.random_range(-0.4..0.4);
-                xf.offset[1] += rng.random_range(-0.4..0.4);
+                // Reinvent as specialist — one dominant variation
+                let vars = [0.0f32; 6];
+                let dominant = rng.random_range(0..6);
+                let mut v = vars;
+                v[dominant] = rng.random_range(0.7..1.0);
+                // Maybe a small secondary
+                let secondary = rng.random_range(0..6);
+                if secondary != dominant {
+                    v[secondary] = rng.random_range(0.0..0.2);
+                }
+                xf.linear = v[0];
+                xf.sinusoidal = v[1];
+                xf.spherical = v[2];
+                xf.swirl = v[3];
+                xf.horseshoe = v[4];
+                xf.handkerchief = v[5];
             }
         }
     }
@@ -312,15 +337,36 @@ impl FlameGenome {
 
     fn mutate_add_transform(&mut self, rng: &mut impl Rng) {
         if self.transforms.is_empty() { return; }
-        // Clone a random existing transform with perturbations
-        let source_idx = rng.random_range(0..self.transforms.len());
-        let mut new_xf = self.transforms[source_idx].clone();
-        new_xf.weight = 0.05; // start small, fades in via morph
-        new_xf.angle += rng.random_range(-0.3..0.3);
-        new_xf.scale = (new_xf.scale + rng.random_range(-0.1..0.1)).clamp(0.3, 0.95);
-        new_xf.offset[0] += rng.random_range(-0.3..0.3);
-        new_xf.offset[1] += rng.random_range(-0.3..0.3);
-        new_xf.color = rng.random_range(0.0..1.0);
+        // 50% clone-and-perturb, 50% fresh specialist
+        let new_xf = if rng.random_range(0.0..1.0) < 0.5 {
+            let source_idx = rng.random_range(0..self.transforms.len());
+            let mut xf = self.transforms[source_idx].clone();
+            xf.weight = 0.05;
+            xf.angle += rng.random_range(-0.8..0.8);
+            xf.scale = (xf.scale + rng.random_range(-0.3..0.3)).clamp(0.05, 0.95);
+            xf.offset[0] += rng.random_range(-2.0..2.0);
+            xf.offset[1] += rng.random_range(-2.0..2.0);
+            xf.color = rng.random_range(0.0..1.0);
+            xf
+        } else {
+            // Fresh specialist with one dominant variation
+            let mut vars = [0.0f32; 6];
+            let dominant = rng.random_range(0..6);
+            vars[dominant] = rng.random_range(0.7..1.0);
+            FlameTransform {
+                weight: 0.05,
+                angle: rng.random_range(-std::f32::consts::PI..std::f32::consts::PI),
+                scale: rng.random_range(0.1..0.85),
+                offset: [rng.random_range(-3.0..3.0), rng.random_range(-3.0..3.0)],
+                color: rng.random_range(0.0..1.0),
+                linear: vars[0],
+                sinusoidal: vars[1],
+                spherical: vars[2],
+                swirl: vars[3],
+                horseshoe: vars[4],
+                handkerchief: vars[5],
+            }
+        };
         self.transforms.push(new_xf);
     }
 

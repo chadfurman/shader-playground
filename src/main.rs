@@ -778,6 +778,20 @@ impl App {
         }
     }
 
+    /// Set morph targets from current genome, resize GPU buffer if needed.
+    fn apply_genome_targets(&mut self) {
+        self.target_globals = self.genome.flatten_globals();
+        self.target_xf_params = self.genome.flatten_transforms();
+        // num_transforms = max of current and target so dying transforms fade out
+        let max_xf = (self.xf_params.len().max(self.target_xf_params.len())) / 12;
+        if max_xf != self.num_transforms {
+            self.num_transforms = max_xf;
+            if let Some(gpu) = &mut self.gpu {
+                gpu.resize_transform_buffer(self.num_transforms);
+            }
+        }
+    }
+
     fn check_file_changes(&mut self) {
         let watcher = match &self.watcher {
             Some(w) => w,
@@ -866,16 +880,10 @@ impl ApplicationHandler for App {
             if let Ok(g) = FlameGenome::load_random(&genomes_dir) {
                 eprintln!("[genome] loaded: {}", g.name);
                 self.genome = g;
-                let g_globals = self.genome.flatten_globals();
-                let g_xf = self.genome.flatten_transforms();
-                self.globals = g_globals;
-                self.target_globals = g_globals;
-                self.xf_params = g_xf.clone();
-                self.target_xf_params = g_xf;
-                self.num_transforms = self.genome.transforms.len();
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.resize_transform_buffer(self.num_transforms);
-                }
+                // Snap (no morph) on initial load
+                self.globals = self.genome.flatten_globals();
+                self.xf_params = self.genome.flatten_transforms();
+                self.apply_genome_targets();
             }
         }
 
@@ -925,28 +933,14 @@ impl ApplicationHandler for App {
                     }
                     self.genome = self.genome.mutate();
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                    self.target_globals = self.genome.flatten_globals();
-                    self.target_xf_params = self.genome.flatten_transforms();
-                    if self.genome.transforms.len() != self.num_transforms {
-                        self.num_transforms = self.genome.transforms.len();
-                        if let Some(gpu) = &mut self.gpu {
-                            gpu.resize_transform_buffer(self.num_transforms);
-                        }
-                    }
+                    self.apply_genome_targets();
                     eprintln!("[evolve] → {}", self.genome.name);
                 }
                 Key::Named(NamedKey::Backspace) => {
                     // Revert to previous genome
                     if let Some(prev) = self.genome_history.pop() {
                         self.genome = prev;
-                        self.target_globals = self.genome.flatten_globals();
-                        self.target_xf_params = self.genome.flatten_transforms();
-                        if self.genome.transforms.len() != self.num_transforms {
-                            self.num_transforms = self.genome.transforms.len();
-                            if let Some(gpu) = &mut self.gpu {
-                                gpu.resize_transform_buffer(self.num_transforms);
-                            }
-                        }
+                        self.apply_genome_targets();
                         eprintln!("[revert] back to previous");
                     }
                 }
@@ -968,14 +962,7 @@ impl ApplicationHandler for App {
                                 }
                                 eprintln!("[load] {}", g.name);
                                 self.genome = g;
-                                self.target_globals = self.genome.flatten_globals();
-                                self.target_xf_params = self.genome.flatten_transforms();
-                                if self.genome.transforms.len() != self.num_transforms {
-                                    self.num_transforms = self.genome.transforms.len();
-                                    if let Some(gpu) = &mut self.gpu {
-                                        gpu.resize_transform_buffer(self.num_transforms);
-                                    }
-                                }
+                                self.apply_genome_targets();
                             }
                             Err(e) => eprintln!("[load] error: {e}"),
                         }
@@ -1049,14 +1036,7 @@ impl ApplicationHandler for App {
                         }
                         self.genome = self.genome.mutate();
                         self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                        self.target_globals = self.genome.flatten_globals();
-                        self.target_xf_params = self.genome.flatten_transforms();
-                        if self.genome.transforms.len() != self.num_transforms {
-                            self.num_transforms = self.genome.transforms.len();
-                            if let Some(gpu) = &mut self.gpu {
-                                gpu.resize_transform_buffer(self.num_transforms);
-                            }
-                        }
+                        self.apply_genome_targets();
                         eprintln!("[auto-evolve] → {}", self.genome.name);
                     }
 

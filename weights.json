@@ -51,8 +51,8 @@
   },
   "energy": {
     "flame_brightness": 0.9,
-    "kifs_scale": 0.2,
-    "kifs_brightness": 0.4,
+    "kifs_scale": 0.1,
+    "kifs_brightness": 0.15,
     "drift_speed": 1.8,
     "xfN_weight": 0.3,
     "xfN_scale": 0.2,
