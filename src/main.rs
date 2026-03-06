@@ -866,8 +866,12 @@ impl ApplicationHandler for App {
             if let Ok(g) = FlameGenome::load_random(&genomes_dir) {
                 eprintln!("[genome] loaded: {}", g.name);
                 self.genome = g;
-                self.target_globals = self.genome.flatten_globals();
-                self.target_xf_params = self.genome.flatten_transforms();
+                let g_globals = self.genome.flatten_globals();
+                let g_xf = self.genome.flatten_transforms();
+                self.globals = g_globals;
+                self.target_globals = g_globals;
+                self.xf_params = g_xf.clone();
+                self.target_xf_params = g_xf;
                 self.num_transforms = self.genome.transforms.len();
                 if let Some(gpu) = &mut self.gpu {
                     gpu.resize_transform_buffer(self.num_transforms);
@@ -1105,7 +1109,9 @@ impl ApplicationHandler for App {
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
-                gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(&self.xf_params));
+                let xf_write_len = self.num_transforms * 12;
+                let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
+                gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
 
                 gpu.render();
                 self.frame += 1;
