@@ -583,4 +583,22 @@ mod tests {
         density.prune(9.5);
         assert_eq!(density.beats_in_window(), 0);
     }
+
+    #[test]
+    fn energy_all_equal() {
+        let e = compute_energy(0.5, 0.5, 0.5, 0.5);
+        assert!((e - 0.5).abs() < 0.01, "expected 0.5, got {e}");
+    }
+
+    #[test]
+    fn energy_beat_dominant() {
+        let e = compute_energy(0.0, 0.0, 0.0, 1.0);
+        assert!((e - 0.25).abs() < 0.01, "expected 0.25, got {e}");
+    }
+
+    #[test]
+    fn energy_spectral_dominant() {
+        let e = compute_energy(1.0, 1.0, 1.0, 0.0);
+        assert!((e - 0.75).abs() < 0.01, "expected 0.75, got {e}");
+    }
 }
