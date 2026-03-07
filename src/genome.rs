@@ -123,7 +123,7 @@ impl FlameGenome {
         // g[7] = drift_speed (set by weights, default 0)
         // g[8] = color_shift (set by weights, default 0)
         g[9] = 0.7;  // vibrancy base
-        g[10] = 0.15;  // bloom_intensity base
+        g[10] = 0.05;  // bloom_intensity base (low — feeds back every frame)
         g
     }
 

@@ -170,9 +170,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 
     // Tonemap: soft clamp to prevent blowout
     col = col / (col + vec3(1.0));  // Reinhard
-
-    // Gamma
-    col = pow(max(col, vec3(0.0)), vec3(1.0 / 2.2));
+    // sRGB texture format handles gamma — no explicit pow needed
 
     return vec4(col, 1.0);
 }
