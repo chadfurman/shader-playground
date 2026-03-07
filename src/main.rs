@@ -30,10 +30,10 @@ struct Uniforms {
     resolution: [f32; 2],
     mouse: [f32; 2],
     transform_count: u32,
-    _pad: u32,
+    has_final_xform: u32,
     globals: [f32; 4],   // speed, zoom, trail, flame_brightness
     kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
-    extra: [f32; 4],      // color_shift, vibrancy, 0, 0
+    extra: [f32; 4],      // color_shift, vibrancy, bloom_intensity, symmetry
 }
 
 // ── File Watcher ──
@@ -753,7 +753,7 @@ impl App {
         let genome = FlameGenome::default_genome();
         let initial_globals = genome.flatten_globals();
         let initial_xf = genome.flatten_transforms();
-        let num_transforms = genome.transforms.len();
+        let num_transforms = genome.total_buffer_transforms();
         Self {
             gpu: None,
             window: None,
@@ -787,7 +787,7 @@ impl App {
         self.target_globals = self.genome.flatten_globals();
         self.target_xf_params = self.genome.flatten_transforms();
         // num_transforms = max of current and target so dying transforms fade out
-        let max_xf = (self.xf_params.len().max(self.target_xf_params.len())) / 12;
+        let max_xf = (self.xf_params.len().max(self.target_xf_params.len())) / 32;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(gpu) = &mut self.gpu {
@@ -1109,11 +1109,11 @@ impl ApplicationHandler for App {
                         gpu.config.height as f32,
                     ],
                     mouse: self.mouse,
-                    transform_count: self.num_transforms as u32,
-                    _pad: 0,
+                    transform_count: self.genome.transform_count(),
+                    has_final_xform: if self.genome.final_transform.is_some() { 1 } else { 0 },
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
-                    extra: [self.globals[8], self.globals[9], self.globals[10], 0.0],
+                    extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

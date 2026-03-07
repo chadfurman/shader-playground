@@ -97,7 +97,13 @@ pub struct FlameGenome {
     pub global: GlobalParams,
     pub kifs: KifsParams,
     pub transforms: Vec<FlameTransform>,
+    #[serde(default)]
+    pub final_transform: Option<FlameTransform>,
+    #[serde(default = "default_symmetry")]
+    pub symmetry: i32,
 }
+
+fn default_symmetry() -> i32 { 1 }
 
 impl FlameGenome {
     /// Pack global params into a fixed [f32; 12] for the uniform buffer.
@@ -127,47 +133,61 @@ impl FlameGenome {
     /// julia, polar, disc, rings, bubble, fisheye, exponential, spiral,
     /// diamond, bent, waves, popcorn, fan, eyefish, cross, tangent,
     /// cosine, blob, noise, curl.
+    /// If a final_transform is present, it is appended after the regular transforms.
     pub fn flatten_transforms(&self) -> Vec<f32> {
-        let mut t = Vec::with_capacity(self.transforms.len() * 32);
+        let total = self.transforms.len() + if self.final_transform.is_some() { 1 } else { 0 };
+        let mut t = Vec::with_capacity(total * 32);
         for xf in &self.transforms {
-            t.push(xf.weight);       // 0
-            t.push(xf.angle);        // 1
-            t.push(xf.scale);        // 2
-            t.push(xf.offset[0]);    // 3
-            t.push(xf.offset[1]);    // 4
-            t.push(xf.color);        // 5
-            t.push(xf.linear);       // 6
-            t.push(xf.sinusoidal);   // 7
-            t.push(xf.spherical);    // 8
-            t.push(xf.swirl);        // 9
-            t.push(xf.horseshoe);    // 10
-            t.push(xf.handkerchief); // 11
-            t.push(xf.julia);        // 12
-            t.push(xf.polar);        // 13
-            t.push(xf.disc);         // 14
-            t.push(xf.rings);        // 15
-            t.push(xf.bubble);       // 16
-            t.push(xf.fisheye);      // 17
-            t.push(xf.exponential);  // 18
-            t.push(xf.spiral);       // 19
-            t.push(xf.diamond);      // 20
-            t.push(xf.bent);         // 21
-            t.push(xf.waves);        // 22
-            t.push(xf.popcorn);      // 23
-            t.push(xf.fan);          // 24
-            t.push(xf.eyefish);      // 25
-            t.push(xf.cross);        // 26
-            t.push(xf.tangent);      // 27
-            t.push(xf.cosine);       // 28
-            t.push(xf.blob);         // 29
-            t.push(xf.noise);        // 30
-            t.push(xf.curl);         // 31
+            Self::push_transform(&mut t, xf);
+        }
+        if let Some(ref fxf) = self.final_transform {
+            Self::push_transform(&mut t, fxf);
         }
         t
     }
 
+    fn push_transform(t: &mut Vec<f32>, xf: &FlameTransform) {
+        t.push(xf.weight);       // 0
+        t.push(xf.angle);        // 1
+        t.push(xf.scale);        // 2
+        t.push(xf.offset[0]);    // 3
+        t.push(xf.offset[1]);    // 4
+        t.push(xf.color);        // 5
+        t.push(xf.linear);       // 6
+        t.push(xf.sinusoidal);   // 7
+        t.push(xf.spherical);    // 8
+        t.push(xf.swirl);        // 9
+        t.push(xf.horseshoe);    // 10
+        t.push(xf.handkerchief); // 11
+        t.push(xf.julia);        // 12
+        t.push(xf.polar);        // 13
+        t.push(xf.disc);         // 14
+        t.push(xf.rings);        // 15
+        t.push(xf.bubble);       // 16
+        t.push(xf.fisheye);      // 17
+        t.push(xf.exponential);  // 18
+        t.push(xf.spiral);       // 19
+        t.push(xf.diamond);      // 20
+        t.push(xf.bent);         // 21
+        t.push(xf.waves);        // 22
+        t.push(xf.popcorn);      // 23
+        t.push(xf.fan);          // 24
+        t.push(xf.eyefish);      // 25
+        t.push(xf.cross);        // 26
+        t.push(xf.tangent);      // 27
+        t.push(xf.cosine);       // 28
+        t.push(xf.blob);         // 29
+        t.push(xf.noise);        // 30
+        t.push(xf.curl);         // 31
+    }
+
     pub fn transform_count(&self) -> u32 {
         self.transforms.len() as u32
+    }
+
+    /// Total transforms in the buffer (regular + optional final).
+    pub fn total_buffer_transforms(&self) -> usize {
+        self.transforms.len() + if self.final_transform.is_some() { 1 } else { 0 }
     }
 
     /// Create the default genome matching current hardcoded transforms.
@@ -297,6 +317,8 @@ impl FlameGenome {
                     cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
                 },
             ],
+            final_transform: None,
+            symmetry: 1,
         }
     }
 
