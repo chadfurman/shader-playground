@@ -109,48 +109,43 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let speed        = u.globals.x;
     let trail        = u.globals.z;
     let flame_bright = u.globals.w;
-    let kifs_fold    = u.kifs.x;
-    let kifs_scale   = u.kifs.y;
-    let kifs_bright  = u.kifs.z;
-    let color_shift  = u.extra.x;
-
     let t = u.time * speed;
 
-    // ── KIFS background layer — disabled (boring kaleidoscope) ──
+    // ── KIFS background layer — disabled ──
     let bg = vec3(0.0);
 
-    // ── Flame foreground (from compute histogram) ──
-    let buf_idx = (px.y * w + px.x) * 2u;
+    // ── Flame foreground (from RGBA histogram) ──
+    let buf_idx = (px.y * w + px.x) * 4u;
     let density = f32(histogram[buf_idx]);
-    let color_sum = f32(histogram[buf_idx + 1u]);
+    let acc_r = f32(histogram[buf_idx + 1u]);
+    let acc_g = f32(histogram[buf_idx + 2u]);
+    let acc_b = f32(histogram[buf_idx + 3u]);
 
-    // Log-density with soft cap to prevent blowout in overlapping cores
-    let log_d = min(log(1.0 + density) / 5.0, 1.2);
-    let avg_color = select(0.5, color_sum / max(density * 1000.0, 1.0), density > 0.0);
+    // Recover average color from accumulated RGB
+    let avg_color = select(
+        vec3(0.0),
+        vec3(acc_r, acc_g, acc_b) / max(density * 1000.0, 1.0),
+        density > 0.0
+    );
 
-    // Sample neighbors for density gradient (edge detection for volume feel)
-    let d_right = f32(histogram[((px.y * w + min(px.x + 1u, w - 1u)) * 2u)]);
-    let d_up    = f32(histogram[((min(px.y + 1u, u32(u.resolution.y) - 1u) * w + px.x) * 2u)]);
-    let grad = length(vec2(density - d_right, density - d_up));
-    let edge = smoothstep(0.0, 50.0, grad);
+    // Log-density alpha (no hard cap — natural falloff)
+    let alpha = log(1.0 + density * flame_bright) / (log(1.0 + density * flame_bright) + 4.0);
 
-    // Volumetric look: edges bright+sharp, cores darker+richer
-    let core_color = palette(avg_color + u.time * 0.02 + color_shift);
-    let brightness = mix(log_d * 0.6, log_d * 1.2, edge);
-    let flame = core_color * brightness * flame_bright;
+    // Flame color
+    let flame = avg_color * alpha;
 
-    // ── Combine: additive blend ──
+    // ── Combine ──
     var col = flame + bg;
-
-    // Gamma
-    col = pow(max(col, vec3(0.0)), vec3(0.85));
 
     // ── Feedback persistence ──
     let prev = textureSample(prev_frame, prev_sampler, tex_uv).rgb;
     col = col + prev * trail;
 
-    // Log tonemap (handles both layers gracefully)
-    col = log(1.0 + col * 3.0) / log(4.0);
+    // Tonemap: soft clamp to prevent blowout
+    col = col / (col + vec3(1.0));  // Reinhard
+
+    // Gamma
+    col = pow(max(col, vec3(0.0)), vec3(1.0 / 2.2));
 
     return vec4(col, 1.0);
 }
