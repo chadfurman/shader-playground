@@ -466,4 +466,86 @@ mod tests {
         let max = last_30.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         assert!(max - min < 0.1, "oscillating: min={min}, max={max}");
     }
+
+    #[test]
+    fn beat_density_no_beats() {
+        let density = BeatDensity::new();
+        assert_eq!(density.value(), 0.0);
+    }
+
+    #[test]
+    fn beat_density_steady_120bpm() {
+        let mut density = BeatDensity::new();
+        // 120 BPM = 2 beats/sec. Simulate 8 seconds.
+        for i in 0..16 {
+            let time = i as f32 * 0.5; // beat every 0.5s
+            density.record_beat(time);
+            density.prune(time);
+        }
+        // 16 beats in window / 24 = 0.667
+        let val = density.value();
+        assert!((val - 0.667).abs() < 0.05, "expected ~0.67, got {val}");
+    }
+
+    #[test]
+    fn beat_density_steady_180bpm() {
+        let mut density = BeatDensity::new();
+        // 180 BPM = 3 beats/sec. Simulate 8 seconds.
+        for i in 0..24 {
+            let time = i as f32 / 3.0;
+            density.record_beat(time);
+            density.prune(time);
+        }
+        let val = density.value();
+        assert!((val - 1.0).abs() < 0.05, "expected ~1.0, got {val}");
+    }
+
+    #[test]
+    fn beat_density_beats_then_silence() {
+        let mut density = BeatDensity::new();
+        // 2 beats/sec for 4 seconds
+        for i in 0..8 {
+            let time = i as f32 * 0.5;
+            density.record_beat(time);
+        }
+        density.prune(4.0);
+        let during = density.value();
+        assert!(during > 0.3, "expected beats during, got {during}");
+
+        // 10 seconds later — all beats older than 8s
+        density.prune(12.0);
+        let after = density.value();
+        assert!(after < 0.01, "expected ~0 after silence, got {after}");
+    }
+
+    #[test]
+    fn beat_density_sparse() {
+        let mut density = BeatDensity::new();
+        // 1 beat every 2 seconds for 8 seconds = 4 beats
+        for i in 0..4 {
+            let time = i as f32 * 2.0;
+            density.record_beat(time);
+        }
+        density.prune(8.0);
+        // 4 / 24 = 0.167
+        let val = density.value();
+        assert!((val - 0.167).abs() < 0.05, "expected ~0.17, got {val}");
+    }
+
+    #[test]
+    fn beat_density_window_boundary() {
+        let mut density = BeatDensity::new();
+        density.record_beat(0.0);
+        density.record_beat(1.0);
+        density.prune(1.0);
+        assert_eq!(density.beats_in_window(), 2);
+
+        // 8.5s later — first beat should be pruned, second still in window
+        density.prune(8.5);
+        assert_eq!(density.beats_in_window(), 1);
+
+        // 9.5s — both pruned
+        density.prune(9.5);
+        assert_eq!(density.beats_in_window(), 0);
+    }
 }
