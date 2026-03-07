@@ -98,11 +98,15 @@ struct Gpu {
     bind_group_a: wgpu::BindGroup,
     bind_group_b: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
+    frame_a_tex: wgpu::Texture,
     frame_a: wgpu::TextureView,
+    frame_b_tex: wgpu::Texture,
     frame_b: wgpu::TextureView,
     ping: bool,
     pipeline_layout: wgpu::PipelineLayout,
     sampler: wgpu::Sampler,
+    crossfade_tex: wgpu::Texture,
+    crossfade_view: wgpu::TextureView,
     // Compute pipeline (fractal flame)
     compute_pipeline: wgpu::ComputePipeline,
     compute_bind_group_layout: wgpu::BindGroupLayout,
@@ -219,6 +223,16 @@ impl Gpu {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -274,8 +288,10 @@ impl Gpu {
                 immediate_size: 0,
             });
 
-        let (frame_a, frame_b) =
+        let (frame_a_tex, frame_a, frame_b_tex, frame_b) =
             create_frame_textures(&device, config.width, config.height, format);
+        let (crossfade_tex, crossfade_view) =
+            create_crossfade_texture(&device, config.width, config.height, format);
 
         let shader_src = load_shader_source();
         let pipeline = create_render_pipeline(
@@ -299,6 +315,7 @@ impl Gpu {
             &frame_b,
             &sampler,
             &histogram_buffer,
+            &crossfade_view,
         );
         let bind_group_b = create_render_bind_group(
             &device,
@@ -307,6 +324,7 @@ impl Gpu {
             &frame_a,
             &sampler,
             &histogram_buffer,
+            &crossfade_view,
         );
 
         let compute_bind_group = create_compute_bind_group(
@@ -327,11 +345,15 @@ impl Gpu {
             bind_group_a,
             bind_group_b,
             uniform_buffer,
+            frame_a_tex,
             frame_a,
+            frame_b_tex,
             frame_b,
             ping: true,
             pipeline_layout,
             sampler,
+            crossfade_tex,
+            crossfade_view,
             compute_pipeline,
             compute_bind_group_layout,
             compute_bind_group,
@@ -349,14 +371,24 @@ impl Gpu {
         self.config.height = h;
         self.surface.configure(&self.device, &self.config);
 
-        let (a, b) = create_frame_textures(
+        let (a_tex, a, b_tex, b) = create_frame_textures(
             &self.device,
             w,
             h,
             self.config.format,
         );
+        let (cf_tex, cf_view) = create_crossfade_texture(
+            &self.device,
+            w,
+            h,
+            self.config.format,
+        );
+        self.frame_a_tex = a_tex;
         self.frame_a = a;
+        self.frame_b_tex = b_tex;
         self.frame_b = b;
+        self.crossfade_tex = cf_tex;
+        self.crossfade_view = cf_view;
 
         // Recreate histogram for new dimensions
         self.histogram_buffer = create_histogram_buffer(&self.device, w, h);
@@ -400,6 +432,7 @@ impl Gpu {
             &self.frame_b,
             &self.sampler,
             &self.histogram_buffer,
+            &self.crossfade_view,
         );
         self.bind_group_b = create_render_bind_group(
             &self.device,
@@ -408,6 +441,7 @@ impl Gpu {
             &self.frame_a,
             &self.sampler,
             &self.histogram_buffer,
+            &self.crossfade_view,
         );
         self.compute_bind_group = create_compute_bind_group(
             &self.device,
@@ -580,7 +614,7 @@ fn create_frame_textures(
     w: u32,
     h: u32,
     format: wgpu::TextureFormat,
-) -> (wgpu::TextureView, wgpu::TextureView) {
+) -> (wgpu::Texture, wgpu::TextureView, wgpu::Texture, wgpu::TextureView) {
     let desc = wgpu::TextureDescriptor {
         label: Some("frame"),
         size: wgpu::Extent3d {
@@ -593,12 +627,40 @@ fn create_frame_textures(
         dimension: wgpu::TextureDimension::D2,
         format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-            | wgpu::TextureUsages::TEXTURE_BINDING,
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     };
-    let a = device.create_texture(&desc).create_view(&Default::default());
-    let b = device.create_texture(&desc).create_view(&Default::default());
-    (a, b)
+    let a = device.create_texture(&desc);
+    let a_view = a.create_view(&Default::default());
+    let b = device.create_texture(&desc);
+    let b_view = b.create_view(&Default::default());
+    (a, a_view, b, b_view)
+}
+
+fn create_crossfade_texture(
+    device: &wgpu::Device,
+    w: u32,
+    h: u32,
+    format: wgpu::TextureFormat,
+) -> (wgpu::Texture, wgpu::TextureView) {
+    let desc = wgpu::TextureDescriptor {
+        label: Some("crossfade"),
+        size: wgpu::Extent3d {
+            width: w.max(1),
+            height: h.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    };
+    let tex = device.create_texture(&desc);
+    let view = tex.create_view(&Default::default());
+    (tex, view)
 }
 
 fn create_render_bind_group(
@@ -608,6 +670,7 @@ fn create_render_bind_group(
     prev_frame: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
     histogram: &wgpu::Buffer,
+    crossfade_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("render"),
@@ -628,6 +691,10 @@ fn create_render_bind_group(
             wgpu::BindGroupEntry {
                 binding: 3,
                 resource: histogram.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::TextureView(crossfade_view),
             },
         ],
     })
