@@ -44,26 +44,35 @@
   "bass": {
     "color_shift": -0.4,
     "flame_brightness": 0.3,
-    "vibrancy": 0.15
+    "vibrancy": 0.15,
+    "xfN_spherical": 0.3,
+    "xfN_bubble": 0.25,
+    "xfN_blob": 0.2
   },
   "mids": {
-    "color_shift": 0.15
+    "color_shift": 0.15,
+    "xfN_sinusoidal": 0.2,
+    "xfN_waves": 0.15,
+    "xfN_cosine": 0.15
   },
   "highs": {
-    "color_shift": 0.3
+    "color_shift": 0.3,
+    "xfN_julia": 0.2,
+    "xfN_disc": 0.15,
+    "xfN_cross": 0.1
   },
   "energy": {
-    "flame_brightness": 0.7,
-    "drift_speed": 1.5,
+    "flame_brightness": 1.0,
+    "drift_speed": 2.0,
     "mutation_rate": 0.3,
-    "bloom_intensity": 0.3
+    "bloom_intensity": 0.5
   },
   "beat_pulse": {
-    "bloom_intensity": 0.4
+    "bloom_intensity": 0.6
   },
   "beat": {
-    "color_shift": -0.3,
-    "trail": -0.2,
+    "color_shift": -0.5,
+    "trail": -0.3,
     "mutation_rate": 0.2
   },
   "beat_accum": {
