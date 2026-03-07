@@ -841,7 +841,7 @@ impl App {
         // Randomize startup — mutate default genome so every launch is unique
         let mut genome = FlameGenome::default_genome();
         for _ in 0..3 {
-            genome = genome.mutate();
+            genome = genome.mutate(&AudioFeatures::default());
         }
         let initial_globals = genome.flatten_globals();
         let initial_xf = genome.flatten_transforms();
@@ -1035,7 +1035,7 @@ impl ApplicationHandler for App {
                     if self.genome_history.len() > 10 {
                         self.genome_history.remove(0);
                     }
-                    self.genome = self.genome.mutate();
+                    self.genome = self.genome.mutate(&self.audio_features);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.apply_genome_targets();
                     eprintln!("[evolve] → {}", self.genome.name);
@@ -1175,7 +1175,7 @@ impl ApplicationHandler for App {
                         if self.genome_history.len() > 10 {
                             self.genome_history.remove(0);
                         }
-                        self.genome = self.genome.mutate();
+                        self.genome = self.genome.mutate(&self.audio_features);
                         self.last_mutation_time = self.start.elapsed().as_secs_f32();
                         self.apply_genome_targets();
                         eprintln!("[auto-evolve] → {}", self.genome.name);

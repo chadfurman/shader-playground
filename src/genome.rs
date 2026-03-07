@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+use crate::audio::AudioFeatures;
+
 const VARIATION_COUNT: usize = 26;
 
 // "Orby" variations that produce round/spherical/blobby shapes —
@@ -17,6 +19,12 @@ const ORBY_VARIATIONS: [usize; 7] = [
     19, // eyefish
     23, // blob
 ];
+
+// Variation groups biased by audio frequency content
+const BASS_VARIATIONS: [usize; 4] = [2, 10, 23, 11];   // spherical, bubble, blob, fisheye
+const MIDS_VARIATIONS: [usize; 4] = [1, 16, 22, 5];    // sinusoidal, waves, cosine, handkerchief
+const HIGHS_VARIATIONS: [usize; 5] = [6, 8, 20, 21, 14]; // julia, disc, cross, tangent, diamond
+const BEAT_VARIATIONS: [usize; 3] = [13, 3, 7];          // spiral, swirl, polar
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct FlameTransform {
@@ -123,6 +131,30 @@ fn biased_variation_pick(rng: &mut impl Rng) -> usize {
         ORBY_VARIATIONS[rng.random_range(0..ORBY_VARIATIONS.len())]
     } else {
         rng.random_range(0..VARIATION_COUNT)
+    }
+}
+
+fn audio_biased_variation_pick(rng: &mut impl Rng, audio: &AudioFeatures) -> usize {
+    // Determine dominant audio character
+    let max_band = if audio.bass >= audio.mids && audio.bass >= audio.highs {
+        0 // bass
+    } else if audio.mids >= audio.highs {
+        1 // mids
+    } else {
+        2 // highs
+    };
+
+    // 40% chance to pick from audio-favored group
+    if rng.random_range(0.0..1.0) < 0.4 {
+        match max_band {
+            0 => BASS_VARIATIONS[rng.random_range(0..BASS_VARIATIONS.len())],
+            1 => MIDS_VARIATIONS[rng.random_range(0..MIDS_VARIATIONS.len())],
+            _ => HIGHS_VARIATIONS[rng.random_range(0..HIGHS_VARIATIONS.len())],
+        }
+    } else if audio.beat_accum > 0.5 && rng.random_range(0.0..1.0) < 0.3 {
+        BEAT_VARIATIONS[rng.random_range(0..BEAT_VARIATIONS.len())]
+    } else {
+        biased_variation_pick(rng)
     }
 }
 
@@ -312,20 +344,20 @@ impl FlameGenome {
         Self::load(&entry.path())
     }
 
-    pub fn mutate(&self) -> Self {
+    pub fn mutate(&self, audio: &AudioFeatures) -> Self {
         let mut child = self.clone();
         let mut rng = rand::rng();
         let num_mutations = rng.random_range(1..=3);
 
         for _ in 0..num_mutations {
             match rng.random_range(0..7) {
-                0 => child.mutate_perturb(&mut rng),
+                0 => child.mutate_perturb(&mut rng, audio),
                 1 => child.mutate_swap_variations(&mut rng),
                 2 => child.mutate_rotate_colors(&mut rng),
                 3 => child.mutate_shuffle_transforms(&mut rng),
                 4 => child.mutate_global_params(&mut rng),
-                5 => child.mutate_final_transform(&mut rng),
-                _ => child.mutate_symmetry(&mut rng),
+                5 => child.mutate_final_transform(&mut rng, audio),
+                _ => child.mutate_symmetry(&mut rng, audio),
             }
         }
 
@@ -338,9 +370,12 @@ impl FlameGenome {
         } else {
             (0.05, 0.40)
         };
+        let energy_bias = audio.energy * 0.15;
+        let add_chance = add_chance + energy_bias;
+        let remove_chance = (remove_chance - energy_bias * 0.5).max(0.02);
         let roll: f32 = rng.random();
         if roll < add_chance {
-            child.mutate_add_transform(&mut rng);
+            child.mutate_add_transform(&mut rng, audio);
         } else if roll < add_chance + remove_chance {
             child.mutate_remove_transform(&mut rng);
         }
@@ -349,7 +384,7 @@ impl FlameGenome {
         child
     }
 
-    fn mutate_perturb(&mut self, rng: &mut impl Rng) {
+    fn mutate_perturb(&mut self, rng: &mut impl Rng, audio: &AudioFeatures) {
         if self.transforms.is_empty() { return; }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
@@ -372,7 +407,7 @@ impl FlameGenome {
                 }
                 if rng.random_range(0.0..1.0) < 0.5 {
                     // Specialist: one dominant
-                    let dominant = biased_variation_pick(rng);
+                    let dominant = audio_biased_variation_pick(rng, audio);
                     xf.set_variation(dominant, rng.random_range(0.7..1.0));
                     let secondary = rng.random_range(0..VARIATION_COUNT);
                     if secondary != dominant {
@@ -383,7 +418,7 @@ impl FlameGenome {
                     // Creates area-filling attractors instead of thin curves
                     let n_vars = rng.random_range(2..=3);
                     for _ in 0..n_vars {
-                        let vi = biased_variation_pick(rng);
+                        let vi = audio_biased_variation_pick(rng, audio);
                         let cur = xf.get_variation(vi);
                         xf.set_variation(vi, cur + rng.random_range(0.3..0.7));
                     }
@@ -425,7 +460,7 @@ impl FlameGenome {
         self.global.zoom = (self.global.zoom + rng.random_range(-0.5..0.5)).clamp(1.5, 6.0);
     }
 
-    fn mutate_final_transform(&mut self, rng: &mut impl Rng) {
+    fn mutate_final_transform(&mut self, rng: &mut impl Rng, audio: &AudioFeatures) {
         match &mut self.final_transform {
             Some(fxf) => {
                 // Perturb existing final transform
@@ -436,7 +471,7 @@ impl FlameGenome {
                     for vi in 0..VARIATION_COUNT {
                         fxf.set_variation(vi, 0.0);
                     }
-                    let dominant = biased_variation_pick(rng);
+                    let dominant = audio_biased_variation_pick(rng, audio);
                     fxf.set_variation(dominant, rng.random_range(0.5..1.0));
                 }
             }
@@ -446,7 +481,7 @@ impl FlameGenome {
                     let mut fxf = FlameTransform::default();
                     fxf.scale = rng.random_range(0.5..1.5);
                     fxf.angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
-                    let dominant = biased_variation_pick(rng);
+                    let dominant = audio_biased_variation_pick(rng, audio);
                     fxf.set_variation(dominant, rng.random_range(0.5..1.0));
                     fxf.color = rng.random_range(0.0..1.0);
                     self.final_transform = Some(fxf);
@@ -455,18 +490,29 @@ impl FlameGenome {
         }
     }
 
-    fn mutate_symmetry(&mut self, rng: &mut impl Rng) {
+    fn mutate_symmetry(&mut self, rng: &mut impl Rng, audio: &AudioFeatures) {
         let roll: f32 = rng.random();
-        if roll < 0.3 {
-            self.symmetry = 1; // no symmetry
-        } else if roll < 0.7 {
-            self.symmetry = rng.random_range(2..=6); // rotational
+        if audio.beat_accum > 0.5 {
+            // Beat-dense: favor higher rotational symmetry
+            if roll < 0.15 {
+                self.symmetry = 1;
+            } else if roll < 0.65 {
+                self.symmetry = rng.random_range(3..=8);
+            } else {
+                self.symmetry = -rng.random_range(3..=6);
+            }
         } else {
-            self.symmetry = -rng.random_range(2..=4); // bilateral + rotational
+            if roll < 0.3 {
+                self.symmetry = 1; // no symmetry
+            } else if roll < 0.7 {
+                self.symmetry = rng.random_range(2..=6); // rotational
+            } else {
+                self.symmetry = -rng.random_range(2..=4); // bilateral + rotational
+            }
         }
     }
 
-    fn mutate_add_transform(&mut self, rng: &mut impl Rng) {
+    fn mutate_add_transform(&mut self, rng: &mut impl Rng, audio: &AudioFeatures) {
         if self.transforms.is_empty() { return; }
         // 50% clone-and-perturb, 50% fresh specialist
         let new_xf = if rng.random_range(0.0..1.0) < 0.5 {
@@ -480,7 +526,7 @@ impl FlameGenome {
             xf.color = rng.random_range(0.0..1.0);
             xf
         } else {
-            // Fresh specialist — 20% biased toward orby variations
+            // Fresh specialist — audio-biased variation pick
             let mut xf = FlameTransform {
                 weight: 0.05,
                 angle: rng.random_range(-std::f32::consts::PI..std::f32::consts::PI),
@@ -489,7 +535,7 @@ impl FlameGenome {
                 color: rng.random_range(0.0..1.0),
                 ..Default::default()
             };
-            let dominant = biased_variation_pick(rng);
+            let dominant = audio_biased_variation_pick(rng, audio);
             xf.set_variation(dominant, rng.random_range(0.7..1.0));
             xf
         };
