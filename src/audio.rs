@@ -583,4 +583,85 @@ mod tests {
         let e = compute_energy(1.0, 1.0, 1.0, 0.0);
         assert!((e - 0.75).abs() < 0.01, "expected 0.75, got {e}");
     }
+
+    #[test]
+    fn real_samples_normalized_range() {
+        use std::path::Path;
+
+        let sample_files = [
+            "audio_samples_1772893548.json",
+            "audio_samples_1772895443.json",
+            "audio_samples_1772895516.json",
+            "audio_samples_1772895643.json",
+            "audio_samples_1772895738.json",
+            "audio_samples_1772895939.json",
+            "audio_samples_1772896075.json",
+            "audio_samples_1772896227.json",
+        ];
+
+        for filename in &sample_files {
+            let path = Path::new(filename);
+            if !path.exists() {
+                eprintln!("skipping {filename} (not found)");
+                continue;
+            }
+            let json = std::fs::read_to_string(path).unwrap();
+            let raw_samples: Vec<AudioFeatures> = serde_json::from_str(&json).unwrap();
+
+            // Run raw values through per-band normalizers
+            let mut bass_norm = BandNormalizer::new(0.005);
+            let mut mids_norm = BandNormalizer::new(0.003);
+            let mut highs_norm = BandNormalizer::new(0.0005);
+            let dt = 0.1; // samples were recorded at 10Hz
+
+            let mut norm_bass_vals = Vec::new();
+            let mut norm_mids_vals = Vec::new();
+            let mut norm_highs_vals = Vec::new();
+
+            for sample in &raw_samples {
+                norm_bass_vals.push(bass_norm.update(sample.bass, dt));
+                norm_mids_vals.push(mids_norm.update(sample.mids, dt));
+                norm_highs_vals.push(highs_norm.update(sample.highs, dt));
+            }
+
+            // Check all outputs are in 0-1
+            for (i, &v) in norm_bass_vals.iter().enumerate() {
+                assert!(v >= 0.0 && v <= 1.01, "{filename} bass[{i}] out of range: {v}");
+            }
+            for (i, &v) in norm_mids_vals.iter().enumerate() {
+                assert!(v >= 0.0 && v <= 1.01, "{filename} mids[{i}] out of range: {v}");
+            }
+            for (i, &v) in norm_highs_vals.iter().enumerate() {
+                assert!(v >= 0.0 && v <= 1.01, "{filename} highs[{i}] out of range: {v}");
+            }
+
+            // Check p90 is in reasonable range (0.3-1.0) — skip first 20% as warmup
+            let warmup = raw_samples.len() / 5;
+            let check_p90 = |vals: &[f32], name: &str| {
+                let mut sorted: Vec<f32> = vals[warmup..].to_vec();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                if sorted.is_empty() { return; }
+                let p90 = sorted[(sorted.len() as f32 * 0.9) as usize];
+                assert!(
+                    p90 > 0.3,
+                    "{filename} {name} p90 too low: {p90} (normalization not working)"
+                );
+            };
+
+            check_p90(&norm_bass_vals, "bass");
+            check_p90(&norm_mids_vals, "mids");
+            // highs can be legitimately quiet in some genres, use lower threshold
+            let mut sorted_highs: Vec<f32> = norm_highs_vals[warmup..].to_vec();
+            sorted_highs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            if !sorted_highs.is_empty() {
+                let p90 = sorted_highs[(sorted_highs.len() as f32 * 0.9) as usize];
+                assert!(
+                    p90 > 0.1,
+                    "{filename} highs p90 too low: {p90}"
+                );
+            }
+
+            eprintln!("[OK] {filename}: {} samples processed", raw_samples.len());
+        }
+    }
 }
