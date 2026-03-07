@@ -811,14 +811,11 @@ struct App {
     frame: u32,
     mouse: [f32; 2],
     globals: [f32; 12],
-    target_globals: [f32; 12],
     xf_params: Vec<f32>,
-    target_xf_params: Vec<f32>,
     num_transforms: usize,
     last_frame_time: Instant,
     genome: FlameGenome,
     genome_history: Vec<FlameGenome>,
-    morph_rate_idx: usize,
     audio_features: AudioFeatures,
     weights: Weights,
     audio_enabled: bool,
@@ -828,14 +825,21 @@ struct App {
     mutation_accum: f32,
     last_mutation_time: f32,
     random_walk: f32,
-    crossfade_alpha: f32,       // 0.0 = fully old, 1.0 = fully new
-    crossfade_active: bool,
+    // Ease-in-out genome morph
+    morph_start_globals: [f32; 12],
+    morph_start_xf: Vec<f32>,
+    morph_base_globals: [f32; 12],  // current interpolated genome base (no audio)
+    morph_base_xf: Vec<f32>,       // current interpolated xf base (no audio)
+    morph_progress: f32,            // 0.0 → 1.0
 }
 
 const MUTATION_COOLDOWN: f32 = 3.0;
-const MORPH_RATES: [f32; 15] = [
-    0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 20.0, 35.0, 50.0,
-];
+const MORPH_DURATION: f32 = 8.0; // seconds for genome transition (ease-in-out)
+
+fn smoothstep(t: f32) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
 
 impl App {
     fn new() -> Self {
@@ -855,14 +859,11 @@ impl App {
             frame: 0,
             mouse: [0.5, 0.5],
             globals: initial_globals,
-            target_globals: initial_globals,
             xf_params: initial_xf.clone(),
-            target_xf_params: initial_xf,
             num_transforms,
             last_frame_time: Instant::now(),
             genome,
             genome_history: Vec::new(),
-            morph_rate_idx: 2, // MORPH_RATES[2] = 0.05 — gradual, smooth crossfade
             audio_features: AudioFeatures::default(),
             weights: load_weights(),
             audio_enabled: true,
@@ -872,23 +873,33 @@ impl App {
             mutation_accum: 0.0,
             last_mutation_time: 0.0,
             random_walk: 0.0,
-            crossfade_alpha: 1.0,
-            crossfade_active: false,
+            // Start fully morphed (no transition at launch)
+            morph_start_globals: initial_globals,
+            morph_start_xf: initial_xf.clone(),
+            morph_base_globals: initial_globals,
+            morph_base_xf: initial_xf,
+            morph_progress: 1.0,
         }
     }
 
-    /// Set morph targets from current genome, resize GPU buffer if needed.
-    fn apply_genome_targets(&mut self) {
-        self.target_globals = self.genome.flatten_globals();
-        self.target_xf_params = self.genome.flatten_transforms();
-        // num_transforms = max of current and target so dying transforms fade out
-        let max_xf = (self.xf_params.len().max(self.target_xf_params.len())) / 32;
+    /// Begin morphing toward the current genome. Captures current base as start point.
+    fn begin_morph(&mut self) {
+        // Snapshot wherever the morph currently is as our new start
+        self.morph_start_globals = self.morph_base_globals;
+        self.morph_start_xf = self.morph_base_xf.clone();
+        self.morph_progress = 0.0;
+
+        // Ensure buffers can hold max of current and target transforms
+        let target_xf = self.genome.flatten_transforms();
+        let max_xf = (self.xf_params.len().max(target_xf.len())) / 32;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(gpu) = &mut self.gpu {
                 gpu.resize_transform_buffer(self.num_transforms);
             }
         }
+        // Pad start vectors to match
+        self.morph_start_xf.resize(max_xf * 32, 0.0);
     }
 
     fn check_file_changes(&mut self) {
@@ -936,7 +947,8 @@ impl App {
             let override_params = load_params();
             // Override globals from params.json (first 12 entries map to globals)
             for i in 0..12.min(override_params.len()) {
-                self.target_globals[i] = override_params[i];
+                self.globals[i] = override_params[i];
+                self.morph_base_globals[i] = override_params[i];
             }
             eprintln!("[params] reloaded (overriding globals)");
         }
@@ -980,9 +992,16 @@ impl ApplicationHandler for App {
                 eprintln!("[genome] loaded: {}", g.name);
                 self.genome = g;
                 // Snap (no morph) on initial load
-                self.globals = self.genome.flatten_globals();
-                self.xf_params = self.genome.flatten_transforms();
-                self.apply_genome_targets();
+                let g_globals = self.genome.flatten_globals();
+                let g_xf = self.genome.flatten_transforms();
+                self.globals = g_globals;
+                self.xf_params = g_xf.clone();
+                self.morph_base_globals = g_globals;
+                self.morph_base_xf = g_xf.clone();
+                self.morph_start_globals = g_globals;
+                self.morph_start_xf = g_xf;
+                self.morph_progress = 1.0;
+                self.num_transforms = self.genome.total_buffer_transforms();
             }
         }
 
@@ -1025,33 +1044,19 @@ impl ApplicationHandler for App {
                 ..
             } => match logical_key {
                 Key::Named(NamedKey::Space) => {
-                    // Snapshot for crossfade
-                    if let Some(gpu) = &mut self.gpu {
-                        gpu.snapshot_crossfade();
-                    }
-                    self.crossfade_alpha = 0.0;
-                    self.crossfade_active = true;
-
                     self.genome_history.push(self.genome.clone());
                     if self.genome_history.len() > 10 {
                         self.genome_history.remove(0);
                     }
                     self.genome = self.genome.mutate(&self.audio_features);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                    self.apply_genome_targets();
+                    self.begin_morph();
                     eprintln!("[evolve] → {}", self.genome.name);
                 }
                 Key::Named(NamedKey::Backspace) => {
-                    // Revert to previous genome
                     if let Some(prev) = self.genome_history.pop() {
-                        if let Some(gpu) = &mut self.gpu {
-                            gpu.snapshot_crossfade();
-                        }
-                        self.crossfade_alpha = 0.0;
-                        self.crossfade_active = true;
-
                         self.genome = prev;
-                        self.apply_genome_targets();
+                        self.begin_morph();
                         eprintln!("[revert] back to previous");
                     }
                 }
@@ -1073,7 +1078,7 @@ impl ApplicationHandler for App {
                                 }
                                 eprintln!("[load] {}", g.name);
                                 self.genome = g;
-                                self.apply_genome_targets();
+                                self.begin_morph();
                             }
                             Err(e) => eprintln!("[load] error: {e}"),
                         }
@@ -1082,28 +1087,15 @@ impl ApplicationHandler for App {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
                         if idx < self.num_transforms {
                             let base = idx * 32; // weight is first field
-                            if self.target_xf_params[base] < 0.01 {
-                                self.target_xf_params[base] = 0.25;
-                            } else {
-                                self.target_xf_params[base] = 0.0;
+                            if base < self.xf_params.len() {
+                                if self.xf_params[base] < 0.01 {
+                                    self.xf_params[base] = 0.25;
+                                } else {
+                                    self.xf_params[base] = 0.0;
+                                }
+                                eprintln!("[solo] transform {} = {}", idx, self.xf_params[base]);
                             }
-                            eprintln!(
-                                "[solo] transform {} = {}",
-                                idx, self.target_xf_params[base]
-                            );
                         }
-                    }
-                    "=" | "+" => {
-                        if self.morph_rate_idx < MORPH_RATES.len() - 1 {
-                            self.morph_rate_idx += 1;
-                        }
-                        eprintln!("[morph] rate = {} (faster)", MORPH_RATES[self.morph_rate_idx]);
-                    }
-                    "-" => {
-                        if self.morph_rate_idx > 0 {
-                            self.morph_rate_idx -= 1;
-                        }
-                        eprintln!("[morph] rate = {} (slower)", MORPH_RATES[self.morph_rate_idx]);
                     }
                     "a" => {
                         self.audio_enabled = !self.audio_enabled;
@@ -1149,15 +1141,45 @@ impl ApplicationHandler for App {
                 if self.audio_enabled {
                     let time = self.start.elapsed().as_secs_f32();
                     let time_since_mutation = time - self.last_mutation_time;
-                    // Accumulate random walk: integrate noise over time
                     self.random_walk += crate::weights::value_noise_pub(time * 0.3) * dt * 0.5;
                     let time_signals = crate::weights::TimeSignals::compute(time, time_since_mutation, self.random_walk);
 
-                    let base_globals = self.genome.flatten_globals();
-                    let base_xf = self.genome.flatten_transforms();
+                    // Advance morph progress
+                    if self.morph_progress < 1.0 {
+                        self.morph_progress = (self.morph_progress + dt / MORPH_DURATION).min(1.0);
+                    }
+                    let t = smoothstep(self.morph_progress);
 
-                    self.target_globals = self.weights.apply_globals(&base_globals, &self.audio_features, &time_signals);
-                    self.target_xf_params = self.weights.apply_transforms(&base_xf, self.num_transforms, &self.audio_features, &time_signals);
+                    // Interpolate genome base values (ease-in-out)
+                    let genome_globals = self.genome.flatten_globals();
+                    let genome_xf = self.genome.flatten_transforms();
+
+                    for i in 0..12 {
+                        self.morph_base_globals[i] = self.morph_start_globals[i]
+                            + (genome_globals[i] - self.morph_start_globals[i]) * t;
+                    }
+                    let max_len = self.morph_start_xf.len().max(genome_xf.len());
+                    self.morph_base_xf.resize(max_len, 0.0);
+                    let mut padded_start = self.morph_start_xf.clone();
+                    padded_start.resize(max_len, 0.0);
+                    let mut padded_genome = genome_xf;
+                    padded_genome.resize(max_len, 0.0);
+                    for i in 0..max_len {
+                        self.morph_base_xf[i] = padded_start[i]
+                            + (padded_genome[i] - padded_start[i]) * t;
+                    }
+
+                    // Apply audio modulation on top of morphed base
+                    let modulated_globals = self.weights.apply_globals(
+                        &self.morph_base_globals, &self.audio_features, &time_signals,
+                    );
+                    let modulated_xf = self.weights.apply_transforms(
+                        &self.morph_base_xf, self.num_transforms, &self.audio_features, &time_signals,
+                    );
+
+                    // Set final values directly (morph handles smoothing)
+                    self.globals = modulated_globals;
+                    self.xf_params = modulated_xf;
 
                     // Auto-evolve via mutation_rate
                     let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);
@@ -1166,20 +1188,13 @@ impl ApplicationHandler for App {
                     if self.mutation_accum >= 1.0 && time_since_last >= MUTATION_COOLDOWN {
                         self.mutation_accum = 0.0;
 
-                        // Snapshot current frame for crossfade dissolve
-                        if let Some(gpu) = &mut self.gpu {
-                            gpu.snapshot_crossfade();
-                        }
-                        self.crossfade_alpha = 0.0;
-                        self.crossfade_active = true;
-
                         self.genome_history.push(self.genome.clone());
                         if self.genome_history.len() > 10 {
                             self.genome_history.remove(0);
                         }
                         self.genome = self.genome.mutate(&self.audio_features);
                         self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                        self.apply_genome_targets();
+                        self.begin_morph();
                         eprintln!("[auto-evolve] → {}", self.genome.name);
                     }
 
@@ -1203,28 +1218,6 @@ impl ApplicationHandler for App {
                     None => return,
                 };
 
-                // Morph globals
-                let rate = 1.0 - (-dt * MORPH_RATES[self.morph_rate_idx]).exp();
-                for i in 0..12 {
-                    self.globals[i] += (self.target_globals[i] - self.globals[i]) * rate;
-                }
-                // Morph transforms (handle different lengths)
-                let max_len = self.xf_params.len().max(self.target_xf_params.len());
-                self.xf_params.resize(max_len, 0.0);
-                self.target_xf_params.resize(max_len, 0.0);
-                for i in 0..max_len {
-                    self.xf_params[i] += (self.target_xf_params[i] - self.xf_params[i]) * rate;
-                }
-
-                // Ramp crossfade alpha
-                if self.crossfade_active {
-                    self.crossfade_alpha += dt / 7.0; // 7-second dissolve
-                    if self.crossfade_alpha >= 1.0 {
-                        self.crossfade_alpha = 1.0;
-                        self.crossfade_active = false;
-                    }
-                }
-
                 // Write uniforms
                 let uniforms = Uniforms {
                     time: self.start.elapsed().as_secs_f32(),
@@ -1239,7 +1232,7 @@ impl ApplicationHandler for App {
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
                     extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
-                    extra2: [self.crossfade_alpha, 0.0, 0.0, 0.0],
+                    extra2: [1.0, 0.0, 0.0, 0.0], // crossfade disabled — genome morph handles transitions
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

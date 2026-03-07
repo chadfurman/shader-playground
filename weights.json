@@ -64,7 +64,7 @@
   "energy": {
     "flame_brightness": 1.0,
     "drift_speed": 2.0,
-    "mutation_rate": 0.3,
+    "mutation_rate": 0.1,
     "bloom_intensity": 0.5
   },
   "beat_pulse": {
@@ -73,11 +73,11 @@
   "beat": {
     "color_shift": -0.5,
     "trail": -0.3,
-    "mutation_rate": 0.2
+    "mutation_rate": 0.08
   },
   "beat_accum": {
     "trail": 0.4,
-    "mutation_rate": 1.5
+    "mutation_rate": 0.5
   },
   "time": {},
   "time_slow": {

@@ -347,32 +347,30 @@ impl FlameGenome {
     pub fn mutate(&self, audio: &AudioFeatures) -> Self {
         let mut child = self.clone();
         let mut rng = rand::rng();
-        let num_mutations = rng.random_range(1..=3);
 
-        for _ in 0..num_mutations {
-            match rng.random_range(0..7) {
-                0 => child.mutate_perturb(&mut rng, audio),
-                1 => child.mutate_swap_variations(&mut rng),
-                2 => child.mutate_rotate_colors(&mut rng),
-                3 => child.mutate_shuffle_transforms(&mut rng),
-                4 => child.mutate_global_params(&mut rng),
-                5 => child.mutate_final_transform(&mut rng, audio),
-                _ => child.mutate_symmetry(&mut rng, audio),
-            }
+        // Single gentle mutation per evolve — keeps each generation similar
+        match rng.random_range(0..8) {
+            0 | 1 => child.mutate_perturb(&mut rng, audio),  // most common
+            2 => child.mutate_swap_variations(&mut rng),
+            3 => child.mutate_rotate_colors(&mut rng),
+            4 => child.mutate_shuffle_transforms(&mut rng),
+            5 => child.mutate_global_params(&mut rng),
+            6 => child.mutate_final_transform(&mut rng, audio),
+            _ => child.mutate_symmetry(&mut rng, audio),
         }
 
-        // Add/remove transforms biased toward 6-16 sweet spot
+        // Add/remove transforms — rare, biased toward 6-16 sweet spot
         let n = child.transforms.len();
         let (add_chance, remove_chance) = if n < 6 {
-            (0.40, 0.05)
+            (0.20, 0.02)
         } else if n <= 16 {
-            (0.15, 0.15)
+            (0.08, 0.08)
         } else {
-            (0.05, 0.40)
+            (0.02, 0.20)
         };
-        let energy_bias = audio.energy * 0.15;
+        let energy_bias = audio.energy * 0.08;
         let add_chance = add_chance + energy_bias;
-        let remove_chance = (remove_chance - energy_bias * 0.5).max(0.02);
+        let remove_chance = (remove_chance - energy_bias * 0.3).max(0.01);
         let roll: f32 = rng.random();
         if roll < add_chance {
             child.mutate_add_transform(&mut rng, audio);
@@ -389,39 +387,27 @@ impl FlameGenome {
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
         match rng.random_range(0..5) {
-            0 => xf.angle += rng.random_range(-0.8..0.8),
-            1 => xf.scale = (xf.scale + rng.random_range(-0.3..0.3)).clamp(0.05, 0.95),
+            0 => xf.angle += rng.random_range(-0.3..0.3),
+            1 => xf.scale = (xf.scale + rng.random_range(-0.15..0.15)).clamp(0.05, 0.95),
             2 => {
-                // Wider offset jumps for spatial spread
-                xf.offset[0] += rng.random_range(-1.5..1.5);
-                xf.offset[1] += rng.random_range(-1.5..1.5);
+                xf.offset[0] += rng.random_range(-0.5..0.5);
+                xf.offset[1] += rng.random_range(-0.5..0.5);
             }
             3 => {
-                // Weight redistribution — make some dominant, some subtle
-                xf.weight = (xf.weight * rng.random_range(0.3..3.0)).clamp(0.01, 0.8);
+                // Gentle weight adjustment
+                xf.weight = (xf.weight * rng.random_range(0.7..1.5)).clamp(0.01, 0.8);
             }
             _ => {
-                // Reinvent variations — 50% specialist, 50% multi-variation blend
-                for vi in 0..VARIATION_COUNT {
-                    xf.set_variation(vi, 0.0);
-                }
-                if rng.random_range(0.0..1.0) < 0.5 {
-                    // Specialist: one dominant
-                    let dominant = audio_biased_variation_pick(rng, audio);
-                    xf.set_variation(dominant, rng.random_range(0.7..1.0));
-                    let secondary = rng.random_range(0..VARIATION_COUNT);
-                    if secondary != dominant {
-                        xf.set_variation(secondary, rng.random_range(0.0..0.2));
-                    }
-                } else {
-                    // Multi-blend: 2-3 variations at meaningful weights
-                    // Creates area-filling attractors instead of thin curves
-                    let n_vars = rng.random_range(2..=3);
-                    for _ in 0..n_vars {
-                        let vi = audio_biased_variation_pick(rng, audio);
-                        let cur = xf.get_variation(vi);
-                        xf.set_variation(vi, cur + rng.random_range(0.3..0.7));
-                    }
+                // Nudge existing variations instead of reinventing
+                // Pick an audio-biased variation and boost it slightly
+                let vi = audio_biased_variation_pick(rng, audio);
+                let cur = xf.get_variation(vi);
+                xf.set_variation(vi, (cur + rng.random_range(0.05..0.25)).min(1.0));
+                // Slightly reduce a random other variation to compensate
+                let other = rng.random_range(0..VARIATION_COUNT);
+                if other != vi {
+                    let ocur = xf.get_variation(other);
+                    xf.set_variation(other, (ocur - rng.random_range(0.0..0.15)).max(0.0));
                 }
             }
         }
@@ -491,24 +477,19 @@ impl FlameGenome {
     }
 
     fn mutate_symmetry(&mut self, rng: &mut impl Rng, audio: &AudioFeatures) {
-        let roll: f32 = rng.random();
-        if audio.beat_accum > 0.5 {
-            // Beat-dense: favor higher rotational symmetry
-            if roll < 0.15 {
-                self.symmetry = 1;
-            } else if roll < 0.65 {
-                self.symmetry = rng.random_range(3..=8);
-            } else {
-                self.symmetry = -rng.random_range(3..=6);
-            }
+        // Nudge symmetry by ±1 instead of picking a random new value
+        let current = self.symmetry.abs().max(1);
+        let delta = if rng.random_range(0.0..1.0) < 0.5 { 1 } else { -1 };
+        let new_val = (current + delta).clamp(1, 6);
+
+        if audio.beat_accum > 0.5 && rng.random_range(0.0..1.0) < 0.3 {
+            // Beat-dense: occasionally bump up symmetry
+            self.symmetry = (current + 1).min(8);
+        } else if rng.random_range(0.0..1.0) < 0.2 {
+            // Small chance to flip sign (rotational ↔ bilateral)
+            self.symmetry = -self.symmetry.abs().max(2);
         } else {
-            if roll < 0.3 {
-                self.symmetry = 1; // no symmetry
-            } else if roll < 0.7 {
-                self.symmetry = rng.random_range(2..=6); // rotational
-            } else {
-                self.symmetry = -rng.random_range(2..=4); // bilateral + rotational
-            }
+            self.symmetry = new_val;
         }
     }
 
