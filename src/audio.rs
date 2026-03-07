@@ -288,6 +288,11 @@ impl BeatDensity {
     }
 }
 
+/// Compute energy from normalized bands + beat.
+fn compute_energy(bass: f32, mids: f32, highs: f32, beat: f32) -> f32 {
+    (bass + mids + highs + beat) / 4.0
+}
+
 pub struct AudioProcessor {
     analyzer: AudioAnalyzer,
     pub features: AudioFeatures,
