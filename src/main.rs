@@ -750,7 +750,11 @@ const MORPH_RATES: [f32; 15] = [
 
 impl App {
     fn new() -> Self {
-        let genome = FlameGenome::default_genome();
+        // Randomize startup — mutate default genome so every launch is unique
+        let mut genome = FlameGenome::default_genome();
+        for _ in 0..3 {
+            genome = genome.mutate();
+        }
         let initial_globals = genome.flatten_globals();
         let initial_xf = genome.flatten_transforms();
         let num_transforms = genome.total_buffer_transforms();
@@ -769,7 +773,7 @@ impl App {
             last_frame_time: Instant::now(),
             genome,
             genome_history: Vec::new(),
-            morph_rate_idx: 4, // MORPH_RATES[4] = 0.2 — slow, dramatic crossfade
+            morph_rate_idx: 2, // MORPH_RATES[2] = 0.05 — gradual, smooth crossfade
             audio_features: AudioFeatures::default(),
             weights: load_weights(),
             audio_enabled: true,

@@ -6,6 +6,18 @@ use serde::{Deserialize, Serialize};
 
 const VARIATION_COUNT: usize = 26;
 
+// "Orby" variations that produce round/spherical/blobby shapes —
+// biased toward in mutations so they appear more often
+const ORBY_VARIATIONS: [usize; 7] = [
+    2,  // spherical
+    6,  // julia
+    8,  // disc
+    10, // bubble
+    11, // fisheye
+    19, // eyefish
+    23, // blob
+];
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct FlameTransform {
     pub weight: f32,
@@ -104,6 +116,15 @@ pub struct FlameGenome {
 }
 
 fn default_symmetry() -> i32 { 1 }
+
+/// Pick a variation index with 20% bias toward "orby" shapes
+fn biased_variation_pick(rng: &mut impl Rng) -> usize {
+    if rng.random_range(0.0..1.0) < 0.2 {
+        ORBY_VARIATIONS[rng.random_range(0..ORBY_VARIATIONS.len())]
+    } else {
+        rng.random_range(0..VARIATION_COUNT)
+    }
+}
 
 impl FlameGenome {
     /// Pack global params into a fixed [f32; 12] for the uniform buffer.
@@ -208,21 +229,33 @@ impl FlameGenome {
             // Showcase old + new variations — each transform is a specialist
             transforms: vec![
                 FlameTransform { // sinusoidal tendrils
-                    weight: 0.30, angle: 0.6, scale: 0.45,
+                    weight: 0.25, angle: 0.6, scale: 0.45,
                     offset: [2.5, 0.8], color: 0.0,
                     sinusoidal: 0.9, linear: 0.1,
                     ..Default::default()
                 },
-                FlameTransform { // spherical inversion
-                    weight: 0.20, angle: -1.3, scale: 0.30,
+                FlameTransform { // spherical inversion orbs
+                    weight: 0.15, angle: -1.3, scale: 0.30,
                     offset: [-1.8, 2.1], color: 0.25,
                     spherical: 0.9, swirl: 0.1,
                     ..Default::default()
                 },
-                FlameTransform { // julia blobs
-                    weight: 0.20, angle: 2.2, scale: 0.55,
+                FlameTransform { // julia bifurcation
+                    weight: 0.15, angle: 2.2, scale: 0.55,
                     offset: [-0.3, -2.5], color: 0.50,
-                    julia: 0.85, bubble: 0.15,
+                    julia: 0.95,
+                    ..Default::default()
+                },
+                FlameTransform { // bubble spheres
+                    weight: 0.10, angle: -0.5, scale: 0.65,
+                    offset: [1.2, -1.8], color: 0.60,
+                    bubble: 0.85, fisheye: 0.15,
+                    ..Default::default()
+                },
+                FlameTransform { // blob petals
+                    weight: 0.08, angle: 1.1, scale: 0.50,
+                    offset: [-2.0, 0.5], color: 0.40,
+                    blob: 0.8, disc: 0.2,
                     ..Default::default()
                 },
                 FlameTransform { // spiral arms
@@ -232,13 +265,13 @@ impl FlameGenome {
                     ..Default::default()
                 },
                 FlameTransform { // cosine curtains
-                    weight: 0.10, angle: -0.7, scale: 0.35,
+                    weight: 0.08, angle: -0.7, scale: 0.35,
                     offset: [3.0, 1.5], color: 0.15,
                     cosine: 0.9, polar: 0.1,
                     ..Default::default()
                 },
                 FlameTransform { // curl smoke
-                    weight: 0.10, angle: 1.5, scale: 0.25,
+                    weight: 0.09, angle: 1.5, scale: 0.25,
                     offset: [-2.8, -1.0], color: 0.90,
                     curl: 0.7, noise: 0.3,
                     ..Default::default()
@@ -333,15 +366,27 @@ impl FlameGenome {
                 xf.weight = (xf.weight * rng.random_range(0.3..3.0)).clamp(0.01, 0.8);
             }
             _ => {
-                // Reinvent as specialist — one dominant variation from all 26
+                // Reinvent variations — 50% specialist, 50% multi-variation blend
                 for vi in 0..VARIATION_COUNT {
                     xf.set_variation(vi, 0.0);
                 }
-                let dominant = rng.random_range(0..VARIATION_COUNT);
-                xf.set_variation(dominant, rng.random_range(0.7..1.0));
-                let secondary = rng.random_range(0..VARIATION_COUNT);
-                if secondary != dominant {
-                    xf.set_variation(secondary, rng.random_range(0.0..0.2));
+                if rng.random_range(0.0..1.0) < 0.5 {
+                    // Specialist: one dominant
+                    let dominant = biased_variation_pick(rng);
+                    xf.set_variation(dominant, rng.random_range(0.7..1.0));
+                    let secondary = rng.random_range(0..VARIATION_COUNT);
+                    if secondary != dominant {
+                        xf.set_variation(secondary, rng.random_range(0.0..0.2));
+                    }
+                } else {
+                    // Multi-blend: 2-3 variations at meaningful weights
+                    // Creates area-filling attractors instead of thin curves
+                    let n_vars = rng.random_range(2..=3);
+                    for _ in 0..n_vars {
+                        let vi = biased_variation_pick(rng);
+                        let cur = xf.get_variation(vi);
+                        xf.set_variation(vi, cur + rng.random_range(0.3..0.7));
+                    }
                 }
             }
         }
@@ -391,7 +436,7 @@ impl FlameGenome {
                     for vi in 0..VARIATION_COUNT {
                         fxf.set_variation(vi, 0.0);
                     }
-                    let dominant = rng.random_range(0..VARIATION_COUNT);
+                    let dominant = biased_variation_pick(rng);
                     fxf.set_variation(dominant, rng.random_range(0.5..1.0));
                 }
             }
@@ -401,7 +446,7 @@ impl FlameGenome {
                     let mut fxf = FlameTransform::default();
                     fxf.scale = rng.random_range(0.5..1.5);
                     fxf.angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
-                    let dominant = rng.random_range(0..VARIATION_COUNT);
+                    let dominant = biased_variation_pick(rng);
                     fxf.set_variation(dominant, rng.random_range(0.5..1.0));
                     fxf.color = rng.random_range(0.0..1.0);
                     self.final_transform = Some(fxf);
@@ -435,7 +480,7 @@ impl FlameGenome {
             xf.color = rng.random_range(0.0..1.0);
             xf
         } else {
-            // Fresh specialist with one dominant variation from all 26
+            // Fresh specialist — 20% biased toward orby variations
             let mut xf = FlameTransform {
                 weight: 0.05,
                 angle: rng.random_range(-std::f32::consts::PI..std::f32::consts::PI),
@@ -444,7 +489,7 @@ impl FlameGenome {
                 color: rng.random_range(0.0..1.0),
                 ..Default::default()
             };
-            let dominant = rng.random_range(0..VARIATION_COUNT);
+            let dominant = biased_variation_pick(rng);
             xf.set_variation(dominant, rng.random_range(0.7..1.0));
             xf
         };

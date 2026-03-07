@@ -114,12 +114,40 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // ── KIFS background layer — disabled ──
     let bg = vec3(0.0);
 
-    // ── Flame foreground (from RGBA histogram) ──
-    let buf_idx = (px.y * w + px.x) * 4u;
-    let density = f32(histogram[buf_idx]);
-    let acc_r = f32(histogram[buf_idx + 1u]);
-    let acc_g = f32(histogram[buf_idx + 2u]);
-    let acc_b = f32(histogram[buf_idx + 3u]);
+    // ── Flame foreground (density estimation via 3x3 gaussian blur of histogram) ──
+    // This spreads each sample over a small area, turning thin curves into
+    // soft glowing surfaces — the key to that Electric Sheep "cosmic" look.
+    let h = u32(u.resolution.y);
+    var density = 0.0;
+    var acc_r = 0.0;
+    var acc_g = 0.0;
+    var acc_b = 0.0;
+    var gw_total = 0.0;
+    // 3x3 gaussian kernel (sigma ≈ 0.85)
+    let gk = array<f32, 9>(
+        0.0625, 0.125, 0.0625,
+        0.125,  0.25,  0.125,
+        0.0625, 0.125, 0.0625,
+    );
+    for (var ky = -1; ky <= 1; ky++) {
+        for (var kx = -1; kx <= 1; kx++) {
+            let sx = i32(px.x) + kx;
+            let sy = i32(px.y) + ky;
+            if (sx >= 0 && sx < i32(w) && sy >= 0 && sy < i32(h)) {
+                let si = (u32(sy) * w + u32(sx)) * 4u;
+                let gw = gk[(ky + 1) * 3 + (kx + 1)];
+                density += f32(histogram[si]) * gw;
+                acc_r += f32(histogram[si + 1u]) * gw;
+                acc_g += f32(histogram[si + 2u]) * gw;
+                acc_b += f32(histogram[si + 3u]) * gw;
+                gw_total += gw;
+            }
+        }
+    }
+    density /= gw_total;
+    acc_r /= gw_total;
+    acc_g /= gw_total;
+    acc_b /= gw_total;
 
     // Recover average color from accumulated RGB
     let avg_color = select(
