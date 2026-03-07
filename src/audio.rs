@@ -253,6 +253,41 @@ impl BandNormalizer {
     }
 }
 
+const BEAT_WINDOW_SECS: f32 = 8.0;
+const BEAT_DENSITY_MAX: f32 = 24.0; // 3 beats/sec * 8s = 180 BPM
+
+/// Sliding window beat density tracker.
+/// Counts beats in the last BEAT_WINDOW_SECS seconds,
+/// normalized so 180 BPM = 1.0.
+pub struct BeatDensity {
+    timestamps: Vec<f32>,
+}
+
+impl BeatDensity {
+    pub fn new() -> Self {
+        Self {
+            timestamps: Vec::with_capacity(64),
+        }
+    }
+
+    pub fn record_beat(&mut self, time: f32) {
+        self.timestamps.push(time);
+    }
+
+    pub fn prune(&mut self, current_time: f32) {
+        let cutoff = current_time - BEAT_WINDOW_SECS;
+        self.timestamps.retain(|&t| t > cutoff);
+    }
+
+    pub fn value(&self) -> f32 {
+        (self.timestamps.len() as f32 / BEAT_DENSITY_MAX).min(1.0)
+    }
+
+    pub fn beats_in_window(&self) -> usize {
+        self.timestamps.len()
+    }
+}
+
 pub struct AudioProcessor {
     analyzer: AudioAnalyzer,
     pub features: AudioFeatures,
