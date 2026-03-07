@@ -1113,7 +1113,7 @@ impl ApplicationHandler for App {
                     _pad: 0,
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
-                    extra: [self.globals[8], self.globals[9], 0.0, 0.0],
+                    extra: [self.globals[8], self.globals[9], self.globals[10], 0.0],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

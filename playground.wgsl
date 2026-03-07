@@ -144,6 +144,30 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let prev = textureSample(prev_frame, prev_sampler, tex_uv).rgb;
     col = col + prev * trail;
 
+    // Bloom: sample feedback at offsets for glow effect
+    let bloom_int = u.extra.z;
+    if (bloom_int > 0.001) {
+        let texel = 1.0 / u.resolution;
+        var bloom = vec3(0.0);
+        // 13-tap cross pattern
+        let offsets = array<vec2<f32>, 12>(
+            vec2(-3.0, 0.0), vec2(-2.0, 0.0), vec2(-1.0, 0.0),
+            vec2( 1.0, 0.0), vec2( 2.0, 0.0), vec2( 3.0, 0.0),
+            vec2(0.0, -3.0), vec2(0.0, -2.0), vec2(0.0, -1.0),
+            vec2(0.0,  1.0), vec2(0.0,  2.0), vec2(0.0,  3.0),
+        );
+        let weights = array<f32, 12>(
+            0.05, 0.1, 0.2,
+            0.2, 0.1, 0.05,
+            0.05, 0.1, 0.2,
+            0.2, 0.1, 0.05,
+        );
+        for (var bi = 0u; bi < 12u; bi++) {
+            bloom += textureSample(prev_frame, prev_sampler, tex_uv + offsets[bi] * texel * 4.0).rgb * weights[bi];
+        }
+        col += bloom * bloom_int;
+    }
+
     // Tonemap: soft clamp to prevent blowout
     col = col / (col + vec3(1.0));  // Reinhard
 

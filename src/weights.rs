@@ -236,6 +236,7 @@ fn global_index(name: &str) -> Option<usize> {
         "drift_speed" => Some(7),
         "color_shift" => Some(8),
         "vibrancy" => Some(9),
+        "bloom_intensity" => Some(10),
         _ => None,
     }
 }
