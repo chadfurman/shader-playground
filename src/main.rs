@@ -832,6 +832,7 @@ struct App {
     crossfade_active: bool,
 }
 
+const MUTATION_COOLDOWN: f32 = 3.0;
 const MORPH_RATES: [f32; 15] = [
     0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 20.0, 35.0, 50.0,
 ];
@@ -1161,7 +1162,8 @@ impl ApplicationHandler for App {
                     // Auto-evolve via mutation_rate
                     let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);
                     self.mutation_accum += mr * dt;
-                    if self.mutation_accum >= 1.0 {
+                    let time_since_last = time - self.last_mutation_time;
+                    if self.mutation_accum >= 1.0 && time_since_last >= MUTATION_COOLDOWN {
                         self.mutation_accum = 0.0;
 
                         // Snapshot current frame for crossfade dissolve
