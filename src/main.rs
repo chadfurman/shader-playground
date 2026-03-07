@@ -157,7 +157,7 @@ impl Gpu {
             ..Default::default()
         });
 
-        // Histogram buffer: 2 u32s per pixel (density + color_sum)
+        // Histogram buffer: 4 u32s per pixel (density + R + G + B)
         let histogram_buffer = create_histogram_buffer(
             &device,
             config.width,
@@ -568,7 +568,7 @@ fn create_histogram_buffer(
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("histogram"),
-        size: pixel_count * 2 * 4, // 2 u32s per pixel
+        size: pixel_count * 4 * 4, // 4 u32s per pixel
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })

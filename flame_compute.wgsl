@@ -38,6 +38,16 @@ fn rot2(a: f32) -> mat2x2<f32> {
     return mat2x2(c, -s, s, c);
 }
 
+const TAU: f32 = 6.28318530;
+
+fn palette(t: f32) -> vec3<f32> {
+    let a = vec3(0.5, 0.5, 0.5);
+    let b = vec3(0.5, 0.5, 0.5);
+    let c = vec3(1.0, 1.0, 1.0);
+    let d = vec3(0.00, 0.33, 0.67);
+    return a + b * cos(TAU * (c * t + d));
+}
+
 // ── Flame Variations ──
 
 fn V_sinusoidal(p: vec2<f32>) -> vec2<f32> {
@@ -177,9 +187,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let px_y = i32(screen.y);
 
         if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
-            let buf_idx = (u32(px_y) * w + u32(px_x)) * 2u;
+            let buf_idx = (u32(px_y) * w + u32(px_x)) * 4u;
+            let col = palette(color_idx + u.extra.x);  // apply color_shift
             atomicAdd(&histogram[buf_idx], 1u);
-            atomicAdd(&histogram[buf_idx + 1u], u32(color_idx * 1000.0));
+            atomicAdd(&histogram[buf_idx + 1u], u32(col.x * 1000.0));
+            atomicAdd(&histogram[buf_idx + 2u], u32(col.y * 1000.0));
+            atomicAdd(&histogram[buf_idx + 3u], u32(col.z * 1000.0));
         }
     }
 }
