@@ -33,7 +33,7 @@ struct Uniforms {
     _pad: u32,
     globals: [f32; 4],   // speed, zoom, trail, flame_brightness
     kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
-    extra: [f32; 4],      // color_shift, 0, 0, 0
+    extra: [f32; 4],      // color_shift, vibrancy, 0, 0
 }
 
 // ── File Watcher ──
@@ -1113,7 +1113,7 @@ impl ApplicationHandler for App {
                     _pad: 0,
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
-                    extra: [self.globals[8], 0.0, 0.0, 0.0],
+                    extra: [self.globals[8], self.globals[9], 0.0, 0.0],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

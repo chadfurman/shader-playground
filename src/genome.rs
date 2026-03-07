@@ -60,6 +60,7 @@ impl FlameGenome {
         g[6] = self.kifs.brightness;
         // g[7] = drift_speed (set by weights, default 0)
         // g[8] = color_shift (set by weights, default 0)
+        g[9] = 0.7;  // vibrancy base
         g
     }
 

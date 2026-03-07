@@ -131,8 +131,11 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // Log-density alpha (no hard cap — natural falloff)
     let alpha = log(1.0 + density * flame_bright) / (log(1.0 + density * flame_bright) + 4.0);
 
-    // Flame color
-    let flame = avg_color * alpha;
+    // Vibrancy: saturate colors based on density
+    let vibrancy = u.extra.y;
+    let lum = dot(avg_color, vec3(0.299, 0.587, 0.114));
+    let vibrant_color = mix(vec3(lum), avg_color, pow(alpha, max(1.0 - vibrancy, 0.01)));
+    let flame = vibrant_color * alpha;
 
     // ── Combine ──
     var col = flame + bg;
