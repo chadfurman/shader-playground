@@ -75,6 +75,55 @@ fn V_handkerchief(p: vec2<f32>) -> vec2<f32> {
     return r * vec2(sin(theta + r), cos(theta - r));
 }
 
+fn V_julia(p: vec2<f32>, rng: ptr<function, u32>) -> vec2<f32> {
+    let r = sqrt(length(p));
+    let theta = atan2(p.y, p.x) * 0.5;
+    let k = f32(pcg(rng) & 1u) * PI;
+    return r * vec2(cos(theta + k), sin(theta + k));
+}
+
+fn V_polar(p: vec2<f32>) -> vec2<f32> {
+    let theta = atan2(p.y, p.x);
+    let r = length(p);
+    return vec2(theta / PI, r - 1.0);
+}
+
+fn V_disc(p: vec2<f32>) -> vec2<f32> {
+    let theta = atan2(p.y, p.x);
+    let r = length(p);
+    let f = theta / PI;
+    return f * vec2(sin(PI * r), cos(PI * r));
+}
+
+fn V_rings(p: vec2<f32>, c2: f32) -> vec2<f32> {
+    let r = length(p);
+    let theta = atan2(p.y, p.x);
+    let k = c2 + 1e-6;
+    let rr = ((r + k) % (2.0 * k)) - k + r * (1.0 - k);
+    return rr * vec2(cos(theta), sin(theta));
+}
+
+fn V_bubble(p: vec2<f32>) -> vec2<f32> {
+    let r2 = dot(p, p);
+    return p * 4.0 / (r2 + 4.0);
+}
+
+fn V_fisheye(p: vec2<f32>) -> vec2<f32> {
+    let r = length(p);
+    return 2.0 * p.yx / (r + 1.0);
+}
+
+fn V_exponential(p: vec2<f32>) -> vec2<f32> {
+    let e = exp(p.x - 1.0);
+    return e * vec2(cos(PI * p.y), sin(PI * p.y));
+}
+
+fn V_spiral(p: vec2<f32>) -> vec2<f32> {
+    let r = length(p) + 1e-6;
+    let theta = atan2(p.y, p.x);
+    return vec2(cos(theta) + sin(r), sin(theta) - cos(r)) / r;
+}
+
 // ── Per-transform hash noise (non-repeating drift) ──
 
 fn hash_u(n: u32) -> u32 {
@@ -101,7 +150,7 @@ fn vnoise(t: f32, seed: u32) -> f32 {
 
 // ── IFS Transform (reads from storage buffer) ──
 
-fn apply_xform(p: vec2<f32>, idx: u32, t: f32) -> vec2<f32> {
+fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<f32> {
     let angle  = xf(idx, 1u);
     let scale  = xf(idx, 2u);
     let ox     = xf(idx, 3u);
@@ -134,6 +183,24 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32) -> vec2<f32> {
     v += V_swirl(q)         * w_swi;
     v += V_horseshoe(q)     * w_hor;
     v += V_handkerchief(q)  * w_han;
+
+    let w_jul  = xf(idx, 12u);
+    let w_pol  = xf(idx, 13u);
+    let w_dsc  = xf(idx, 14u);
+    let w_rng  = xf(idx, 15u);
+    let w_bub  = xf(idx, 16u);
+    let w_fsh  = xf(idx, 17u);
+    let w_exp  = xf(idx, 18u);
+    let w_spi  = xf(idx, 19u);
+
+    v += V_julia(q, rng)           * w_jul;
+    v += V_polar(q)                * w_pol;
+    v += V_disc(q)                 * w_dsc;
+    v += V_rings(q, scale * scale) * w_rng;
+    v += V_bubble(q)               * w_bub;
+    v += V_fisheye(q)              * w_fsh;
+    v += V_exponential(q)          * w_exp;
+    v += V_spiral(q)               * w_spi;
 
     return v;
 }
@@ -177,7 +244,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             }
         }
 
-        p = apply_xform(p, tidx, t);
+        p = apply_xform(p, tidx, t, &rng);
         color_idx = color_idx * 0.3 + xform_color(tidx) * 0.7;
 
         if (i < 20u) { continue; }
