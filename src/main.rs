@@ -740,6 +740,7 @@ struct App {
     audio_info_timer: f32,
     mutation_accum: f32,
     last_mutation_time: f32,
+    random_walk: f32,
 }
 
 const MORPH_RATES: [f32; 15] = [
@@ -767,7 +768,7 @@ impl App {
             last_frame_time: Instant::now(),
             genome,
             genome_history: Vec::new(),
-            morph_rate_idx: 7, // MORPH_RATES[7] = 2.0
+            morph_rate_idx: 4, // MORPH_RATES[4] = 0.2 — slow, dramatic crossfade
             audio_features: AudioFeatures::default(),
             weights: load_weights(),
             audio_enabled: true,
@@ -775,6 +776,7 @@ impl App {
             audio_info_timer: 0.0,
             mutation_accum: 0.0,
             last_mutation_time: 0.0,
+            random_walk: 0.0,
         }
     }
 
@@ -1017,7 +1019,9 @@ impl ApplicationHandler for App {
                 if self.audio_enabled {
                     let time = self.start.elapsed().as_secs_f32();
                     let time_since_mutation = time - self.last_mutation_time;
-                    let time_signals = crate::weights::TimeSignals::compute(time, time_since_mutation);
+                    // Accumulate random walk: integrate noise over time
+                    self.random_walk += crate::weights::value_noise_pub(time * 0.3) * dt * 0.5;
+                    let time_signals = crate::weights::TimeSignals::compute(time, time_since_mutation, self.random_walk);
 
                     let base_globals = self.genome.flatten_globals();
                     let base_xf = self.genome.flatten_transforms();

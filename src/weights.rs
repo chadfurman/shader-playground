@@ -21,26 +21,39 @@ fn hash_f32(n: i32) -> f32 {
 }
 
 pub struct TimeSignals {
-    pub time_slow: f32,     // sin(t * 0.1), ~60s cycle
-    pub time_med: f32,      // sin(t * 0.5), ~12s cycle
-    pub time_fast: f32,     // sin(t * 2.0), ~3s cycle
-    pub time_noise: f32,    // smooth noise seeded by time
-    pub time_envelope: f32, // time since last mutation, capped at 1.0
+    pub time: f32,           // raw elapsed time, steady linear ramp
+    pub time_slow: f32,      // noise at 0.05 speed, ~20s wander
+    pub time_med: f32,       // noise at 0.2 speed, ~5s wander
+    pub time_fast: f32,      // noise at 0.8 speed, ~1.25s wander
+    pub time_noise: f32,     // noise at 0.3 speed, organic wandering
+    pub time_drift: f32,     // noise at 0.02 speed, ~50s glacial drift
+    pub time_flutter: f32,   // noise at 1.5 speed, quick flicker
+    pub time_walk: f32,      // random walk — accumulated noise, never reverses
+    pub time_envelope: f32,  // time since last mutation, capped at 1.0
 }
 
 impl TimeSignals {
-    pub fn compute(time: f32, time_since_mutation: f32) -> Self {
+    pub fn compute(time: f32, time_since_mutation: f32, random_walk: f32) -> Self {
         Self {
-            time_slow: (time * 0.1).sin(),
-            time_med: (time * 0.5).sin(),
-            time_fast: (time * 2.0).sin(),
-            time_noise: value_noise(time * 0.3),
+            time,
+            time_slow: value_noise(time * 0.05),
+            time_med: value_noise(time * 0.2 + 100.0),
+            time_fast: value_noise(time * 0.8 + 200.0),
+            time_noise: value_noise(time * 0.3 + 300.0),
+            time_drift: value_noise(time * 0.02 + 400.0),
+            time_flutter: value_noise(time * 1.5 + 500.0),
+            time_walk: random_walk,
             time_envelope: (time_since_mutation / 10.0).min(1.0),
         }
     }
 }
 
-const SIGNAL_COUNT: f32 = 11.0; // bass, mids, highs, energy, beat, beat_accum, time_slow, time_med, time_fast, time_noise, time_envelope
+/// Public wrapper for value_noise (used by main.rs for random walk accumulation).
+pub fn value_noise_pub(t: f32) -> f32 {
+    value_noise(t)
+}
+
+const SIGNAL_COUNT: f32 = 15.0; // bass, mids, highs, energy, beat, beat_accum, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
 const PARAMS_PER_XF: usize = 12;
 
 /// Per-transform field names in order (matching genome flatten layout).
@@ -64,6 +77,8 @@ pub struct Weights {
     #[serde(default)]
     pub beat_accum: HashMap<String, f32>,
     #[serde(default)]
+    pub time: HashMap<String, f32>,
+    #[serde(default)]
     pub time_slow: HashMap<String, f32>,
     #[serde(default)]
     pub time_med: HashMap<String, f32>,
@@ -71,6 +86,12 @@ pub struct Weights {
     pub time_fast: HashMap<String, f32>,
     #[serde(default)]
     pub time_noise: HashMap<String, f32>,
+    #[serde(default)]
+    pub time_drift: HashMap<String, f32>,
+    #[serde(default)]
+    pub time_flutter: HashMap<String, f32>,
+    #[serde(default)]
+    pub time_walk: HashMap<String, f32>,
     #[serde(default)]
     pub time_envelope: HashMap<String, f32>,
 }
@@ -95,10 +116,14 @@ impl Weights {
             (&self.energy, features.energy),
             (&self.beat, features.beat),
             (&self.beat_accum, features.beat_accum),
+            (&self.time, time_signals.time),
             (&self.time_slow, time_signals.time_slow),
             (&self.time_med, time_signals.time_med),
             (&self.time_fast, time_signals.time_fast),
             (&self.time_noise, time_signals.time_noise),
+            (&self.time_drift, time_signals.time_drift),
+            (&self.time_flutter, time_signals.time_flutter),
+            (&self.time_walk, time_signals.time_walk),
             (&self.time_envelope, time_signals.time_envelope),
         ]
     }
@@ -134,7 +159,7 @@ impl Weights {
     ) -> Vec<f32> {
         let mut result = base.to_vec();
         let signals = self.signal_list(features, time_signals);
-        for (signal_idx, (weights, signal_val)) in signals.iter().enumerate() {
+        for (_signal_idx, (weights, signal_val)) in signals.iter().enumerate() {
             for (name, &weight) in *weights {
                 if name == "mutation_rate" { continue; }
                 // xfN_ wildcard
@@ -143,13 +168,14 @@ impl Weights {
                         for xf in 0..num_transforms {
                             let idx = xf * PARAMS_PER_XF + field_offset;
                             if idx < result.len() {
-                                let scale = per_transform_scale(xf, field_offset, signal_idx);
-                                result[idx] += weight * scale * signal_val / SIGNAL_COUNT;
+                                let r = transform_randomness(xf);
+                                let m = transform_magnitude(xf);
+                                result[idx] += weight * r * m * signal_val / SIGNAL_COUNT;
                             }
                         }
                     }
                 }
-                // Explicit xf0_, xf1_, etc.
+                // Explicit xf0_, xf1_, etc. (no randomness — you targeted it specifically)
                 else if let Some((xf, field_offset)) = try_parse_xf(name) {
                     if xf < num_transforms {
                         let idx = xf * PARAMS_PER_XF + field_offset;
@@ -176,13 +202,21 @@ impl Weights {
     }
 }
 
-/// Deterministic per-transform scale factor (0.5–1.5) so the same weight
-/// produces varied expression across flames.
-fn per_transform_scale(xf: usize, field: usize, signal: usize) -> f32 {
-    // Simple hash: mix transform, field, and signal indices
-    let h = (xf.wrapping_mul(2654435761)) ^ (field.wrapping_mul(40503)) ^ (signal.wrapping_mul(73));
+/// Deterministic per-transform randomness (-1.0 to 1.0) seeded by transform index.
+/// Each transform gets a fixed "personality" that scales (and potentially inverts)
+/// how all weight signals affect it.
+fn transform_randomness(xf: usize) -> f32 {
+    let h = xf.wrapping_mul(2654435761);
     let frac = ((h & 0xFFFF) as f32) / 65535.0; // 0.0–1.0
-    0.5 + frac // 0.5–1.5
+    frac * 2.0 - 1.0 // -1.0–1.0
+}
+
+/// Deterministic per-transform magnitude (1.0 to 5.0) seeded by transform index.
+/// Controls how strongly all weight signals affect this transform overall.
+fn transform_magnitude(xf: usize) -> f32 {
+    let h = xf.wrapping_mul(1597334677);
+    let frac = ((h & 0xFFFF) as f32) / 65535.0; // 0.0–1.0
+    1.0 + frac * 4.0 // 1.0–5.0
 }
 
 /// Map xfN_ field suffix to its offset within a transform block.

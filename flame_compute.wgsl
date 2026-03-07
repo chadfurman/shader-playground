@@ -105,10 +105,13 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32) -> vec2<f32> {
 
     let drift = u.kifs.w; // drift_speed
 
-    // Per-transform seeded noise drift (no periodic breathing)
+    // Per-transform seeded drift
     let seed = hash_u(idx * 31337u + 42u);
     let drift_amt = 0.3 + hash_f(seed) * 0.7; // 0.3–1.0 per transform
-    let angle_drift = vnoise(t * 0.05 * drift * drift_amt, seed) * 0.5;
+    // Steady spin — each transform rotates at its own constant speed, never reverses
+    let spin_speed = (hash_f(seed + 300u) * 2.0 - 1.0) * 0.15; // ±0.15 rad/s
+    let angle_drift = t * spin_speed * drift * drift_amt;
+    // Position: gentle bounded noise wander
     let ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * 0.08;
     let oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * 0.08;
 

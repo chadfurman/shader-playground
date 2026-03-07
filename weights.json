@@ -1,13 +1,17 @@
 {
   "_doc": {
-    "_signals": "bass, mids, highs, energy, beat, beat_accum, time_slow, time_med, time_fast, time_noise, time_envelope — each maps param names to weights. Unspecified = 0.",
-    "_formula": "final[i] = genome_base[i] + (sum of weight * signal for all 11 signals) / 11",
-    "_wildcards": "xfN_ expands to all transforms with per-transform randomized scaling (0.5x-1.5x). xf0_, xf1_ etc. target specific transforms.",
+    "_signals": "bass, mids, highs, energy, beat, beat_accum, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope — each maps param names to weights. Unspecified = 0.",
+    "_formula": "final[i] = genome_base[i] + (sum of weight * signal for all 15 signals) / 15",
+    "_wildcards": "xfN_ expands to all transforms with per-transform randomness (-1 to 1) and magnitude (1 to 5). xf0_, xf1_ etc. target specific transforms (no randomness/magnitude).",
     "_time_signals": {
-      "time_slow": "sin(t * 0.1) — ~60s cycle, for glacial drift",
-      "time_med": "sin(t * 0.5) — ~12s cycle, for breathing rhythms",
-      "time_fast": "sin(t * 2.0) — ~3s cycle, for quick pulsing",
-      "time_noise": "Smooth noise seeded by time — organic wandering, never repeats",
+      "time": "Raw elapsed seconds — steady linear ramp, never oscillates",
+      "time_slow": "Noise at 0.05 speed — ~20s wander, glacial",
+      "time_med": "Noise at 0.2 speed — ~5s wander",
+      "time_fast": "Noise at 0.8 speed — ~1.25s wander",
+      "time_noise": "Noise at 0.3 speed — organic wandering, never repeats",
+      "time_drift": "Noise at 0.02 speed — ~50s glacial drift",
+      "time_flutter": "Noise at 1.5 speed — quick flicker",
+      "time_walk": "Random walk — accumulated noise, always moving forward, never reverses",
       "time_envelope": "0-1 ramp since last mutation (10s to reach 1.0) — settle then drift"
     },
     "_params": {
@@ -36,56 +40,46 @@
     }
   },
   "bass": {
-    "xfN_swirl": 0.5,
-    "xfN_spherical": 0.3,
     "color_shift": -0.4,
     "flame_brightness": 0.3
   },
   "mids": {
-    "xfN_sinusoidal": 0.5,
-    "xfN_linear": 0.3,
     "color_shift": 0.15
   },
   "highs": {
-    "xfN_horseshoe": 0.3,
-    "xfN_handkerchief": 0.3,
     "color_shift": 0.3
   },
   "energy": {
     "flame_brightness": 0.7,
     "drift_speed": 1.5,
-    "kifs_brightness": 0.04,
-    "xfN_spherical": 0.2,
-    "mutation_rate": 0.1
+    "kifs_brightness": 0.005,
+    "mutation_rate": 0.3
   },
   "beat": {
-    "xfN_swirl": 0.4,
-    "xfN_horseshoe": 0.3,
     "color_shift": -0.3,
-    "trail": -0.2
+    "trail": -0.2,
+    "mutation_rate": 0.2
   },
   "beat_accum": {
     "trail": 0.4,
-    "xfN_sinusoidal": 0.2,
-    "xfN_handkerchief": 0.2,
-    "mutation_rate": 1.0
+    "mutation_rate": 1.5
   },
+  "time": {},
   "time_slow": {
-    "kifs_fold": 0.3,
-    "kifs_scale": 0.2
+    "color_shift": 0.2
   },
-  "time_med": {
-    "color_shift": 0.2,
-    "xfN_angle": 0.1
-  },
-  "time_fast": {
-    "xfN_swirl": 0.08,
-    "xfN_sinusoidal": 0.06
-  },
+  "time_med": {},
+  "time_fast": {},
   "time_noise": {
     "xfN_offset_x": 0.1,
-    "xfN_offset_y": 0.1
+    "xfN_offset_y": 0.1,
+    "xfN_angle": 0.1,
+    "kifs_fold": 0.05,
+    "kifs_scale": 0.03
   },
+  "time_drift": {},
+  "time_flutter": {},
+  "time_walk": {},
   "time_envelope": {
     "drift_speed": 0.5
   }

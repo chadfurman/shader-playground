@@ -102,7 +102,7 @@ impl FlameGenome {
             kifs: KifsParams {
                 fold_angle: 0.62,
                 scale: 1.8,
-                brightness: 0.06, // subtle background, not competing with flames
+                brightness: 0.008, // whisper-quiet background
             },
             // Electric Sheep-inspired: each transform is a specialist
             // with one dominant variation, varied weights, and wide offsets
