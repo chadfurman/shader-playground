@@ -52,7 +52,7 @@ fn build_device_list() -> Vec<LiveDevice> {
     // Input devices
     if let Ok(inputs) = host.input_devices() {
         for d in inputs {
-            let name = d.name().unwrap_or_else(|_| "???".into());
+            let name = d.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "???".into());
             devices.push(LiveDevice {
                 name,
                 kind: "input",
@@ -68,7 +68,7 @@ fn build_device_list() -> Vec<LiveDevice> {
     // Output devices (loopback)
     if let Ok(outputs) = host.output_devices() {
         for d in outputs {
-            let name = d.name().unwrap_or_else(|_| "???".into());
+            let name = d.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "???".into());
             devices.push(LiveDevice {
                 name,
                 kind: "loopback",

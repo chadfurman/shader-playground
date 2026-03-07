@@ -117,7 +117,7 @@ pub struct AudioCapture {
 impl AudioCapture {
     /// Construct from a cpal device selected by the device picker.
     pub fn from_device(device: cpal::Device, is_input: bool) -> Result<Self, String> {
-        let name = device.name().unwrap_or_else(|_| "???".into());
+        let name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "???".into());
         let config = if is_input {
             device.default_input_config()
         } else {
