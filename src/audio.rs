@@ -344,3 +344,93 @@ pub fn spawn_audio_thread(capture: AudioCapture, features_path: PathBuf) {
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper: simulate N seconds of constant input at 30Hz
+    fn run_normalizer(norm: &mut BandNormalizer, value: f32, seconds: f32) -> f32 {
+        let dt = 1.0 / 30.0;
+        let steps = (seconds / dt) as usize;
+        let mut last = 0.0;
+        for _ in 0..steps {
+            last = norm.update(value, dt);
+        }
+        last
+    }
+
+    #[test]
+    fn constant_loud_signal_converges_to_one() {
+        let mut norm = BandNormalizer::new(0.005);
+        let result = run_normalizer(&mut norm, 0.1, 3.0);
+        assert!((result - 1.0).abs() < 0.05, "expected ~1.0, got {result}");
+    }
+
+    #[test]
+    fn constant_quiet_signal_converges_to_one() {
+        let mut norm = BandNormalizer::new(0.005);
+        let result = run_normalizer(&mut norm, 0.001, 3.0);
+        // 0.001 < floor 0.005, so peak stays at floor
+        // output = 0.001 / 0.005 = 0.2
+        assert!((result - 0.2).abs() < 0.05, "expected ~0.2, got {result}");
+    }
+
+    #[test]
+    fn silence_stays_zero() {
+        let mut norm = BandNormalizer::new(0.005);
+        let result = run_normalizer(&mut norm, 0.0, 3.0);
+        assert!(result < 0.001, "expected ~0.0, got {result}");
+    }
+
+    #[test]
+    fn loud_then_quiet_adapts_up() {
+        let mut norm = BandNormalizer::new(0.005);
+        // 2s of loud signal
+        run_normalizer(&mut norm, 0.1, 2.0);
+        // switch to quiet — initially low relative to old peak
+        let initial = norm.update(0.01, 1.0 / 30.0);
+        assert!(initial < 0.2, "expected low initially, got {initial}");
+        // after 3s of quiet, should adapt up
+        let adapted = run_normalizer(&mut norm, 0.01, 3.0);
+        assert!(adapted > 0.7, "expected adapted up, got {adapted}");
+    }
+
+    #[test]
+    fn quiet_then_loud_no_overshoot() {
+        let mut norm = BandNormalizer::new(0.005);
+        run_normalizer(&mut norm, 0.01, 2.0);
+        // jump to loud — peak snaps up instantly
+        let result = norm.update(0.1, 1.0 / 30.0);
+        assert!(result <= 1.01, "expected no overshoot, got {result}");
+    }
+
+    #[test]
+    fn bands_are_independent() {
+        let mut bass_norm = BandNormalizer::new(0.005);
+        let mut mids_norm = BandNormalizer::new(0.003);
+        // Feed different values
+        run_normalizer(&mut bass_norm, 0.1, 2.0);
+        run_normalizer(&mut mids_norm, 0.02, 2.0);
+        // Both should converge to ~1.0 independently
+        let bass_out = bass_norm.update(0.1, 1.0 / 30.0);
+        let mids_out = mids_norm.update(0.02, 1.0 / 30.0);
+        assert!((bass_out - 1.0).abs() < 0.1, "bass: expected ~1.0, got {bass_out}");
+        assert!((mids_out - 1.0).abs() < 0.1, "mids: expected ~1.0, got {mids_out}");
+    }
+
+    #[test]
+    fn near_floor_no_oscillation() {
+        let mut norm = BandNormalizer::new(0.005);
+        // Feed values just above floor
+        let mut results = Vec::new();
+        for _ in 0..90 {
+            results.push(norm.update(0.006, 1.0 / 30.0));
+        }
+        // Last 30 samples should be stable (within 0.1 of each other)
+        let last_30 = &results[60..];
+        let min = last_30.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max = last_30.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        assert!(max - min < 0.1, "oscillating: min={min}, max={max}");
+    }
+}
