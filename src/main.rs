@@ -1002,6 +1002,9 @@ impl ApplicationHandler for App {
                 self.morph_start_xf = g_xf;
                 self.morph_progress = 1.0;
                 self.num_transforms = self.genome.total_buffer_transforms();
+                if let Some(gpu) = &mut self.gpu {
+                    gpu.resize_transform_buffer(self.num_transforms);
+                }
             }
         }
 
