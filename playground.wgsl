@@ -21,6 +21,7 @@ struct Uniforms {
 @group(0) @binding(1) var prev_frame: texture_2d<f32>;
 @group(0) @binding(2) var prev_sampler: sampler;
 @group(0) @binding(3) var<storage, read> histogram: array<u32>;
+@group(0) @binding(4) var crossfade_tex: texture_2d<f32>;
 
 const PI: f32  = 3.14159265;
 const TAU: f32 = 6.28318530;
@@ -166,14 +167,18 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let vibrant_color = mix(vec3(lum), avg_color, pow(alpha, max(1.0 - vibrancy, 0.01)));
     let flame = vibrant_color * alpha;
 
-    // ── Combine ──
-    var col = flame + bg;
+    // ── Crossfade + Combine ──
+    let crossfade = clamp(u.extra2.x, 0.0, 1.0);
+    let old_flame = textureSample(crossfade_tex, prev_sampler, tex_uv).rgb;
 
-    // ── Feedback persistence ──
+    // New flame from histogram
+    var new_col = flame + bg;
+
+    // Feedback trail — only for the new flame
     let prev = textureSample(prev_frame, prev_sampler, tex_uv).rgb;
-    col = col + prev * trail;
+    new_col = new_col + prev * trail;
 
-    // Bloom: sample feedback at offsets for glow effect
+    // Bloom on the new flame's feedback
     let bloom_int = u.extra.z;
     if (bloom_int > 0.001) {
         let texel = 1.0 / u.resolution;
@@ -194,8 +199,12 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         for (var bi = 0u; bi < 12u; bi++) {
             bloom += textureSample(prev_frame, prev_sampler, tex_uv + offsets[bi] * texel * 4.0).rgb * weights[bi];
         }
-        col += bloom * bloom_int;
+        new_col += bloom * bloom_int;
     }
+
+    // Blend: old snapshot dissolves out, new flame fades in
+    // Gently dim old_flame so it doesn't persist forever during slow dissolves
+    var col = mix(old_flame * (1.0 - trail * 0.3), new_col, crossfade);
 
     // Tonemap: soft clamp to prevent blowout
     col = col / (col + vec3(1.0));  // Reinhard
