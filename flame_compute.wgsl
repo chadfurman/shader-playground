@@ -6,10 +6,10 @@ struct Uniforms {
     resolution: vec2<f32>,
     mouse: vec2<f32>,
     transform_count: u32,
-    _pad: u32,
+    has_final_xform: u32,
     globals: vec4<f32>,   // speed, zoom, trail, flame_brightness
     kifs: vec4<f32>,      // fold_angle, scale, brightness, drift_speed
-    extra: vec4<f32>,     // color_shift, 0, 0, 0
+    extra: vec4<f32>,     // color_shift, vibrancy, bloom_intensity, symmetry
 }
 
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;
@@ -360,17 +360,54 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         if (i < 20u) { continue; }
 
-        let screen = (p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h));
-        let px_x = i32(screen.x);
-        let px_y = i32(screen.y);
+        // Final transform (if present)
+        var plot_p = p;
+        var plot_color = color_idx;
+        if (u.has_final_xform == 1u) {
+            let final_idx = u.transform_count;  // final xform is right after regular xforms
+            plot_p = apply_xform(plot_p, final_idx, t, &rng);
+            plot_color = plot_color * 0.5 + xf(final_idx, 5u) * 0.5;  // blend with final xform's color
+        }
 
-        if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
-            let buf_idx = (u32(px_y) * w + u32(px_x)) * 4u;
-            let col = palette(color_idx + u.extra.x);  // apply color_shift
-            atomicAdd(&histogram[buf_idx], 1u);
-            atomicAdd(&histogram[buf_idx + 1u], u32(col.x * 1000.0));
-            atomicAdd(&histogram[buf_idx + 2u], u32(col.y * 1000.0));
-            atomicAdd(&histogram[buf_idx + 3u], u32(col.z * 1000.0));
+        // Symmetry: plot rotated/mirrored copies
+        let sym = i32(u.extra.w);
+        let abs_sym = max(abs(sym), 1);
+        let bilateral = sym < 0;
+
+        for (var si = 0; si < abs_sym; si++) {
+            let sym_angle = f32(si) * TAU / f32(abs_sym);
+            let cp = cos(sym_angle);
+            let sp = sin(sym_angle);
+            let sym_p = vec2(plot_p.x * cp - plot_p.y * sp, plot_p.x * sp + plot_p.y * cp);
+
+            let screen = (sym_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h));
+            let px_x = i32(screen.x);
+            let px_y = i32(screen.y);
+
+            if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
+                let buf_idx = (u32(px_y) * w + u32(px_x)) * 4u;
+                let col = palette(plot_color + u.extra.x);
+                atomicAdd(&histogram[buf_idx], 1u);
+                atomicAdd(&histogram[buf_idx + 1u], u32(col.x * 1000.0));
+                atomicAdd(&histogram[buf_idx + 2u], u32(col.y * 1000.0));
+                atomicAdd(&histogram[buf_idx + 3u], u32(col.z * 1000.0));
+            }
+
+            // Bilateral mirror
+            if (bilateral) {
+                let mir_p = vec2(-sym_p.x, sym_p.y);
+                let mscreen = (mir_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h));
+                let mpx_x = i32(mscreen.x);
+                let mpx_y = i32(mscreen.y);
+                if (mpx_x >= 0 && mpx_x < i32(w) && mpx_y >= 0 && mpx_y < i32(h)) {
+                    let mbuf_idx = (u32(mpx_y) * w + u32(mpx_x)) * 4u;
+                    let mcol = palette(plot_color + u.extra.x);
+                    atomicAdd(&histogram[mbuf_idx], 1u);
+                    atomicAdd(&histogram[mbuf_idx + 1u], u32(mcol.x * 1000.0));
+                    atomicAdd(&histogram[mbuf_idx + 2u], u32(mcol.y * 1000.0));
+                    atomicAdd(&histogram[mbuf_idx + 3u], u32(mcol.z * 1000.0));
+                }
+            }
         }
     }
 }
