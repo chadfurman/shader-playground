@@ -220,6 +220,39 @@ const GAIN_ATTACK: f32 = 0.05;
 const GAIN_RELEASE: f32 = 0.003;
 const NOISE_GATE: f32 = 0.0001;
 
+/// Per-band rolling peak normalizer.
+/// Tracks a rolling maximum that snaps up instantly on loud input
+/// and decays exponentially (~2s half-life) during quiet periods.
+/// Output = raw / rolling_peak, clamped to 0-1.
+pub struct BandNormalizer {
+    rolling_peak: f32,
+    floor: f32,
+}
+
+impl BandNormalizer {
+    pub fn new(floor: f32) -> Self {
+        Self {
+            rolling_peak: floor,
+            floor,
+        }
+    }
+
+    /// Feed a raw value and dt (seconds since last call). Returns normalized 0-1.
+    pub fn update(&mut self, raw: f32, dt: f32) -> f32 {
+        if raw > self.rolling_peak {
+            self.rolling_peak = raw;
+        } else {
+            // ~2s half-life decay: 0.97^(dt*30) per tick at 30Hz
+            self.rolling_peak *= 0.97f32.powf(dt * 30.0);
+        }
+        self.rolling_peak = self.rolling_peak.max(self.floor);
+        if self.rolling_peak < 1e-10 {
+            return 0.0;
+        }
+        (raw / self.rolling_peak).min(1.0)
+    }
+}
+
 pub struct AudioProcessor {
     analyzer: AudioAnalyzer,
     pub features: AudioFeatures,
