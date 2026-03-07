@@ -14,6 +14,7 @@ struct Uniforms {
     globals: vec4<f32>,
     kifs: vec4<f32>,
     extra: vec4<f32>,
+    extra2: vec4<f32>,  // crossfade_alpha, reserved, reserved, reserved
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;

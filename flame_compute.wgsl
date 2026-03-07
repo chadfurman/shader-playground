@@ -10,6 +10,7 @@ struct Uniforms {
     globals: vec4<f32>,   // speed, zoom, trail, flame_brightness
     kifs: vec4<f32>,      // fold_angle, scale, brightness, drift_speed
     extra: vec4<f32>,     // color_shift, vibrancy, bloom_intensity, symmetry
+    extra2: vec4<f32>,     // crossfade_alpha, reserved, reserved, reserved
 }
 
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;

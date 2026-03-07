@@ -34,6 +34,7 @@ struct Uniforms {
     globals: [f32; 4],   // speed, zoom, trail, flame_brightness
     kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
     extra: [f32; 4],      // color_shift, vibrancy, bloom_intensity, symmetry
+    extra2: [f32; 4],     // crossfade_alpha, reserved, reserved, reserved
 }
 
 // ── File Watcher ──
@@ -1118,6 +1119,7 @@ impl ApplicationHandler for App {
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
                     extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
+                    extra2: [1.0, 0.0, 0.0, 0.0],  // crossfade_alpha=1.0 (fully new, no crossfade active)
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
