@@ -16,7 +16,7 @@ struct Uniforms {
 @group(0) @binding(1) var<uniform> u: Uniforms;
 @group(0) @binding(2) var<storage, read> transforms: array<f32>;
 
-fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 12u + field]; }
+fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 32u + field]; }
 
 const PI: f32 = 3.14159265;
 

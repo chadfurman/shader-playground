@@ -164,10 +164,10 @@ impl Gpu {
             config.height,
         );
 
-        // Initial transform buffer (6 transforms * 12 floats * 4 bytes)
+        // Initial transform buffer (6 transforms * 32 floats * 4 bytes)
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
-            size: (6 * 12 * 4) as u64,
+            size: (6 * 32 * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -381,7 +381,7 @@ impl Gpu {
     }
 
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
-        let size = (num_transforms.max(1) * 12 * 4) as u64;
+        let size = (num_transforms.max(1) * 32 * 4) as u64;
         self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
             size,
@@ -974,7 +974,7 @@ impl ApplicationHandler for App {
                     "1" | "2" | "3" | "4" => {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
                         if idx < self.num_transforms {
-                            let base = idx * 12; // weight is first field
+                            let base = idx * 32; // weight is first field
                             if self.target_xf_params[base] < 0.01 {
                                 self.target_xf_params[base] = 0.25;
                             } else {
@@ -1117,7 +1117,7 @@ impl ApplicationHandler for App {
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
-                let xf_write_len = self.num_transforms * 12;
+                let xf_write_len = self.num_transforms * 32;
                 let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
                 gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
 

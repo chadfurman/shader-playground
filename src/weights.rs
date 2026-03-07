@@ -54,12 +54,16 @@ pub fn value_noise_pub(t: f32) -> f32 {
 }
 
 const SIGNAL_COUNT: f32 = 15.0; // bass, mids, highs, energy, beat, beat_accum, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
-const PARAMS_PER_XF: usize = 12;
+const PARAMS_PER_XF: usize = 32;
 
 /// Per-transform field names in order (matching genome flatten layout).
 const XF_FIELDS: [&str; PARAMS_PER_XF] = [
     "weight", "angle", "scale", "offset_x", "offset_y", "color",
     "linear", "sinusoidal", "spherical", "swirl", "horseshoe", "handkerchief",
+    "julia", "polar", "disc", "rings", "bubble", "fisheye",
+    "exponential", "spiral", "diamond", "bent", "waves", "popcorn",
+    "fan", "eyefish", "cross", "tangent", "cosine", "blob",
+    "noise", "curl",
 ];
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]

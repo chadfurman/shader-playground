@@ -11,12 +11,34 @@ pub struct FlameTransform {
     pub scale: f32,
     pub offset: [f32; 2],
     pub color: f32,
+    // Original 6 variations
     pub linear: f32,
     pub sinusoidal: f32,
     pub spherical: f32,
     pub swirl: f32,
     pub horseshoe: f32,
     pub handkerchief: f32,
+    // New 20 variations
+    #[serde(default)] pub julia: f32,
+    #[serde(default)] pub polar: f32,
+    #[serde(default)] pub disc: f32,
+    #[serde(default)] pub rings: f32,
+    #[serde(default)] pub bubble: f32,
+    #[serde(default)] pub fisheye: f32,
+    #[serde(default)] pub exponential: f32,
+    #[serde(default)] pub spiral: f32,
+    #[serde(default)] pub diamond: f32,
+    #[serde(default)] pub bent: f32,
+    #[serde(default)] pub waves: f32,
+    #[serde(default)] pub popcorn: f32,
+    #[serde(default)] pub fan: f32,
+    #[serde(default)] pub eyefish: f32,
+    #[serde(default)] pub cross: f32,
+    #[serde(default)] pub tangent: f32,
+    #[serde(default)] pub cosine: f32,
+    #[serde(default)] pub blob: f32,
+    #[serde(default)] pub noise: f32,
+    #[serde(default)] pub curl: f32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -66,23 +88,46 @@ impl FlameGenome {
     }
 
     /// Pack all transforms into a flat Vec<f32> for the storage buffer.
-    /// Each transform = 12 floats: weight, angle, scale, offset_x, offset_y,
-    /// color, linear, sinusoidal, spherical, swirl, horseshoe, handkerchief.
+    /// Each transform = 32 floats: weight, angle, scale, offset_x, offset_y,
+    /// color, linear, sinusoidal, spherical, swirl, horseshoe, handkerchief,
+    /// julia, polar, disc, rings, bubble, fisheye, exponential, spiral,
+    /// diamond, bent, waves, popcorn, fan, eyefish, cross, tangent,
+    /// cosine, blob, noise, curl.
     pub fn flatten_transforms(&self) -> Vec<f32> {
-        let mut t = Vec::with_capacity(self.transforms.len() * 12);
+        let mut t = Vec::with_capacity(self.transforms.len() * 32);
         for xf in &self.transforms {
-            t.push(xf.weight);
-            t.push(xf.angle);
-            t.push(xf.scale);
-            t.push(xf.offset[0]);
-            t.push(xf.offset[1]);
-            t.push(xf.color);
-            t.push(xf.linear);
-            t.push(xf.sinusoidal);
-            t.push(xf.spherical);
-            t.push(xf.swirl);
-            t.push(xf.horseshoe);
-            t.push(xf.handkerchief);
+            t.push(xf.weight);       // 0
+            t.push(xf.angle);        // 1
+            t.push(xf.scale);        // 2
+            t.push(xf.offset[0]);    // 3
+            t.push(xf.offset[1]);    // 4
+            t.push(xf.color);        // 5
+            t.push(xf.linear);       // 6
+            t.push(xf.sinusoidal);   // 7
+            t.push(xf.spherical);    // 8
+            t.push(xf.swirl);        // 9
+            t.push(xf.horseshoe);    // 10
+            t.push(xf.handkerchief); // 11
+            t.push(xf.julia);        // 12
+            t.push(xf.polar);        // 13
+            t.push(xf.disc);         // 14
+            t.push(xf.rings);        // 15
+            t.push(xf.bubble);       // 16
+            t.push(xf.fisheye);      // 17
+            t.push(xf.exponential);  // 18
+            t.push(xf.spiral);       // 19
+            t.push(xf.diamond);      // 20
+            t.push(xf.bent);         // 21
+            t.push(xf.waves);        // 22
+            t.push(xf.popcorn);      // 23
+            t.push(xf.fan);          // 24
+            t.push(xf.eyefish);      // 25
+            t.push(xf.cross);        // 26
+            t.push(xf.tangent);      // 27
+            t.push(xf.cosine);       // 28
+            t.push(xf.blob);         // 29
+            t.push(xf.noise);        // 30
+            t.push(xf.curl);         // 31
         }
         t
     }
@@ -121,6 +166,11 @@ impl FlameGenome {
                     swirl: 0.0,
                     horseshoe: 0.0,
                     handkerchief: 0.0,
+                    julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
+                    bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
+                    diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
+                    fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
+                    cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
                 },
                 FlameTransform { // dominant spherical — inversion, pulls inward
                     weight: 0.25,
@@ -134,6 +184,11 @@ impl FlameGenome {
                     swirl: 0.05,
                     horseshoe: 0.0,
                     handkerchief: 0.0,
+                    julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
+                    bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
+                    diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
+                    fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
+                    cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
                 },
                 FlameTransform { // dominant swirl — spiral arms
                     weight: 0.15,
@@ -147,6 +202,11 @@ impl FlameGenome {
                     swirl: 1.0,
                     horseshoe: 0.0,
                     handkerchief: 0.0,
+                    julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
+                    bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
+                    diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
+                    fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
+                    cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
                 },
                 FlameTransform { // dominant linear — contractive backbone
                     weight: 0.10,
@@ -160,6 +220,11 @@ impl FlameGenome {
                     swirl: 0.0,
                     horseshoe: 0.0,
                     handkerchief: 0.0,
+                    julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
+                    bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
+                    diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
+                    fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
+                    cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
                 },
                 FlameTransform { // dominant handkerchief — chaotic detail
                     weight: 0.05,
@@ -173,6 +238,11 @@ impl FlameGenome {
                     swirl: 0.0,
                     horseshoe: 0.0,
                     handkerchief: 1.0,
+                    julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
+                    bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
+                    diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
+                    fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
+                    cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
                 },
                 FlameTransform { // dominant horseshoe — distant structure
                     weight: 0.10,
@@ -186,6 +256,11 @@ impl FlameGenome {
                     swirl: 0.0,
                     horseshoe: 1.0,
                     handkerchief: 0.0,
+                    julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
+                    bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
+                    diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
+                    fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
+                    cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
                 },
             ],
         }
@@ -367,6 +442,11 @@ impl FlameGenome {
                 swirl: vars[3],
                 horseshoe: vars[4],
                 handkerchief: vars[5],
+                julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
+                bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
+                diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
+                fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
+                cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
             }
         };
         self.transforms.push(new_xf);
