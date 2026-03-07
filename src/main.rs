@@ -738,6 +738,7 @@ struct App {
     audio_enabled: bool,
     audio_info: bool,
     audio_info_timer: f32,
+    audio_samples: Vec<AudioFeatures>,
     mutation_accum: f32,
     last_mutation_time: f32,
     random_walk: f32,
@@ -774,6 +775,7 @@ impl App {
             audio_enabled: true,
             audio_info: false,
             audio_info_timer: 0.0,
+            audio_samples: Vec::new(),
             mutation_accum: 0.0,
             last_mutation_time: 0.0,
             random_walk: 0.0,
@@ -1002,7 +1004,28 @@ impl ApplicationHandler for App {
                     }
                     "i" => {
                         self.audio_info = !self.audio_info;
-                        eprintln!("[info] {}", if self.audio_info { "ON — printing audio features every 0.5s" } else { "OFF" });
+                        if self.audio_info {
+                            self.audio_samples.clear();
+                            eprintln!("[info] ON — recording audio features (press i again to save)");
+                        } else {
+                            let count = self.audio_samples.len();
+                            if count > 0 {
+                                let timestamp = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap()
+                                    .as_secs();
+                                let path = format!("audio_samples_{}.json", timestamp);
+                                match serde_json::to_string_pretty(&self.audio_samples) {
+                                    Ok(json) => {
+                                        std::fs::write(&path, json).ok();
+                                        eprintln!("[info] OFF — saved {count} samples to {path}");
+                                    }
+                                    Err(e) => eprintln!("[info] OFF — serialize error: {e}"),
+                                }
+                            } else {
+                                eprintln!("[info] OFF — no samples collected");
+                            }
+                        }
                     }
                     _ => {}
                 },
@@ -1044,15 +1067,16 @@ impl ApplicationHandler for App {
                         eprintln!("[auto-evolve] → {}", self.genome.name);
                     }
 
-                    // Info mode
+                    // Info mode — collect samples + print
                     if self.audio_info {
                         self.audio_info_timer += dt;
-                        if self.audio_info_timer >= 0.5 {
+                        if self.audio_info_timer >= 0.1 {
                             self.audio_info_timer = 0.0;
+                            self.audio_samples.push(self.audio_features.clone());
                             let f = &self.audio_features;
                             eprintln!(
-                                "[info] bass={:.3} mids={:.3} highs={:.3} energy={:.3} beat={:.2} accum={:.2} pulse={:.2}",
-                                f.bass, f.mids, f.highs, f.energy, f.beat, f.beat_accum, f.beat_pulse
+                                "[info] bass={:.3} mids={:.3} highs={:.3} energy={:.3} beat={:.2} accum={:.2}",
+                                f.bass, f.mids, f.highs, f.energy, f.beat, f.beat_accum
                             );
                         }
                     }
