@@ -1,1 +1,3 @@
 target/
+audio_samples_*.json
+audio_features.json
