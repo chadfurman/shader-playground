@@ -536,6 +536,24 @@ impl Gpu {
         frame.present();
         self.ping = !self.ping;
     }
+
+    fn snapshot_crossfade(&mut self) {
+        // After render(), ping has been toggled. If ping is now false, the last
+        // render wrote to frame_a. If ping is now true, last render wrote to frame_b.
+        let source = if !self.ping { &self.frame_a_tex } else { &self.frame_b_tex };
+
+        let mut encoder = self.device.create_command_encoder(&Default::default());
+        encoder.copy_texture_to_texture(
+            source.as_image_copy(),
+            self.crossfade_tex.as_image_copy(),
+            wgpu::Extent3d {
+                width: self.config.width,
+                height: self.config.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(std::iter::once(encoder.finish()));
+    }
 }
 
 // ── Helper Functions ──
@@ -810,6 +828,8 @@ struct App {
     mutation_accum: f32,
     last_mutation_time: f32,
     random_walk: f32,
+    crossfade_alpha: f32,       // 0.0 = fully old, 1.0 = fully new
+    crossfade_active: bool,
 }
 
 const MORPH_RATES: [f32; 15] = [
@@ -851,6 +871,8 @@ impl App {
             mutation_accum: 0.0,
             last_mutation_time: 0.0,
             random_walk: 0.0,
+            crossfade_alpha: 1.0,
+            crossfade_active: false,
         }
     }
 
@@ -1002,7 +1024,13 @@ impl ApplicationHandler for App {
                 ..
             } => match logical_key {
                 Key::Named(NamedKey::Space) => {
-                    // Evolve: mutate and crossfade
+                    // Snapshot for crossfade
+                    if let Some(gpu) = &mut self.gpu {
+                        gpu.snapshot_crossfade();
+                    }
+                    self.crossfade_alpha = 0.0;
+                    self.crossfade_active = true;
+
                     self.genome_history.push(self.genome.clone());
                     if self.genome_history.len() > 10 {
                         self.genome_history.remove(0);
@@ -1015,6 +1043,12 @@ impl ApplicationHandler for App {
                 Key::Named(NamedKey::Backspace) => {
                     // Revert to previous genome
                     if let Some(prev) = self.genome_history.pop() {
+                        if let Some(gpu) = &mut self.gpu {
+                            gpu.snapshot_crossfade();
+                        }
+                        self.crossfade_alpha = 0.0;
+                        self.crossfade_active = true;
+
                         self.genome = prev;
                         self.apply_genome_targets();
                         eprintln!("[revert] back to previous");
@@ -1129,6 +1163,14 @@ impl ApplicationHandler for App {
                     self.mutation_accum += mr * dt;
                     if self.mutation_accum >= 1.0 {
                         self.mutation_accum = 0.0;
+
+                        // Snapshot current frame for crossfade dissolve
+                        if let Some(gpu) = &mut self.gpu {
+                            gpu.snapshot_crossfade();
+                        }
+                        self.crossfade_alpha = 0.0;
+                        self.crossfade_active = true;
+
                         self.genome_history.push(self.genome.clone());
                         if self.genome_history.len() > 10 {
                             self.genome_history.remove(0);
@@ -1172,6 +1214,15 @@ impl ApplicationHandler for App {
                     self.xf_params[i] += (self.target_xf_params[i] - self.xf_params[i]) * rate;
                 }
 
+                // Ramp crossfade alpha
+                if self.crossfade_active {
+                    self.crossfade_alpha += dt / 7.0; // 7-second dissolve
+                    if self.crossfade_alpha >= 1.0 {
+                        self.crossfade_alpha = 1.0;
+                        self.crossfade_active = false;
+                    }
+                }
+
                 // Write uniforms
                 let uniforms = Uniforms {
                     time: self.start.elapsed().as_secs_f32(),
@@ -1186,7 +1237,7 @@ impl ApplicationHandler for App {
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
                     extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
-                    extra2: [1.0, 0.0, 0.0, 0.0],  // crossfade_alpha=1.0 (fully new, no crossfade active)
+                    extra2: [self.crossfade_alpha, 0.0, 0.0, 0.0],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
