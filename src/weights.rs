@@ -53,7 +53,8 @@ pub fn value_noise_pub(t: f32) -> f32 {
     value_noise(t)
 }
 
-const SIGNAL_COUNT: f32 = 15.0; // bass, mids, highs, energy, beat, beat_accum, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
+const AUDIO_SIGNAL_COUNT: f32 = 6.0;  // bass, mids, highs, energy, beat, beat_accum
+const TIME_SIGNAL_COUNT: f32 = 9.0;   // time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
 const PARAMS_PER_XF: usize = 32;
 
 /// Per-transform field names in order (matching genome flatten layout).
@@ -107,28 +108,28 @@ impl Weights {
         serde_json::from_str(&json).map_err(|e| format!("parse {}: {e}", path.display()))
     }
 
-    /// Build the list of (weight-map, signal-value) pairs used by all apply methods.
+    /// Build the list of (weight-map, signal-value, divisor) tuples used by all apply methods.
     fn signal_list<'a>(
         &'a self,
         features: &crate::audio::AudioFeatures,
         time_signals: &TimeSignals,
-    ) -> Vec<(&'a HashMap<String, f32>, f32)> {
+    ) -> Vec<(&'a HashMap<String, f32>, f32, f32)> {
         vec![
-            (&self.bass, features.bass),
-            (&self.mids, features.mids),
-            (&self.highs, features.highs),
-            (&self.energy, features.energy),
-            (&self.beat, features.beat),
-            (&self.beat_accum, features.beat_accum),
-            (&self.time, time_signals.time),
-            (&self.time_slow, time_signals.time_slow),
-            (&self.time_med, time_signals.time_med),
-            (&self.time_fast, time_signals.time_fast),
-            (&self.time_noise, time_signals.time_noise),
-            (&self.time_drift, time_signals.time_drift),
-            (&self.time_flutter, time_signals.time_flutter),
-            (&self.time_walk, time_signals.time_walk),
-            (&self.time_envelope, time_signals.time_envelope),
+            (&self.bass, features.bass, AUDIO_SIGNAL_COUNT),
+            (&self.mids, features.mids, AUDIO_SIGNAL_COUNT),
+            (&self.highs, features.highs, AUDIO_SIGNAL_COUNT),
+            (&self.energy, features.energy, AUDIO_SIGNAL_COUNT),
+            (&self.beat, features.beat, AUDIO_SIGNAL_COUNT),
+            (&self.beat_accum, features.beat_accum, AUDIO_SIGNAL_COUNT),
+            (&self.time, time_signals.time, TIME_SIGNAL_COUNT),
+            (&self.time_slow, time_signals.time_slow, TIME_SIGNAL_COUNT),
+            (&self.time_med, time_signals.time_med, TIME_SIGNAL_COUNT),
+            (&self.time_fast, time_signals.time_fast, TIME_SIGNAL_COUNT),
+            (&self.time_noise, time_signals.time_noise, TIME_SIGNAL_COUNT),
+            (&self.time_drift, time_signals.time_drift, TIME_SIGNAL_COUNT),
+            (&self.time_flutter, time_signals.time_flutter, TIME_SIGNAL_COUNT),
+            (&self.time_walk, time_signals.time_walk, TIME_SIGNAL_COUNT),
+            (&self.time_envelope, time_signals.time_envelope, TIME_SIGNAL_COUNT),
         ]
     }
 
@@ -141,12 +142,12 @@ impl Weights {
     ) -> [f32; 12] {
         let mut result = *base;
         let signals = self.signal_list(features, time_signals);
-        for (_signal_idx, (weights, signal_val)) in signals.iter().enumerate() {
+        for (_signal_idx, (weights, signal_val, divisor)) in signals.iter().enumerate() {
             for (name, &weight) in *weights {
                 if name == "mutation_rate" { continue; }
                 if name.starts_with("xf") { continue; } // transform params handled separately
                 if let Some(idx) = global_index(name) {
-                    result[idx] += weight * signal_val / SIGNAL_COUNT;
+                    result[idx] += weight * signal_val / divisor;
                 }
             }
         }
@@ -163,7 +164,7 @@ impl Weights {
     ) -> Vec<f32> {
         let mut result = base.to_vec();
         let signals = self.signal_list(features, time_signals);
-        for (_signal_idx, (weights, signal_val)) in signals.iter().enumerate() {
+        for (_signal_idx, (weights, signal_val, divisor)) in signals.iter().enumerate() {
             for (name, &weight) in *weights {
                 if name == "mutation_rate" { continue; }
                 // xfN_ wildcard
@@ -174,7 +175,7 @@ impl Weights {
                             if idx < result.len() {
                                 let r = transform_randomness(xf);
                                 let m = transform_magnitude(xf);
-                                result[idx] += weight * r * m * signal_val / SIGNAL_COUNT;
+                                result[idx] += weight * r * m * signal_val / divisor;
                             }
                         }
                     }
@@ -184,7 +185,7 @@ impl Weights {
                     if xf < num_transforms {
                         let idx = xf * PARAMS_PER_XF + field_offset;
                         if idx < result.len() {
-                            result[idx] += weight * signal_val / SIGNAL_COUNT;
+                            result[idx] += weight * signal_val / divisor;
                         }
                     }
                 }
@@ -197,12 +198,12 @@ impl Weights {
     pub fn mutation_rate(&self, features: &crate::audio::AudioFeatures, time_signals: &TimeSignals) -> f32 {
         let signals = self.signal_list(features, time_signals);
         let mut rate = 0.0;
-        for (weights, signal_val) in &signals {
+        for (weights, signal_val, divisor) in &signals {
             if let Some(&w) = weights.get("mutation_rate") {
-                rate += w * signal_val;
+                rate += w * signal_val / divisor;
             }
         }
-        rate / SIGNAL_COUNT
+        rate
     }
 }
 
