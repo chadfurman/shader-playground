@@ -277,6 +277,7 @@ impl BeatDensity {
         (self.timestamps.len() as f32 / BEAT_DENSITY_MAX).min(1.0)
     }
 
+    #[cfg(test)]
     pub fn beats_in_window(&self) -> usize {
         self.timestamps.len()
     }
