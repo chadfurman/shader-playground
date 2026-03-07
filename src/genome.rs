@@ -358,12 +358,14 @@ impl FlameGenome {
         let num_mutations = rng.random_range(1..=3);
 
         for _ in 0..num_mutations {
-            match rng.random_range(0..5) {
+            match rng.random_range(0..7) {
                 0 => child.mutate_perturb(&mut rng),
                 1 => child.mutate_swap_variations(&mut rng),
                 2 => child.mutate_rotate_colors(&mut rng),
                 3 => child.mutate_shuffle_transforms(&mut rng),
-                _ => child.mutate_global_params(&mut rng),
+                4 => child.mutate_global_params(&mut rng),
+                5 => child.mutate_final_transform(&mut rng),
+                _ => child.mutate_symmetry(&mut rng),
             }
         }
 
@@ -449,6 +451,47 @@ impl FlameGenome {
     fn mutate_global_params(&mut self, rng: &mut impl Rng) {
         self.global.flame_brightness = (self.global.flame_brightness + rng.random_range(-0.1..0.1)).clamp(0.1, 1.0);
         self.global.zoom = (self.global.zoom + rng.random_range(-0.5..0.5)).clamp(1.5, 6.0);
+    }
+
+    fn mutate_final_transform(&mut self, rng: &mut impl Rng) {
+        match &mut self.final_transform {
+            Some(fxf) => {
+                // Perturb existing final transform
+                fxf.angle += rng.random_range(-0.5..0.5);
+                fxf.scale = (fxf.scale + rng.random_range(-0.2..0.2)).clamp(0.3, 2.0);
+                // Occasionally reinvent its variations
+                if rng.random_range(0.0..1.0) < 0.3 {
+                    for vi in 0..VARIATION_COUNT {
+                        fxf.set_variation(vi, 0.0);
+                    }
+                    let dominant = rng.random_range(0..VARIATION_COUNT);
+                    fxf.set_variation(dominant, rng.random_range(0.5..1.0));
+                }
+            }
+            None => {
+                // 30% chance to create a final transform
+                if rng.random_range(0.0..1.0) < 0.3 {
+                    let mut fxf = FlameTransform::default();
+                    fxf.scale = rng.random_range(0.5..1.5);
+                    fxf.angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
+                    let dominant = rng.random_range(0..VARIATION_COUNT);
+                    fxf.set_variation(dominant, rng.random_range(0.5..1.0));
+                    fxf.color = rng.random_range(0.0..1.0);
+                    self.final_transform = Some(fxf);
+                }
+            }
+        }
+    }
+
+    fn mutate_symmetry(&mut self, rng: &mut impl Rng) {
+        let roll: f32 = rng.random();
+        if roll < 0.3 {
+            self.symmetry = 1; // no symmetry
+        } else if roll < 0.7 {
+            self.symmetry = rng.random_range(2..=6); // rotational
+        } else {
+            self.symmetry = -rng.random_range(2..=4); // bilateral + rotational
+        }
     }
 
     fn mutate_add_transform(&mut self, rng: &mut impl Rng) {
