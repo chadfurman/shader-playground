@@ -262,12 +262,13 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     let q = rot2(angle + angle_drift) * p * scale
           + vec2(ox + ox_drift, oy + oy_drift);
 
+    // Skip zero-weight variations to save compute
     var v = q * w_lin;
-    v += V_sinusoidal(q)    * w_sin;
-    v += V_spherical(q)     * w_sph;
-    v += V_swirl(q)         * w_swi;
-    v += V_horseshoe(q)     * w_hor;
-    v += V_handkerchief(q)  * w_han;
+    if (w_sin > 0.0) { v += V_sinusoidal(q)    * w_sin; }
+    if (w_sph > 0.0) { v += V_spherical(q)     * w_sph; }
+    if (w_swi > 0.0) { v += V_swirl(q)         * w_swi; }
+    if (w_hor > 0.0) { v += V_horseshoe(q)     * w_hor; }
+    if (w_han > 0.0) { v += V_handkerchief(q)  * w_han; }
 
     let w_jul  = xf(idx, 12u);
     let w_pol  = xf(idx, 13u);
@@ -278,14 +279,14 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     let w_exp  = xf(idx, 18u);
     let w_spi  = xf(idx, 19u);
 
-    v += V_julia(q, rng)           * w_jul;
-    v += V_polar(q)                * w_pol;
-    v += V_disc(q)                 * w_dsc;
-    v += V_rings(q, scale * scale) * w_rng;
-    v += V_bubble(q)               * w_bub;
-    v += V_fisheye(q)              * w_fsh;
-    v += V_exponential(q)          * w_exp;
-    v += V_spiral(q)               * w_spi;
+    if (w_jul > 0.0) { v += V_julia(q, rng)           * w_jul; }
+    if (w_pol > 0.0) { v += V_polar(q)                * w_pol; }
+    if (w_dsc > 0.0) { v += V_disc(q)                 * w_dsc; }
+    if (w_rng > 0.0) { v += V_rings(q, scale * scale) * w_rng; }
+    if (w_bub > 0.0) { v += V_bubble(q)               * w_bub; }
+    if (w_fsh > 0.0) { v += V_fisheye(q)              * w_fsh; }
+    if (w_exp > 0.0) { v += V_exponential(q)          * w_exp; }
+    if (w_spi > 0.0) { v += V_spiral(q)               * w_spi; }
 
     let w_dia  = xf(idx, 20u);
     let w_bnt  = xf(idx, 21u);
@@ -300,18 +301,18 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     let w_noi  = xf(idx, 30u);
     let w_crl  = xf(idx, 31u);
 
-    v += V_diamond(q)                        * w_dia;
-    v += V_bent(q)                           * w_bnt;
-    v += V_waves(q, ox * 0.5, oy * 0.5)     * w_wav;
-    v += V_popcorn(q, ox * 0.3, oy * 0.3)   * w_pop;
-    v += V_fan(q, angle)                     * w_fan;
-    v += V_eyefish(q)                        * w_eye;
-    v += V_cross(q)                          * w_crs;
-    v += V_tangent(q)                        * w_tan;
-    v += V_cosine(q)                         * w_cos;
-    v += V_blob(q)                           * w_blb;
-    v += V_noise(q, seed)                    * w_noi;
-    v += V_curl(q, seed)                     * w_crl;
+    if (w_dia > 0.0) { v += V_diamond(q)                        * w_dia; }
+    if (w_bnt > 0.0) { v += V_bent(q)                           * w_bnt; }
+    if (w_wav > 0.0) { v += V_waves(q, ox * 0.5, oy * 0.5)     * w_wav; }
+    if (w_pop > 0.0) { v += V_popcorn(q, ox * 0.3, oy * 0.3)   * w_pop; }
+    if (w_fan > 0.0) { v += V_fan(q, angle)                     * w_fan; }
+    if (w_eye > 0.0) { v += V_eyefish(q)                        * w_eye; }
+    if (w_crs > 0.0) { v += V_cross(q)                          * w_crs; }
+    if (w_tan > 0.0) { v += V_tangent(q)                        * w_tan; }
+    if (w_cos > 0.0) { v += V_cosine(q)                         * w_cos; }
+    if (w_blb > 0.0) { v += V_blob(q)                           * w_blb; }
+    if (w_noi > 0.0) { v += V_noise(q, seed)                    * w_noi; }
+    if (w_crl > 0.0) { v += V_curl(q, seed)                     * w_crl; }
 
     return v;
 }
@@ -342,7 +343,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     if (total_weight < 1e-6) { return; }
 
-    for (var i = 0u; i < 200u; i++) {
+    for (var i = 0u; i < 100u; i++) {
         // Weighted random transform selection
         let r = randf(&rng) * total_weight;
         var tidx = 0u;
