@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+const VARIATION_COUNT: usize = 26;
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct FlameTransform {
     pub weight: f32,
     pub angle: f32,
@@ -39,6 +41,38 @@ pub struct FlameTransform {
     #[serde(default)] pub blob: f32,
     #[serde(default)] pub noise: f32,
     #[serde(default)] pub curl: f32,
+}
+
+impl FlameTransform {
+    fn get_variation(&self, idx: usize) -> f32 {
+        match idx {
+            0 => self.linear, 1 => self.sinusoidal, 2 => self.spherical,
+            3 => self.swirl, 4 => self.horseshoe, 5 => self.handkerchief,
+            6 => self.julia, 7 => self.polar, 8 => self.disc,
+            9 => self.rings, 10 => self.bubble, 11 => self.fisheye,
+            12 => self.exponential, 13 => self.spiral, 14 => self.diamond,
+            15 => self.bent, 16 => self.waves, 17 => self.popcorn,
+            18 => self.fan, 19 => self.eyefish, 20 => self.cross,
+            21 => self.tangent, 22 => self.cosine, 23 => self.blob,
+            24 => self.noise, 25 => self.curl,
+            _ => 0.0,
+        }
+    }
+
+    fn set_variation(&mut self, idx: usize, val: f32) {
+        match idx {
+            0 => self.linear = val, 1 => self.sinusoidal = val, 2 => self.spherical = val,
+            3 => self.swirl = val, 4 => self.horseshoe = val, 5 => self.handkerchief = val,
+            6 => self.julia = val, 7 => self.polar = val, 8 => self.disc = val,
+            9 => self.rings = val, 10 => self.bubble = val, 11 => self.fisheye = val,
+            12 => self.exponential = val, 13 => self.spiral = val, 14 => self.diamond = val,
+            15 => self.bent = val, 16 => self.waves = val, 17 => self.popcorn = val,
+            18 => self.fan = val, 19 => self.eyefish = val, 20 => self.cross = val,
+            21 => self.tangent = val, 22 => self.cosine = val, 23 => self.blob = val,
+            24 => self.noise = val, 25 => self.curl = val,
+            _ => {}
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -307,7 +341,7 @@ impl FlameGenome {
                 1 => child.mutate_swap_variations(&mut rng),
                 2 => child.mutate_rotate_colors(&mut rng),
                 3 => child.mutate_shuffle_transforms(&mut rng),
-                _ => child.mutate_kifs_drift(&mut rng),
+                _ => child.mutate_global_params(&mut rng),
             }
         }
 
@@ -348,22 +382,16 @@ impl FlameGenome {
                 xf.weight = (xf.weight * rng.random_range(0.3..3.0)).clamp(0.01, 0.8);
             }
             _ => {
-                // Reinvent as specialist — one dominant variation
-                let vars = [0.0f32; 6];
-                let dominant = rng.random_range(0..6);
-                let mut v = vars;
-                v[dominant] = rng.random_range(0.7..1.0);
-                // Maybe a small secondary
-                let secondary = rng.random_range(0..6);
-                if secondary != dominant {
-                    v[secondary] = rng.random_range(0.0..0.2);
+                // Reinvent as specialist — one dominant variation from all 26
+                for vi in 0..VARIATION_COUNT {
+                    xf.set_variation(vi, 0.0);
                 }
-                xf.linear = v[0];
-                xf.sinusoidal = v[1];
-                xf.spherical = v[2];
-                xf.swirl = v[3];
-                xf.horseshoe = v[4];
-                xf.handkerchief = v[5];
+                let dominant = rng.random_range(0..VARIATION_COUNT);
+                xf.set_variation(dominant, rng.random_range(0.7..1.0));
+                let secondary = rng.random_range(0..VARIATION_COUNT);
+                if secondary != dominant {
+                    xf.set_variation(secondary, rng.random_range(0.0..0.2));
+                }
             }
         }
     }
@@ -372,23 +400,12 @@ impl FlameGenome {
         if self.transforms.is_empty() { return; }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
-        let mut vars = [
-            xf.linear,
-            xf.sinusoidal,
-            xf.spherical,
-            xf.swirl,
-            xf.horseshoe,
-            xf.handkerchief,
-        ];
-        let a = rng.random_range(0..6);
-        let b = rng.random_range(0..6);
-        vars.swap(a, b);
-        xf.linear = vars[0];
-        xf.sinusoidal = vars[1];
-        xf.spherical = vars[2];
-        xf.swirl = vars[3];
-        xf.horseshoe = vars[4];
-        xf.handkerchief = vars[5];
+        let a = rng.random_range(0..VARIATION_COUNT);
+        let b = rng.random_range(0..VARIATION_COUNT);
+        let va = xf.get_variation(a);
+        let vb = xf.get_variation(b);
+        xf.set_variation(a, vb);
+        xf.set_variation(b, va);
     }
 
     fn mutate_rotate_colors(&mut self, rng: &mut impl Rng) {
@@ -407,9 +424,9 @@ impl FlameGenome {
         self.transforms.swap(a, b);
     }
 
-    fn mutate_kifs_drift(&mut self, rng: &mut impl Rng) {
-        self.kifs.fold_angle += rng.random_range(-0.1..0.1);
-        self.kifs.scale = (self.kifs.scale + rng.random_range(-0.15..0.15)).clamp(1.3, 2.5);
+    fn mutate_global_params(&mut self, rng: &mut impl Rng) {
+        self.global.flame_brightness = (self.global.flame_brightness + rng.random_range(-0.1..0.1)).clamp(0.1, 1.0);
+        self.global.zoom = (self.global.zoom + rng.random_range(-0.5..0.5)).clamp(1.5, 6.0);
     }
 
     fn mutate_add_transform(&mut self, rng: &mut impl Rng) {
@@ -426,28 +443,18 @@ impl FlameGenome {
             xf.color = rng.random_range(0.0..1.0);
             xf
         } else {
-            // Fresh specialist with one dominant variation
-            let mut vars = [0.0f32; 6];
-            let dominant = rng.random_range(0..6);
-            vars[dominant] = rng.random_range(0.7..1.0);
-            FlameTransform {
+            // Fresh specialist with one dominant variation from all 26
+            let mut xf = FlameTransform {
                 weight: 0.05,
                 angle: rng.random_range(-std::f32::consts::PI..std::f32::consts::PI),
-                scale: rng.random_range(0.1..0.85),
+                scale: rng.random_range(0.2..0.8),
                 offset: [rng.random_range(-3.0..3.0), rng.random_range(-3.0..3.0)],
                 color: rng.random_range(0.0..1.0),
-                linear: vars[0],
-                sinusoidal: vars[1],
-                spherical: vars[2],
-                swirl: vars[3],
-                horseshoe: vars[4],
-                handkerchief: vars[5],
-                julia: 0.0, polar: 0.0, disc: 0.0, rings: 0.0,
-                bubble: 0.0, fisheye: 0.0, exponential: 0.0, spiral: 0.0,
-                diamond: 0.0, bent: 0.0, waves: 0.0, popcorn: 0.0,
-                fan: 0.0, eyefish: 0.0, cross: 0.0, tangent: 0.0,
-                cosine: 0.0, blob: 0.0, noise: 0.0, curl: 0.0,
-            }
+                ..Default::default()
+            };
+            let dominant = rng.random_range(0..VARIATION_COUNT);
+            xf.set_variation(dominant, rng.random_range(0.7..1.0));
+            xf
         };
         self.transforms.push(new_xf);
     }
