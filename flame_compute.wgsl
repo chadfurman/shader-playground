@@ -65,6 +65,30 @@ fn V_handkerchief(p: vec2<f32>) -> vec2<f32> {
     return r * vec2(sin(theta + r), cos(theta - r));
 }
 
+// ── Per-transform hash noise (non-repeating drift) ──
+
+fn hash_u(n: u32) -> u32 {
+    var x = n;
+    x = x ^ (x >> 16u);
+    x = x * 2654435769u;
+    x = x ^ (x >> 16u);
+    return x;
+}
+
+fn hash_f(n: u32) -> f32 {
+    return f32(hash_u(n) & 0xFFFFu) / 65535.0;
+}
+
+// 1D smooth value noise
+fn vnoise(t: f32, seed: u32) -> f32 {
+    let i = i32(floor(t));
+    let f = t - floor(t);
+    let s = f * f * (3.0 - 2.0 * f); // smoothstep
+    let a = hash_f(seed + u32(i) * 7919u) * 2.0 - 1.0;
+    let b = hash_f(seed + u32(i + 1) * 7919u) * 2.0 - 1.0;
+    return a + (b - a) * s;
+}
+
 // ── IFS Transform (reads from storage buffer) ──
 
 fn apply_xform(p: vec2<f32>, idx: u32, t: f32) -> vec2<f32> {
@@ -80,9 +104,16 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32) -> vec2<f32> {
     let w_han  = xf(idx, 11u);
 
     let drift = u.kifs.w; // drift_speed
-    let q = rot2(angle + t * 0.07 * drift * f32(idx + 1u)) * p * scale
-          + vec2(ox + 0.05 * sin(t * 0.3 * drift * f32(idx + 1u)),
-                 oy + 0.05 * cos(t * 0.4 * drift * f32(idx + 1u)));
+
+    // Per-transform seeded noise drift (no periodic breathing)
+    let seed = hash_u(idx * 31337u + 42u);
+    let drift_amt = 0.3 + hash_f(seed) * 0.7; // 0.3–1.0 per transform
+    let angle_drift = vnoise(t * 0.05 * drift * drift_amt, seed) * 0.5;
+    let ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * 0.08;
+    let oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * 0.08;
+
+    let q = rot2(angle + angle_drift) * p * scale
+          + vec2(ox + ox_drift, oy + oy_drift);
 
     var v = q * w_lin;
     v += V_sinusoidal(q)    * w_sin;

@@ -95,14 +95,14 @@ impl FlameGenome {
             name: "default".into(),
             global: GlobalParams {
                 speed: 0.25,
-                zoom: 2.0,
+                zoom: 3.0,
                 trail: 0.34,
                 flame_brightness: 0.4,
             },
             kifs: KifsParams {
                 fold_angle: 0.62,
                 scale: 1.8,
-                brightness: 0.15, // lower to prevent whitewash
+                brightness: 0.06, // subtle background, not competing with flames
             },
             // Electric Sheep-inspired: each transform is a specialist
             // with one dominant variation, varied weights, and wide offsets

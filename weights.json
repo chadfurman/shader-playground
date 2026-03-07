@@ -36,36 +36,38 @@
     }
   },
   "bass": {
-    "kifs_fold": 0.4,
-    "xfN_weight": 0.5,
-    "xfN_swirl": 0.3,
-    "color_shift": -0.6
+    "xfN_swirl": 0.5,
+    "xfN_spherical": 0.3,
+    "color_shift": -0.4,
+    "flame_brightness": 0.3
   },
   "mids": {
-    "xfN_sinusoidal": 0.4,
-    "xfN_angle": 0.3
+    "xfN_sinusoidal": 0.5,
+    "xfN_linear": 0.3,
+    "color_shift": 0.15
   },
   "highs": {
-    "xfN_spherical": 0.3,
+    "xfN_horseshoe": 0.3,
+    "xfN_handkerchief": 0.3,
     "color_shift": 0.3
   },
   "energy": {
-    "flame_brightness": 0.9,
-    "kifs_scale": 0.1,
-    "kifs_brightness": 0.15,
-    "drift_speed": 1.8,
-    "xfN_weight": 0.3,
-    "xfN_scale": 0.2,
+    "flame_brightness": 0.7,
+    "drift_speed": 1.5,
+    "kifs_brightness": 0.04,
+    "xfN_spherical": 0.2,
     "mutation_rate": 0.1
   },
   "beat": {
-    "xfN_horseshoe": 0.5,
-    "xfN_handkerchief": 0.4
+    "xfN_swirl": 0.4,
+    "xfN_horseshoe": 0.3,
+    "color_shift": -0.3,
+    "trail": -0.2
   },
   "beat_accum": {
-    "trail": 0.6,
-    "xfN_offset_x": 0.2,
-    "xfN_offset_y": 0.2,
+    "trail": 0.4,
+    "xfN_sinusoidal": 0.2,
+    "xfN_handkerchief": 0.2,
     "mutation_rate": 1.0
   },
   "time_slow": {
@@ -77,7 +79,8 @@
     "xfN_angle": 0.1
   },
   "time_fast": {
-    "xfN_scale": 0.05
+    "xfN_swirl": 0.08,
+    "xfN_sinusoidal": 0.06
   },
   "time_noise": {
     "xfN_offset_x": 0.1,
