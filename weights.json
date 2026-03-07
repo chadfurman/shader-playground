@@ -52,7 +52,6 @@
   "energy": {
     "flame_brightness": 0.7,
     "drift_speed": 1.5,
-    "kifs_brightness": 0.005,
     "mutation_rate": 0.3
   },
   "beat": {
@@ -73,9 +72,7 @@
   "time_noise": {
     "xfN_offset_x": 0.1,
     "xfN_offset_y": 0.1,
-    "xfN_angle": 0.1,
-    "kifs_fold": 0.05,
-    "kifs_scale": 0.03
+    "xfN_angle": 0.1
   },
   "time_drift": {},
   "time_flutter": {},

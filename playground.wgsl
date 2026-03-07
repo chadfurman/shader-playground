@@ -116,9 +116,8 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
 
     let t = u.time * speed;
 
-    // ── KIFS background layer (clamped so it never overwhelms flames) ──
-    let bg_raw = kifs_fractal(uv, t, kifs_fold, kifs_scale) * kifs_bright;
-    let bg = min(bg_raw, vec3(0.15));
+    // ── KIFS background layer — disabled (boring kaleidoscope) ──
+    let bg = vec3(0.0);
 
     // ── Flame foreground (from compute histogram) ──
     let buf_idx = (px.y * w + px.x) * 2u;
