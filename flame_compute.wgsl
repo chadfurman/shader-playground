@@ -38,6 +38,33 @@ fn rot2(a: f32) -> mat2x2<f32> {
     return mat2x2(c, -s, s, c);
 }
 
+fn cosh_f(x: f32) -> f32 { return (exp(x) + exp(-x)) * 0.5; }
+fn sinh_f(x: f32) -> f32 { return (exp(x) - exp(-x)) * 0.5; }
+
+// ── Per-transform hash noise (non-repeating drift) ──
+
+fn hash_u(n: u32) -> u32 {
+    var x = n;
+    x = x ^ (x >> 16u);
+    x = x * 2654435769u;
+    x = x ^ (x >> 16u);
+    return x;
+}
+
+fn hash_f(n: u32) -> f32 {
+    return f32(hash_u(n) & 0xFFFFu) / 65535.0;
+}
+
+// 1D smooth value noise
+fn vnoise(t: f32, seed: u32) -> f32 {
+    let i = i32(floor(t));
+    let f = t - floor(t);
+    let s = f * f * (3.0 - 2.0 * f); // smoothstep
+    let a = hash_f(seed + u32(i) * 7919u) * 2.0 - 1.0;
+    let b = hash_f(seed + u32(i + 1) * 7919u) * 2.0 - 1.0;
+    return a + (b - a) * s;
+}
+
 const TAU: f32 = 6.28318530;
 
 fn palette(t: f32) -> vec3<f32> {
@@ -124,28 +151,86 @@ fn V_spiral(p: vec2<f32>) -> vec2<f32> {
     return vec2(cos(theta) + sin(r), sin(theta) - cos(r)) / r;
 }
 
-// ── Per-transform hash noise (non-repeating drift) ──
-
-fn hash_u(n: u32) -> u32 {
-    var x = n;
-    x = x ^ (x >> 16u);
-    x = x * 2654435769u;
-    x = x ^ (x >> 16u);
-    return x;
+fn V_diamond(p: vec2<f32>) -> vec2<f32> {
+    let r = length(p);
+    let theta = atan2(p.y, p.x);
+    return vec2(sin(theta) * cos(r), cos(theta) * sin(r));
 }
 
-fn hash_f(n: u32) -> f32 {
-    return f32(hash_u(n) & 0xFFFFu) / 65535.0;
+fn V_bent(p: vec2<f32>) -> vec2<f32> {
+    var q = p;
+    if (q.x < 0.0) { q.x *= 2.0; }
+    if (q.y < 0.0) { q.y *= 0.5; }
+    return q;
 }
 
-// 1D smooth value noise
-fn vnoise(t: f32, seed: u32) -> f32 {
-    let i = i32(floor(t));
-    let f = t - floor(t);
-    let s = f * f * (3.0 - 2.0 * f); // smoothstep
-    let a = hash_f(seed + u32(i) * 7919u) * 2.0 - 1.0;
-    let b = hash_f(seed + u32(i + 1) * 7919u) * 2.0 - 1.0;
-    return a + (b - a) * s;
+fn V_waves(p: vec2<f32>, bx: f32, by: f32) -> vec2<f32> {
+    return vec2(
+        p.x + bx * sin(p.y * 4.0),
+        p.y + by * sin(p.x * 4.0)
+    );
+}
+
+fn V_popcorn(p: vec2<f32>, cx: f32, cy: f32) -> vec2<f32> {
+    return vec2(
+        p.x + cx * sin(tan(3.0 * p.y)),
+        p.y + cy * sin(tan(3.0 * p.x))
+    );
+}
+
+fn V_fan(p: vec2<f32>, fan_t: f32) -> vec2<f32> {
+    let theta = atan2(p.y, p.x);
+    let r = length(p);
+    let t2 = PI * fan_t * fan_t + 1e-6;
+    if ((theta + fan_t) % t2 > t2 * 0.5) {
+        return r * vec2(cos(theta - t2 * 0.5), sin(theta - t2 * 0.5));
+    } else {
+        return r * vec2(cos(theta + t2 * 0.5), sin(theta + t2 * 0.5));
+    }
+}
+
+fn V_eyefish(p: vec2<f32>) -> vec2<f32> {
+    let r = length(p);
+    return 2.0 * p / (r + 1.0);
+}
+
+fn V_cross(p: vec2<f32>) -> vec2<f32> {
+    let s = p.x * p.x - p.y * p.y;
+    return sqrt(1.0 / (s * s + 1e-6)) * p;
+}
+
+fn V_tangent(p: vec2<f32>) -> vec2<f32> {
+    return vec2(sin(p.x) / (cos(p.y) + 1e-6), tan(p.y));
+}
+
+fn V_cosine(p: vec2<f32>) -> vec2<f32> {
+    return vec2(
+        cos(PI * p.x) * cosh_f(p.y),
+        -sin(PI * p.x) * sinh_f(p.y)
+    );
+}
+
+fn V_blob(p: vec2<f32>) -> vec2<f32> {
+    let r = length(p);
+    let theta = atan2(p.y, p.x);
+    let blobr = r * (0.5 + 0.5 * sin(3.0 * theta));
+    return blobr * vec2(cos(theta), sin(theta));
+}
+
+fn V_noise(p: vec2<f32>, seed: u32) -> vec2<f32> {
+    let nx = vnoise(p.x * 3.0, seed + 500u);
+    let ny = vnoise(p.y * 3.0, seed + 600u);
+    return p + vec2(nx, ny) * 0.3;
+}
+
+fn V_curl(p: vec2<f32>, seed: u32) -> vec2<f32> {
+    let eps = 0.01;
+    let n00 = vnoise(p.x * 2.0, seed + 700u) + vnoise(p.y * 2.0, seed + 800u);
+    let n10 = vnoise((p.x + eps) * 2.0, seed + 700u) + vnoise(p.y * 2.0, seed + 800u);
+    let n01 = vnoise(p.x * 2.0, seed + 700u) + vnoise((p.y + eps) * 2.0, seed + 800u);
+    let dx = (n10 - n00) / eps;
+    let dy = (n01 - n00) / eps;
+    return p + vec2(dy, -dx) * 0.15;
 }
 
 // ── IFS Transform (reads from storage buffer) ──
@@ -201,6 +286,32 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     v += V_fisheye(q)              * w_fsh;
     v += V_exponential(q)          * w_exp;
     v += V_spiral(q)               * w_spi;
+
+    let w_dia  = xf(idx, 20u);
+    let w_bnt  = xf(idx, 21u);
+    let w_wav  = xf(idx, 22u);
+    let w_pop  = xf(idx, 23u);
+    let w_fan  = xf(idx, 24u);
+    let w_eye  = xf(idx, 25u);
+    let w_crs  = xf(idx, 26u);
+    let w_tan  = xf(idx, 27u);
+    let w_cos  = xf(idx, 28u);
+    let w_blb  = xf(idx, 29u);
+    let w_noi  = xf(idx, 30u);
+    let w_crl  = xf(idx, 31u);
+
+    v += V_diamond(q)                        * w_dia;
+    v += V_bent(q)                           * w_bnt;
+    v += V_waves(q, ox * 0.5, oy * 0.5)     * w_wav;
+    v += V_popcorn(q, ox * 0.3, oy * 0.3)   * w_pop;
+    v += V_fan(q, angle)                     * w_fan;
+    v += V_eyefish(q)                        * w_eye;
+    v += V_cross(q)                          * w_crs;
+    v += V_tangent(q)                        * w_tan;
+    v += V_cosine(q)                         * w_cos;
+    v += V_blob(q)                           * w_blb;
+    v += V_noise(q, seed)                    * w_noi;
+    v += V_curl(q, seed)                     * w_crl;
 
     return v;
 }
