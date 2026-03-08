@@ -12,6 +12,9 @@ Every tunable numeric value MUST come from `weights.json` via `RuntimeConfig`.
   - Variation function definitions (these ARE the math — the constants are the algorithm)
 - If you find yourself writing `0.3` or `4.0` or `100.0` as a threshold/clamp/scale, it MUST go in config
 
+### NO `#[allow(dead_code)]`
+Never suppress warnings with `#[allow(dead_code)]`. If code is unused, either hook it up or remove it.
+
 ### Architecture
 - `weights.json` — single source of truth for ALL tunable parameters, hot-reloaded
 - `RuntimeConfig` — Rust-side config params (morph, zoom, mutation, variation_scales, etc.)

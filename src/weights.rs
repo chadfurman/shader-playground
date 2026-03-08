@@ -360,17 +360,6 @@ impl Weights {
         result
     }
 
-    /// Compute mutation rate from weighted signals.
-    pub fn mutation_rate(&self, features: &crate::audio::AudioFeatures, time_signals: &TimeSignals) -> f32 {
-        let signals = self.signal_list(features, time_signals);
-        let mut rate = 0.0;
-        for (weights, signal_val, divisor) in &signals {
-            if let Some(&w) = weights.get("mutation_rate") {
-                rate += w * signal_val / divisor;
-            }
-        }
-        rate
-    }
 }
 
 /// Deterministic per-transform randomness seeded by transform index.

@@ -19,7 +19,6 @@ const VARIATION_NAMES: [&str; VARIATION_COUNT] = [
 
 pub struct FavoriteProfile {
     pub variation_freq: HashMap<String, f32>,
-    pub avg_transform_count: f32,
 }
 
 impl FavoriteProfile {
@@ -28,7 +27,6 @@ impl FavoriteProfile {
     pub fn from_directory(dir: &Path) -> Self {
         let mut counts: HashMap<String, f32> = HashMap::new();
         let mut total_genomes = 0u32;
-        let mut total_transforms = 0u32;
 
         let entries = match fs::read_dir(dir) {
             Ok(e) => e,
@@ -46,7 +44,6 @@ impl FavoriteProfile {
                 Err(_) => continue,
             };
             total_genomes += 1;
-            total_transforms += genome.transforms.len() as u32;
 
             for xf in &genome.transforms {
                 for (i, name) in VARIATION_NAMES.iter().enumerate() {
@@ -72,14 +69,12 @@ impl FavoriteProfile {
 
         Self {
             variation_freq,
-            avg_transform_count: total_transforms as f32 / total_genomes as f32,
         }
     }
 
     fn uniform_default() -> Self {
         Self {
             variation_freq: HashMap::new(),
-            avg_transform_count: 4.0,
         }
     }
 }
@@ -564,31 +559,6 @@ impl FlameGenome {
         Self::load(&entry.path())
     }
 
-    /// Load a random genome from directory, excluding blacklisted names.
-    pub fn load_random_filtered(
-        dir: &Path,
-        blacklist: &std::collections::HashSet<String>,
-    ) -> Result<Self, String> {
-        use rand::prelude::IndexedRandom;
-        let entries: Vec<_> = fs::read_dir(dir)
-            .map_err(|e| format!("read dir: {e}"))?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let path = e.path();
-                path.extension().is_some_and(|ext| ext == "json")
-                    && path.file_name().is_some_and(|n| n != "votes.json")
-                    && !blacklist.contains(
-                        path.file_stem().and_then(|s| s.to_str()).unwrap_or("")
-                    )
-            })
-            .collect();
-        if entries.is_empty() {
-            return Err("no eligible genomes found".into());
-        }
-        let entry = entries.choose(&mut rand::rng()).ok_or("empty")?;
-        Self::load(&entry.path())
-    }
-
     /// Apply a single transform on CPU (simplified variations for attractor estimation).
     fn apply_xform_cpu(p: (f32, f32), xf: &FlameTransform) -> (f32, f32) {
         let ax = xf.a * p.0 + xf.b * p.1 + xf.offset[0];
@@ -746,7 +716,6 @@ impl FlameGenome {
     }
 
     pub fn mutate(&self, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>, voted_parent: &Option<FlameGenome>, saved_parent: &Option<FlameGenome>) -> Self {
-        let mut rng = rand::rng();
         // Per-transform crossover from multiple sources
         let base = self.crossover(voted_parent, saved_parent, cfg);
 

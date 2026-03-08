@@ -127,7 +127,6 @@ struct Gpu {
     workgroups: u32,
     // Accumulation pipeline
     accumulation_pipeline: wgpu::ComputePipeline,
-    accumulation_pipeline_layout: wgpu::PipelineLayout,
     accumulation_bind_group_layout: wgpu::BindGroupLayout,
     accumulation_bind_group: wgpu::BindGroup,
     accumulation_buffer: wgpu::Buffer,
@@ -140,7 +139,6 @@ struct Gpu {
     histogram_cdf_sum_pipeline: wgpu::ComputePipeline,
     histogram_cdf_bind_group_layout: wgpu::BindGroupLayout,
     histogram_cdf_bind_group: wgpu::BindGroup,
-    histogram_cdf_pipeline_layout: wgpu::PipelineLayout,
     hist_bins_buffer: wgpu::Buffer,
     cdf_buffer: wgpu::Buffer,
     histogram_cdf_uniform_buffer: wgpu::Buffer,
@@ -685,7 +683,6 @@ impl Gpu {
             palette_sampler,
             workgroups: 256, // default samples_per_frame
             accumulation_pipeline,
-            accumulation_pipeline_layout,
             accumulation_bind_group_layout,
             accumulation_bind_group,
             accumulation_buffer,
@@ -696,7 +693,6 @@ impl Gpu {
             histogram_cdf_sum_pipeline,
             histogram_cdf_bind_group_layout,
             histogram_cdf_bind_group,
-            histogram_cdf_pipeline_layout,
             hist_bins_buffer,
             cdf_buffer,
             histogram_cdf_uniform_buffer,
