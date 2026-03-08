@@ -94,7 +94,9 @@
       "parent_voted_bias": "Probability each transform comes from vote-weighted pool (default 0.25)",
       "parent_saved_bias": "Probability each transform comes from random saved genome (default 0.25)",
       "parent_random_bias": "Probability each transform comes from fresh random seed (default 0.20)",
-      "vote_blacklist_threshold": "Score at or below which a genome is blacklisted (default -2)"
+      "vote_blacklist_threshold": "Score at or below which a genome is blacklisted (default -2)",
+      "min_breeding_distance": "Minimum genetic distance between parents for inbreeding avoidance (default 3)",
+      "max_lineage_depth": "Maximum ancestor depth to search for common ancestors (default 8)"
     }
   },
   "_config": {
@@ -146,7 +148,9 @@
     "parent_voted_bias": 0.25,
     "parent_saved_bias": 0.25,
     "parent_random_bias": 0.20,
-    "vote_blacklist_threshold": -2
+    "vote_blacklist_threshold": -2,
+    "min_breeding_distance": 3,
+    "max_lineage_depth": 8
   },
   "bass": {
     "color_shift": -0.01,

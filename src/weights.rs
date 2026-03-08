@@ -167,6 +167,10 @@ pub struct RuntimeConfig {
     pub parent_random_bias: f32,
     #[serde(default = "default_vote_blacklist_threshold")]
     pub vote_blacklist_threshold: i32,
+    #[serde(default = "default_min_breeding_distance")]
+    pub min_breeding_distance: u32,
+    #[serde(default = "default_max_lineage_depth")]
+    pub max_lineage_depth: u32,
 }
 
 fn default_morph_duration() -> f32 { 8.0 }
@@ -209,6 +213,8 @@ fn default_parent_voted_bias() -> f32 { 0.25 }
 fn default_parent_saved_bias() -> f32 { 0.25 }
 fn default_parent_random_bias() -> f32 { 0.20 }
 fn default_vote_blacklist_threshold() -> i32 { -2 }
+fn default_min_breeding_distance() -> u32 { 3 }
+fn default_max_lineage_depth() -> u32 { 8 }
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 

@@ -1405,6 +1405,7 @@ struct App {
     morph_xf_rates: Vec<f32>,       // per-transform morph speed multiplier (0.5 - 2.0)
     favorite_profile: Option<FavoriteProfile>,
     vote_ledger: VoteLedger,
+    lineage_cache: crate::votes::LineageCache,
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
     prev_zoom: f32,
@@ -1420,7 +1421,9 @@ impl App {
         // Try loading a flame file first, then fall back to seeds, then default
         let weights = load_weights();
         let favorite_profile = Self::scan_favorite_profile();
-        let vote_ledger = VoteLedger::load(&project_dir().join("genomes"));
+        let genomes_root = project_dir().join("genomes");
+        let vote_ledger = VoteLedger::load(&genomes_root);
+        let lineage_cache = crate::votes::LineageCache::build(&genomes_root);
         let flames_dir = project_dir().join("genomes").join("flames");
         let seeds_dir = project_dir().join("genomes").join("seeds");
         let genome = crate::flam3::load_random_flame(&flames_dir)
@@ -1462,6 +1465,7 @@ impl App {
             morph_xf_rates: Vec::new(),
             favorite_profile,
             vote_ledger,
+            lineage_cache,
             last_profile_scan: 0.0,
             perf_log: std::fs::OpenOptions::new()
                 .create(true).append(true)
@@ -1483,10 +1487,12 @@ impl App {
     }
 
     /// Pick two parents for breeding + a community genome.
-    /// Tries to pick genetically diverse parents.
+    /// Uses lineage cache to enforce minimum genetic distance between parents.
     fn pick_breeding_parents(&self) -> (FlameGenome, FlameGenome, Option<FlameGenome>) {
         let genomes_dir = project_dir().join("genomes");
         let threshold = self.weights._config.vote_blacklist_threshold;
+        let min_distance = self.weights._config.min_breeding_distance;
+        let max_depth = self.weights._config.max_lineage_depth;
 
         // Parent A: prefer voted genome, fallback to random saved
         let parent_a = self.vote_ledger.pick_voted(threshold)
@@ -1495,23 +1501,43 @@ impl App {
                 .and_then(|p| FlameGenome::load(&p).ok()))
             .unwrap_or_else(|| self.genome.clone());
 
-        // Parent B: prefer a different source than A for diversity
-        // Try random saved first, then voted, then imported flame
-        let parent_b = VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
-            .and_then(|p| FlameGenome::load(&p).ok())
-            .filter(|g| g.name != parent_a.name) // avoid self-breeding
+        // Parent B: try multiple candidates, pick one with sufficient genetic distance
+        let max_attempts = 10u32;
+        let mut parent_b: Option<FlameGenome> = None;
+
+        for _ in 0..max_attempts {
+            let candidate = VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+                .and_then(|p| FlameGenome::load(&p).ok())
+                .or_else(|| self.vote_ledger.pick_voted(threshold)
+                    .and_then(|p| FlameGenome::load(&p).ok()));
+
+            if let Some(c) = candidate {
+                if c.name == parent_a.name {
+                    continue; // skip self-breeding
+                }
+                let dist = self.lineage_cache.genetic_distance(&parent_a.name, &c.name, max_depth);
+                if dist >= min_distance {
+                    parent_b = Some(c);
+                    break;
+                }
+                // Keep as fallback if nothing better found
+                if parent_b.is_none() {
+                    parent_b = Some(c);
+                }
+            }
+        }
+
+        // Fallback chain: imported flame → seed → random genome
+        let parent_b = parent_b
             .or_else(|| {
-                // Try imported flame for maximum diversity
                 let flames_dir = project_dir().join("genomes").join("flames");
                 crate::flam3::load_random_flame(&flames_dir).ok()
             })
             .or_else(|| {
-                // Try seeds
                 let seeds_dir = project_dir().join("genomes").join("seeds");
                 FlameGenome::load_random(&seeds_dir).ok()
             })
             .unwrap_or_else(|| {
-                // Last resort: random seed genome
                 let mut g = FlameGenome::default_genome();
                 g.name = format!("seed-{}", rand::Rng::random_range(&mut rand::rng(), 1000..9999u32));
                 g
@@ -1752,9 +1778,10 @@ impl ApplicationHandler for App {
                     self.flame_locked = false; // unlock on manual mutate
                     let (pa, pb, community) = self.pick_breeding_parents();
                     self.genome = FlameGenome::mutate(&pa, &pb, &community, &self.audio_features, &self.weights._config, &self.favorite_profile);
+                    self.lineage_cache.register(&self.genome.name, &self.genome.parent_a, &self.genome.parent_b);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
-                    eprintln!("[evolve] → {}", self.genome.name);
+                    eprintln!("[evolve] → {} (gen {})", self.genome.name, self.genome.generation);
                 }
                 Key::Named(NamedKey::Backspace) => {
                     if let Some(prev) = self.genome_history.pop() {
@@ -1958,9 +1985,10 @@ impl ApplicationHandler for App {
                                 &self.weights._config,
                                 &self.favorite_profile,
                             );
+                            self.lineage_cache.register(&self.genome.name, &self.genome.parent_a, &self.genome.parent_b);
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
-                            eprintln!("[auto-evolve] → {}", self.genome.name);
+                            eprintln!("[auto-evolve] → {} (gen {})", self.genome.name, self.genome.generation);
                         }
                     }
 

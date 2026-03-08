@@ -146,6 +146,110 @@ impl VoteLedger {
     }
 }
 
+// ── Lineage Cache ──
+
+use std::collections::{HashSet, VecDeque};
+
+/// Tracks genome ancestry for genetic distance computation.
+/// Built by scanning saved genome files; rebuilt when genomes change.
+#[derive(Debug, Default)]
+pub struct LineageCache {
+    /// genome name → (parent_a name, parent_b name)
+    parents: HashMap<String, (Option<String>, Option<String>)>,
+}
+
+impl LineageCache {
+    /// Build lineage cache by scanning all genome JSON files in the given directories.
+    pub fn build(genomes_dir: &Path) -> Self {
+        let mut parents = HashMap::new();
+        let dirs = [
+            genomes_dir.to_path_buf(),
+            genomes_dir.join("seeds"),
+            genomes_dir.join("flames"),
+        ];
+        for dir in &dirs {
+            if let Ok(read) = fs::read_dir(dir) {
+                for entry in read.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    if !path.is_file()
+                        || !path.extension().is_some_and(|ext| ext == "json")
+                        || path.file_name().is_some_and(|n| n == "votes.json")
+                    {
+                        continue;
+                    }
+                    if let Ok(genome) = FlameGenome::load(&path) {
+                        parents.insert(
+                            genome.name.clone(),
+                            (genome.parent_a, genome.parent_b),
+                        );
+                    }
+                }
+            }
+        }
+        Self { parents }
+    }
+
+    /// Register a genome's lineage (call after breeding/saving a new genome).
+    pub fn register(&mut self, name: &str, parent_a: &Option<String>, parent_b: &Option<String>) {
+        self.parents.insert(name.to_string(), (parent_a.clone(), parent_b.clone()));
+    }
+
+    /// Compute genetic distance between two genomes.
+    /// Distance = depth to lowest common ancestor. If no common ancestor
+    /// found within max_depth, returns max_depth (maximum diversity).
+    pub fn genetic_distance(&self, name_a: &str, name_b: &str, max_depth: u32) -> u32 {
+        if name_a == name_b {
+            return 0;
+        }
+
+        // BFS from both genomes simultaneously, looking for overlap
+        let ancestors_a = self.collect_ancestors(name_a, max_depth);
+        let ancestors_b = self.collect_ancestors(name_b, max_depth);
+
+        // Find minimum combined depth to a shared ancestor
+        let mut min_dist = max_depth;
+        for (ancestor, depth_a) in &ancestors_a {
+            if let Some(depth_b) = ancestors_b.get(ancestor) {
+                let dist = (*depth_a).max(*depth_b);
+                if dist < min_dist {
+                    min_dist = dist;
+                }
+            }
+        }
+
+        min_dist
+    }
+
+    /// Collect all ancestors of a genome up to max_depth.
+    /// Returns HashMap<ancestor_name, depth>.
+    fn collect_ancestors(&self, name: &str, max_depth: u32) -> HashMap<String, u32> {
+        let mut result = HashMap::new();
+        result.insert(name.to_string(), 0);
+
+        let mut queue: VecDeque<(String, u32)> = VecDeque::new();
+        queue.push_back((name.to_string(), 0));
+        let mut visited = HashSet::new();
+        visited.insert(name.to_string());
+
+        while let Some((current, depth)) = queue.pop_front() {
+            if depth >= max_depth {
+                continue;
+            }
+            if let Some((pa, pb)) = self.parents.get(&current) {
+                for parent in [pa, pb].iter().filter_map(|p| p.as_ref()) {
+                    if visited.insert(parent.clone()) {
+                        let parent_depth = depth + 1;
+                        result.insert(parent.clone(), parent_depth);
+                        queue.push_back((parent.clone(), parent_depth));
+                    }
+                }
+            }
+        }
+
+        result
+    }
+}
+
 fn today() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
