@@ -129,6 +129,8 @@ pub struct RuntimeConfig {
     pub fitness_bias_strength: f32,
     #[serde(default = "default_drift_speed")]
     pub drift_speed: f32,
+    #[serde(default = "default_velocity_blur_max")]
+    pub velocity_blur_max: f32,
     #[serde(default)]
     pub variation_scales: HashMap<String, f32>,
 }
@@ -156,12 +158,13 @@ fn default_zoom_target() -> f32 { 3.0 }
 fn default_min_attractor_extent() -> f32 { 0.3 }
 fn default_max_mutation_retries() -> u32 { 5 }
 fn default_trail() -> f32 { 0.15 }                // temporal AA only — accumulation is primary persistence
-fn default_accumulation_decay() -> f32 { 0.995 }
+fn default_accumulation_decay() -> f32 { 0.9 }
 fn default_samples_per_frame() -> u32 { 256 }
 fn default_bloom_radius() -> f32 { 3.0 }
 fn default_seed_mutation_bias() -> f32 { 0.7 }
 fn default_fitness_bias_strength() -> f32 { 0.5 }
 fn default_drift_speed() -> f32 { 0.5 }
+fn default_velocity_blur_max() -> f32 { 24.0 }  // max directional blur length in pixels
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 
@@ -368,7 +371,7 @@ fn global_index(name: &str) -> Option<usize> {
         "position_drift" => Some(17),
         "warmup_iters" => Some(18),
         "gamma" => Some(11),
-        "highlight_power" => Some(19),
+        "velocity_blur_max" => Some(19),
         _ => None,
     }
 }

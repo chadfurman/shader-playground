@@ -342,7 +342,7 @@ impl FlameGenome {
         g[17] = cfg.position_drift;
         g[18] = cfg.warmup_iters;
         g[11] = cfg.gamma;            // extra.w in shader
-        g[19] = cfg.highlight_power;  // extra3.w in shader
+        g[19] = cfg.velocity_blur_max;  // extra3.w in display shader — max directional blur pixels
         g
     }
 
@@ -631,7 +631,7 @@ impl FlameGenome {
         let mut child = self.clone();
         let mut rng = rand::rng();
 
-        // Single gentle mutation per evolve — keeps each generation similar
+        // Single mutation per evolve — preserves the backbone, changes one thing at a time
         match rng.random_range(0..8) {
             0 | 1 => child.mutate_perturb(&mut rng, audio, cfg, profile),  // most common
             2 => child.mutate_swap_variations(&mut rng),
@@ -685,29 +685,64 @@ impl FlameGenome {
         if self.transforms.is_empty() { return; }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
-        match rng.random_range(0..6) {
+        match rng.random_range(0..8) {
             0 => {
-                // Rotate the affine matrix by a small angle
-                let angle = rng.random_range(-0.3..0.3);
+                // Rotate — wider range for more dramatic angle changes
+                let angle = rng.random_range(-0.8..0.8);
                 rotate_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, angle);
             }
             1 => {
-                // Scale the affine matrix
-                let factor = rng.random_range(0.85..1.18);
+                // Scale — wider range so transforms differ in magnification
+                let factor = rng.random_range(0.6..1.5);
                 scale_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, factor);
-            }
-            5 => {
-                // Shear the affine matrix (new capability)
-                let shear = rng.random_range(-0.2..0.2);
-                shear_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, shear);
+                // Clamp overall scale to keep things stable
+                let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
+                if det > 0.95 || det < 0.2 {
+                    let fix = rng.random_range(0.4..0.85) / det.max(0.01);
+                    xf.a *= fix; xf.b *= fix; xf.c *= fix; xf.d *= fix;
+                }
             }
             2 => {
-                xf.offset[0] += rng.random_range(-0.5..0.5);
-                xf.offset[1] += rng.random_range(-0.5..0.5);
+                // Shear — breaks rotation symmetry, creates asymmetric shapes
+                let shear = rng.random_range(-0.4..0.4);
+                shear_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, shear);
             }
             3 => {
-                // Gentle weight adjustment
-                xf.weight = (xf.weight * rng.random_range(0.7..1.5)).clamp(0.01, 0.8);
+                // Anisotropic scale — stretch in one axis, compress in another
+                let sx = rng.random_range(0.5..1.5);
+                let sy = rng.random_range(0.5..1.5);
+                xf.a *= sx; xf.b *= sy;
+                xf.c *= sx; xf.d *= sy;
+                // Keep contractive
+                let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
+                if det > 0.95 {
+                    let fix = rng.random_range(0.4..0.85) / det;
+                    xf.a *= fix; xf.b *= fix; xf.c *= fix; xf.d *= fix;
+                }
+            }
+            4 => {
+                // Position — larger range for more spread-out transforms
+                xf.offset[0] += rng.random_range(-1.0..1.0);
+                xf.offset[1] += rng.random_range(-1.0..1.0);
+            }
+            5 => {
+                // Weight — more dramatic rebalancing between transforms
+                xf.weight = (xf.weight * rng.random_range(0.4..2.5)).clamp(0.05, 2.0);
+            }
+            6 => {
+                // Reinvent this transform's affine from scratch
+                let s = rng.random_range(0.2..0.9);
+                let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
+                let (sin_a, cos_a) = angle.sin_cos();
+                xf.a = s * cos_a;
+                xf.b = -s * sin_a;
+                xf.c = s * sin_a;
+                xf.d = s * cos_a;
+                // Add some asymmetry 50% of the time
+                if rng.random::<f32>() < 0.5 {
+                    let shear = rng.random_range(-0.3..0.3);
+                    shear_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, shear);
+                }
             }
             _ => {
                 // Replace one variation with another (keeps max 2 active variations)
@@ -841,20 +876,37 @@ impl FlameGenome {
 
     fn mutate_add_transform(&mut self, rng: &mut impl Rng, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>) {
         if self.transforms.is_empty() { return; }
-        // 50% clone-and-perturb, 50% fresh rotation-scale specialist
-        let new_xf = if rng.random::<f32>() < 0.5 {
+        // 30% clone-and-diverge, 70% fresh specialist with contrasting geometry
+        let new_xf = if rng.random::<f32>() < 0.3 {
             let source_idx = rng.random_range(0..self.transforms.len());
             let mut xf = self.transforms[source_idx].clone();
             xf.weight = 1.0 / (self.transforms.len() + 1) as f32;
-            let angle = rng.random_range(-0.8..0.8);
+            // Dramatic changes so the clone is actually different
+            let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
             rotate_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, angle);
-            xf.offset[0] += rng.random_range(-1.0..1.0);
-            xf.offset[1] += rng.random_range(-1.0..1.0);
+            let scale_factor = rng.random_range(0.5..1.5);
+            scale_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, scale_factor);
+            xf.offset[0] = rng.random_range(-1.5..1.5);
+            xf.offset[1] = rng.random_range(-1.5..1.5);
             xf.color = rng.random_range(0.0..1.0);
+            // Give it a different variation than the source
+            let new_vi = Self::pick_variation(rng, audio, cfg, profile);
+            for vi in 0..VARIATION_COUNT { xf.set_variation(vi, 0.0); }
+            xf.set_variation(new_vi, 1.0);
             xf
         } else {
-            // Fresh specialist: proper rotation-scale matrix, 1-2 variations summing to ~1.0
-            let s = rng.random_range(0.4..0.85);
+            // Fresh specialist — intentionally contrast with existing transforms
+            // Pick a scale that's different from existing ones
+            let existing_scales: Vec<f32> = self.transforms.iter()
+                .map(|t| (t.a * t.d - t.b * t.c).abs().sqrt())
+                .collect();
+            let avg_scale = existing_scales.iter().sum::<f32>() / existing_scales.len() as f32;
+            // If existing are large, make this one small (detail), and vice versa
+            let s = if avg_scale > 0.6 {
+                rng.random_range(0.2..0.5)   // tight detail transform
+            } else {
+                rng.random_range(0.6..0.9)   // broad sweep transform
+            };
             let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
             let mut xf = FlameTransform {
                 weight: 1.0 / (self.transforms.len() + 1) as f32,
@@ -862,19 +914,35 @@ impl FlameGenome {
                 color: rng.random_range(0.0..1.0),
                 ..Default::default()
             };
-            // Build proper rotation-scale affine: a=s*cos(θ), b=-s*sin(θ), c=s*sin(θ), d=s*cos(θ)
             let (sin_a, cos_a) = angle.sin_cos();
             xf.a = s * cos_a;
             xf.b = -s * sin_a;
             xf.c = s * sin_a;
             xf.d = s * cos_a;
-            // 1-2 variations summing to 1.0
-            let dominant = Self::pick_variation(rng, audio, cfg, profile);
+            // Add shear/asymmetry 40% of the time
+            if rng.random::<f32>() < 0.4 {
+                let shear = rng.random_range(-0.3..0.3);
+                shear_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, shear);
+            }
+            // Pick a variation that's NOT already dominant in other transforms
+            let mut used_variations: Vec<usize> = Vec::new();
+            for t in &self.transforms {
+                for vi in 0..VARIATION_COUNT {
+                    if t.get_variation(vi) > 0.5 {
+                        used_variations.push(vi);
+                    }
+                }
+            }
+            let dominant = loop {
+                let pick = Self::pick_variation(rng, audio, cfg, profile);
+                // Try to avoid already-used variations (3 attempts then give up)
+                if !used_variations.contains(&pick) || rng.random::<f32>() < 0.3 {
+                    break pick;
+                }
+            };
             if rng.random::<f32>() < 0.5 {
-                // Single dominant variation
                 xf.set_variation(dominant, 1.0);
             } else {
-                // Two variations summing to 1.0
                 let split = rng.random_range(0.5..0.8);
                 xf.set_variation(dominant, split);
                 let secondary = Self::pick_variation(rng, audio, cfg, profile);

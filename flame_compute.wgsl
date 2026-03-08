@@ -19,6 +19,7 @@ struct Uniforms {
 @group(0) @binding(2) var<storage, read> transforms: array<f32>;
 @group(0) @binding(3) var palette_tex: texture_2d<f32>;
 @group(0) @binding(4) var palette_sampler: sampler;
+@group(0) @binding(5) var<storage, read_write> point_state: array<f32>;
 
 fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 42u + field]; }
 
@@ -353,6 +354,72 @@ fn xform_color(idx: u32) -> f32 {
     return xf(idx, 7u);
 }
 
+// Soft-splat a point using bilinear weighting to the 4 nearest pixels.
+// This turns each chaos-game hit into a smooth sub-pixel contribution,
+// filling gaps and producing curved-looking surfaces instead of stipple dots.
+fn splat_point(cx: i32, cy: i32, fx: f32, fy: f32, col: vec3<f32>, vel: vec2<f32>, w: u32, h: u32) {
+    // Bilinear weights: distribute the point's contribution across a 2x2 quad
+    // based on sub-pixel position (fx, fy are the fractional offsets 0-1)
+    let w00 = (1.0 - fx) * (1.0 - fy);
+    let w10 = fx * (1.0 - fy);
+    let w01 = (1.0 - fx) * fy;
+    let w11 = fx * fy;
+
+    let ic = u32(col.x * 1000.0);
+    let ig = u32(col.y * 1000.0);
+    let ib = u32(col.z * 1000.0);
+    let ivx = i32(vel.x * 10000.0);
+    let ivy = i32(vel.y * 10000.0);
+
+    // Center pixel (always valid — caller checked bounds)
+    let idx00 = (u32(cy) * w + u32(cx)) * 6u;
+    let d00 = u32(w00 * 1000.0);
+    atomicAdd(&histogram[idx00], d00);
+    atomicAdd(&histogram[idx00 + 1u], u32(f32(ic) * w00));
+    atomicAdd(&histogram[idx00 + 2u], u32(f32(ig) * w00));
+    atomicAdd(&histogram[idx00 + 3u], u32(f32(ib) * w00));
+    atomicAdd(&histogram[idx00 + 4u], u32(i32(f32(ivx) * w00)));
+    atomicAdd(&histogram[idx00 + 5u], u32(i32(f32(ivy) * w00)));
+
+    // Right neighbor
+    let nx = cx + 1;
+    if (nx < i32(w)) {
+        let idx10 = (u32(cy) * w + u32(nx)) * 6u;
+        let d10 = u32(w10 * 1000.0);
+        atomicAdd(&histogram[idx10], d10);
+        atomicAdd(&histogram[idx10 + 1u], u32(f32(ic) * w10));
+        atomicAdd(&histogram[idx10 + 2u], u32(f32(ig) * w10));
+        atomicAdd(&histogram[idx10 + 3u], u32(f32(ib) * w10));
+        atomicAdd(&histogram[idx10 + 4u], u32(i32(f32(ivx) * w10)));
+        atomicAdd(&histogram[idx10 + 5u], u32(i32(f32(ivy) * w10)));
+    }
+
+    // Bottom neighbor
+    let ny = cy + 1;
+    if (ny < i32(h)) {
+        let idx01 = (u32(ny) * w + u32(cx)) * 6u;
+        let d01 = u32(w01 * 1000.0);
+        atomicAdd(&histogram[idx01], d01);
+        atomicAdd(&histogram[idx01 + 1u], u32(f32(ic) * w01));
+        atomicAdd(&histogram[idx01 + 2u], u32(f32(ig) * w01));
+        atomicAdd(&histogram[idx01 + 3u], u32(f32(ib) * w01));
+        atomicAdd(&histogram[idx01 + 4u], u32(i32(f32(ivx) * w01)));
+        atomicAdd(&histogram[idx01 + 5u], u32(i32(f32(ivy) * w01)));
+    }
+
+    // Bottom-right corner
+    if (nx < i32(w) && ny < i32(h)) {
+        let idx11 = (u32(ny) * w + u32(nx)) * 6u;
+        let d11 = u32(w11 * 1000.0);
+        atomicAdd(&histogram[idx11], d11);
+        atomicAdd(&histogram[idx11 + 1u], u32(f32(ic) * w11));
+        atomicAdd(&histogram[idx11 + 2u], u32(f32(ig) * w11));
+        atomicAdd(&histogram[idx11 + 3u], u32(f32(ib) * w11));
+        atomicAdd(&histogram[idx11 + 4u], u32(i32(f32(ivx) * w11)));
+        atomicAdd(&histogram[idx11 + 5u], u32(i32(f32(ivy) * w11)));
+    }
+}
+
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let speed = u.globals.x;
@@ -362,8 +429,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     var rng = gid.x * 2654435761u + u.frame * 7919u + 12345u;
 
-    var p = vec2(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0);
-    var color_idx = randf(&rng);
+    // Read persistent point state (survives across frames/genome changes)
+    let state_idx = gid.x * 3u;
+    var p = vec2(point_state[state_idx], point_state[state_idx + 1u]);
+    var color_idx = point_state[state_idx + 2u];
+
+    // Re-randomize if: first frame (all zeros), escaped, NaN, or periodic refresh
+    // 5% of threads re-randomize each frame to maintain fresh attractor coverage
+    let refresh = randf(&rng) < 0.05;
+    let needs_init = (abs(p.x) < 1e-10 && abs(p.y) < 1e-10 && color_idx < 1e-10)
+                   || abs(p.x) > 10.0 || abs(p.y) > 10.0  // tighter bound — well outside any zoom range
+                   || p.x != p.x || p.y != p.y  // NaN check
+                   || refresh;
+    if (needs_init) {
+        p = vec2(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0);
+        color_idx = randf(&rng);
+    }
 
     let w = u32(u.resolution.x);
     let h = u32(u.resolution.y);
@@ -374,6 +455,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         total_weight += xf(t_idx, 0u);
     }
     if (total_weight < 1e-6) { return; }
+
+    var prev_p = p;
 
     for (var i = 0u; i < 500u; i++) {
         // Weighted random transform selection
@@ -388,11 +471,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             }
         }
 
+        prev_p = p;
         p = apply_xform(p, tidx, t, &rng);
         let cb = u.extra2.w;  // color_blend from weights
         color_idx = color_idx * (1.0 - cb) + xform_color(tidx) * cb;
 
         if (i < u32(u.extra3.z)) { continue; }
+
+        // Velocity in screen space (for directional blur)
+        let vel = (p - prev_p) / zoom;
 
         // Final transform (if present)
         var plot_p = p;
@@ -419,12 +506,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let px_y = i32(screen.y);
 
             if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
-                let buf_idx = (u32(px_y) * w + u32(px_x)) * 4u;
                 let col = palette(plot_color + u.extra.x);
-                atomicAdd(&histogram[buf_idx], 1u);
-                atomicAdd(&histogram[buf_idx + 1u], u32(col.x * 1000.0));
-                atomicAdd(&histogram[buf_idx + 2u], u32(col.y * 1000.0));
-                atomicAdd(&histogram[buf_idx + 3u], u32(col.z * 1000.0));
+                // Sub-pixel offset for soft splatting
+                let frac_x = screen.x - f32(px_x);
+                let frac_y = screen.y - f32(px_y);
+                splat_point(px_x, px_y, frac_x, frac_y, col, vel, w, h);
             }
 
             // Bilateral mirror
@@ -434,14 +520,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 let mpx_x = i32(mscreen.x);
                 let mpx_y = i32(mscreen.y);
                 if (mpx_x >= 0 && mpx_x < i32(w) && mpx_y >= 0 && mpx_y < i32(h)) {
-                    let mbuf_idx = (u32(mpx_y) * w + u32(mpx_x)) * 4u;
                     let mcol = palette(plot_color + u.extra.x);
-                    atomicAdd(&histogram[mbuf_idx], 1u);
-                    atomicAdd(&histogram[mbuf_idx + 1u], u32(mcol.x * 1000.0));
-                    atomicAdd(&histogram[mbuf_idx + 2u], u32(mcol.y * 1000.0));
-                    atomicAdd(&histogram[mbuf_idx + 3u], u32(mcol.z * 1000.0));
+                    let mfrac_x = mscreen.x - f32(mpx_x);
+                    let mfrac_y = mscreen.y - f32(mpx_y);
+                    let mvel = vec2(-vel.x, vel.y);
+                    splat_point(mpx_x, mpx_y, mfrac_x, mfrac_y, mcol, mvel, w, h);
                 }
             }
         }
     }
+
+    // Write back persistent point state for next frame
+    point_state[state_idx] = p.x;
+    point_state[state_idx + 1u] = p.y;
+    point_state[state_idx + 2u] = color_idx;
 }

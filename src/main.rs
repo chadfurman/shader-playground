@@ -36,7 +36,7 @@ struct Uniforms {
     kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
     extra: [f32; 4],      // color_shift, vibrancy, bloom_intensity, symmetry
     extra2: [f32; 4],     // noise_disp, curl_disp, tangent_clamp, color_blend
-    extra3: [f32; 4],     // spin_speed_max, position_drift, warmup_iters, reserved
+    extra3: [f32; 4],     // spin_speed_max, position_drift, warmup_iters, velocity_blur_max
 }
 
 // ── File Watcher ──
@@ -127,6 +127,8 @@ struct Gpu {
     accumulation_bind_group: wgpu::BindGroup,
     accumulation_buffer: wgpu::Buffer,
     accumulation_uniform_buffer: wgpu::Buffer,
+    // Persistent point state for chaos game continuity
+    point_state_buffer: wgpu::Buffer,
 }
 
 impl Gpu {
@@ -175,7 +177,17 @@ impl Gpu {
             ..Default::default()
         });
 
-        // Histogram buffer: 4 u32s per pixel (density + R + G + B)
+        // Persistent point state: 3 f32s per thread (x, y, color_idx)
+        // Max 8192 workgroups * 256 threads = 2M threads
+        let max_threads: u64 = 8192 * 256;
+        let point_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("point_state"),
+            size: max_threads * 12, // 3 f32s * 4 bytes
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Histogram buffer: 6 u32s per pixel (density + R + G + B + vx + vy)
         let histogram_buffer = create_histogram_buffer(
             &device,
             config.width,
@@ -316,6 +328,16 @@ impl Gpu {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -387,6 +409,7 @@ impl Gpu {
             &transform_buffer,
             &palette_view,
             &palette_sampler,
+            &point_state_buffer,
         );
 
         // 16 bytes: vec2f resolution + f32 decay + f32 pad
@@ -491,6 +514,7 @@ impl Gpu {
             accumulation_bind_group,
             accumulation_buffer,
             accumulation_uniform_buffer,
+            point_state_buffer,
         }
     }
 
@@ -583,6 +607,7 @@ impl Gpu {
             &self.transform_buffer,
             &self.palette_view,
             &self.palette_sampler,
+            &self.point_state_buffer,
         );
         self.accumulation_bind_group = create_accumulation_bind_group(
             &self.device,
@@ -770,7 +795,7 @@ fn create_histogram_buffer(
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("histogram"),
-        size: pixel_count * 4 * 4, // 4 u32s per pixel
+        size: pixel_count * 6 * 4, // 6 u32s per pixel (density, R, G, B, vx, vy)
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
@@ -784,7 +809,7 @@ fn create_accumulation_buffer(
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("accumulation"),
-        size: pixel_count * 4 * 4, // 4 f32s per pixel (density, R, G, B)
+        size: pixel_count * 6 * 4, // 6 f32s per pixel (density, R, G, B, vx, vy)
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
@@ -935,6 +960,7 @@ fn create_compute_bind_group(
     transform_buffer: &wgpu::Buffer,
     palette_view: &wgpu::TextureView,
     palette_sampler: &wgpu::Sampler,
+    point_state: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("compute"),
@@ -959,6 +985,10 @@ fn create_compute_bind_group(
             wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::Sampler(palette_sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: point_state.as_entire_binding(),
             },
         ],
     })
@@ -1093,6 +1123,7 @@ struct App {
     mutation_accum: f32,
     last_mutation_time: f32,
     flame_locked: bool, // true = imported flame, skip auto-evolve/mutate
+    morph_burst_frames: u32, // extra compute passes after mutation for faster fill
     random_walk: f32,
     // Ease-in-out genome morph
     morph_start_globals: [f32; 20],
@@ -1111,25 +1142,14 @@ fn smoothstep(t: f32) -> f32 {
 
 impl App {
     fn new() -> Self {
-        // Try loading a curated seed genome; fall back to mutated default
+        // Try loading a flame file first, then fall back to seeds, then default
         let weights = load_weights();
         let favorite_profile = Self::scan_favorite_profile();
+        let flames_dir = project_dir().join("genomes").join("flames");
         let seeds_dir = project_dir().join("genomes").join("seeds");
-        let genome = if seeds_dir.exists() {
-            FlameGenome::load_random(&seeds_dir).unwrap_or_else(|_| {
-                let mut g = FlameGenome::default_genome();
-                for _ in 0..3 {
-                    g = g.mutate(&AudioFeatures::default(), &weights._config, &favorite_profile);
-                }
-                g
-            })
-        } else {
-            let mut g = FlameGenome::default_genome();
-            for _ in 0..3 {
-                g = g.mutate(&AudioFeatures::default(), &weights._config, &favorite_profile);
-            }
-            g
-        };
+        let genome = crate::flam3::load_random_flame(&flames_dir)
+            .or_else(|_| FlameGenome::load_random(&seeds_dir))
+            .unwrap_or_else(|_| FlameGenome::default_genome());
         let initial_globals = genome.flatten_globals(&weights._config);
         let initial_xf = genome.flatten_transforms();
         let num_transforms = genome.total_buffer_transforms();
@@ -1155,6 +1175,7 @@ impl App {
             mutation_accum: 0.0,
             last_mutation_time: 0.0,
             flame_locked: false,
+            morph_burst_frames: 0,
             random_walk: 0.0,
             // Start fully morphed (no transition at launch)
             morph_start_globals: initial_globals,
@@ -1198,17 +1219,13 @@ impl App {
         // Pad start vectors to match
         self.morph_start_xf.resize(max_xf * 42, 0.0);
 
-        // Clear accumulation buffer — old genome's density pattern would ghost
-        // and make the new genome appear dark until it builds up density
-        if let Some(gpu) = &self.gpu {
-            let buf_size = (gpu.config.width as usize) * (gpu.config.height as usize) * 16;
-            gpu.queue.write_buffer(
-                &gpu.accumulation_buffer,
-                0,
-                &vec![0u8; buf_size],
-            );
+        // Don't clear accumulation buffer — let old density fade naturally.
+        // Front-load compute: run extra passes for the first ~60 frames so the
+        // new genome fills in faster. Also use faster decay to dissolve the old.
+        self.morph_burst_frames = 60;
 
-            // Upload palette for the new genome
+        // Upload palette for the new genome
+        if let Some(gpu) = &self.gpu {
             let palette_data = crate::genome::palette_rgba_data(&self.genome);
             upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
         }
@@ -1535,22 +1552,20 @@ impl ApplicationHandler for App {
                         &mut self.xf_params, self.num_transforms,
                     );
 
-                    // Auto-evolve via mutation_rate (disabled when flame_locked)
-                    let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);
-                    self.mutation_accum += mr * dt;
-                    let time_since_last = time - self.last_mutation_time;
-                    let cooldown = self.weights._config.mutation_cooldown;
-                    if !self.flame_locked && self.mutation_accum >= 1.0 && time_since_last >= cooldown {
-                        self.mutation_accum = 0.0;
-
-                        self.genome_history.push(self.genome.clone());
-                        if self.genome_history.len() > 10 {
-                            self.genome_history.remove(0);
+                    // Auto-evolve when morph completes (disabled when flame_locked)
+                    if !self.flame_locked && self.morph_progress >= 1.0 {
+                        let time_since_last = time - self.last_mutation_time;
+                        let cooldown = self.weights._config.mutation_cooldown;
+                        if time_since_last >= cooldown {
+                            self.genome_history.push(self.genome.clone());
+                            if self.genome_history.len() > 10 {
+                                self.genome_history.remove(0);
+                            }
+                            self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile);
+                            self.last_mutation_time = self.start.elapsed().as_secs_f32();
+                            self.begin_morph();
+                            eprintln!("[auto-evolve] → {}", self.genome.name);
                         }
-                        self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile);
-                        self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                        self.begin_morph();
-                        eprintln!("[auto-evolve] → {}", self.genome.name);
                     }
 
                     // Periodic favorite profile refresh (every 30s)
@@ -1603,11 +1618,19 @@ impl ApplicationHandler for App {
                 let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
                 gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
 
-                // Write accumulation uniforms
+                // Write accumulation uniforms — faster decay during morph transition
+                let base_decay = self.weights._config.accumulation_decay;
+                let decay = if self.morph_burst_frames > 0 {
+                    // Lerp from fast decay (0.7) back to normal (0.95) over burst period
+                    let burst_t = self.morph_burst_frames as f32 / 60.0;
+                    0.95 + (0.7 - 0.95) * burst_t
+                } else {
+                    base_decay
+                };
                 let accum_uniforms: [f32; 4] = [
                     gpu.config.width as f32,
                     gpu.config.height as f32,
-                    self.weights._config.accumulation_decay,
+                    decay,
                     0.0,
                 ];
                 gpu.queue.write_buffer(
@@ -1615,6 +1638,11 @@ impl ApplicationHandler for App {
                     0,
                     bytemuck::cast_slice(&accum_uniforms),
                 );
+
+                // Tick down morph burst (drives faster decay ramp)
+                if self.morph_burst_frames > 0 {
+                    self.morph_burst_frames -= 1;
+                }
 
                 gpu.render();
                 self.frame += 1;
