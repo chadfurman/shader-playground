@@ -1486,6 +1486,20 @@ impl App {
         }
     }
 
+    /// Pick voted and saved parent genomes for crossover mutation.
+    fn pick_crossover_parents(&self) -> (Option<FlameGenome>, Option<FlameGenome>) {
+        let genomes_dir = project_dir().join("genomes");
+        let threshold = self.weights._config.vote_blacklist_threshold;
+
+        let voted = self.vote_ledger.pick_voted(threshold)
+            .and_then(|p| FlameGenome::load(&p).ok());
+
+        let saved = VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+            .and_then(|p| FlameGenome::load(&p).ok());
+
+        (voted, saved)
+    }
+
     /// Begin morphing toward the current genome. Captures current base as start point.
     fn begin_morph(&mut self) {
         // Snapshot wherever the morph currently is as our new start
@@ -1698,7 +1712,8 @@ impl ApplicationHandler for App {
                         self.genome_history.remove(0);
                     }
                     self.flame_locked = false; // unlock on manual mutate
-                    self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile);
+                    let (voted, saved) = self.pick_crossover_parents();
+                    self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile, &voted, &saved);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
                     eprintln!("[evolve] → {}", self.genome.name);
@@ -1896,7 +1911,8 @@ impl ApplicationHandler for App {
                             if self.genome_history.len() > 10 {
                                 self.genome_history.remove(0);
                             }
-                            self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile);
+                            let (voted, saved) = self.pick_crossover_parents();
+                            self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile, &voted, &saved);
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
                             eprintln!("[auto-evolve] → {}", self.genome.name);
