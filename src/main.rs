@@ -128,6 +128,7 @@ struct Gpu {
     accumulation_bind_group: wgpu::BindGroup,
     accumulation_buffer: wgpu::Buffer,
     accumulation_uniform_buffer: wgpu::Buffer,
+    max_density_buffer: wgpu::Buffer,
     // Persistent point state for chaos game continuity
     point_state_buffer: wgpu::Buffer,
 }
@@ -275,6 +276,16 @@ impl Gpu {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -383,6 +394,14 @@ impl Gpu {
             config.height,
         );
 
+        // Single u32 for atomicMax — tracks max density for per-image normalization
+        let max_density_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("max_density"),
+            size: 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let bind_group_a = create_render_bind_group(
             &device,
             &bind_group_layout,
@@ -391,6 +410,7 @@ impl Gpu {
             &sampler,
             &accumulation_buffer,
             &crossfade_view,
+            &max_density_buffer,
         );
         let bind_group_b = create_render_bind_group(
             &device,
@@ -400,6 +420,7 @@ impl Gpu {
             &sampler,
             &accumulation_buffer,
             &crossfade_view,
+            &max_density_buffer,
         );
 
         let compute_bind_group = create_compute_bind_group(
@@ -455,6 +476,16 @@ impl Gpu {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -478,6 +509,7 @@ impl Gpu {
             &histogram_buffer,
             &accumulation_buffer,
             &accumulation_uniform_buffer,
+            &max_density_buffer,
         );
 
         Self {
@@ -515,6 +547,7 @@ impl Gpu {
             accumulation_bind_group,
             accumulation_buffer,
             accumulation_uniform_buffer,
+            max_density_buffer,
             point_state_buffer,
         }
     }
@@ -590,6 +623,7 @@ impl Gpu {
             &self.sampler,
             &self.accumulation_buffer,
             &self.crossfade_view,
+            &self.max_density_buffer,
         );
         self.bind_group_b = create_render_bind_group(
             &self.device,
@@ -599,6 +633,7 @@ impl Gpu {
             &self.sampler,
             &self.accumulation_buffer,
             &self.crossfade_view,
+            &self.max_density_buffer,
         );
         self.compute_bind_group = create_compute_bind_group(
             &self.device,
@@ -616,6 +651,7 @@ impl Gpu {
             &self.histogram_buffer,
             &self.accumulation_buffer,
             &self.accumulation_uniform_buffer,
+            &self.max_density_buffer,
         );
     }
 
@@ -652,6 +688,9 @@ impl Gpu {
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
             cpass.dispatch_workgroups(self.workgroups, 1, 1);
         }
+
+        // 2.4. Clear max density for per-image normalization
+        encoder.clear_buffer(&self.max_density_buffer, 0, None);
 
         // 2.5. Accumulation pass: blend histogram into persistent buffer
         {
@@ -822,6 +861,7 @@ fn create_accumulation_bind_group(
     histogram: &wgpu::Buffer,
     accumulation: &wgpu::Buffer,
     uniform_buffer: &wgpu::Buffer,
+    max_density: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("accumulation"),
@@ -838,6 +878,10 @@ fn create_accumulation_bind_group(
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: max_density.as_entire_binding(),
             },
         ],
     })
@@ -924,6 +968,7 @@ fn create_render_bind_group(
     sampler: &wgpu::Sampler,
     accumulation: &wgpu::Buffer,
     crossfade_view: &wgpu::TextureView,
+    max_density: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("render"),
@@ -948,6 +993,10 @@ fn create_render_bind_group(
             wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(crossfade_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: max_density.as_entire_binding(),
             },
         ],
     })

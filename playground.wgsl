@@ -25,6 +25,7 @@ struct Uniforms {
 @group(0) @binding(2) var prev_sampler: sampler;
 @group(0) @binding(3) var<storage, read> accumulation: array<f32>;
 @group(0) @binding(4) var crossfade_tex: texture_2d<f32>;
+@group(0) @binding(5) var<storage, read> max_density_buf: array<u32>;
 
 // ── Vertex ──
 
@@ -108,12 +109,17 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         }
     }
 
-    // ── Log-density tonemapping with contrast preservation ──
+    // ── Per-image normalized log-density tonemapping ──
     // Density is stored as fixed-point * 1000 (from bilinear splatting)
     let density_hits = blur_density / 1000.0;
-    // Use sqrt of log to spread out the dynamic range instead of saturating
     let log_density = log(1.0 + density_hits * flame_bright);
-    let alpha = sqrt(log_density / (log_density + 2.0));
+
+    // Normalize against max density found by the accumulation pass.
+    // This ensures every genome uses the full brightness range automatically.
+    let max_density_bits = max_density_buf[0];
+    let max_density_val = bitcast<f32>(max_density_bits) / 1000.0;
+    let max_log = log(1.0 + max_density_val * flame_bright);
+    let alpha = sqrt(log_density / max(max_log, 0.001));
 
     // Recover average color (RGB and density both stored as fixed-point * 1000)
     let raw_color = select(

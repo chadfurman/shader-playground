@@ -12,6 +12,7 @@ struct AccumUniforms {
 @group(0) @binding(0) var<storage, read> histogram: array<u32>;
 @group(0) @binding(1) var<storage, read_write> accumulation: array<f32>;
 @group(0) @binding(2) var<uniform> params: AccumUniforms;
+@group(0) @binding(3) var<storage, read_write> max_density: array<atomic<u32>>;
 
 @compute @workgroup_size(16, 16)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -42,4 +43,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     accumulation[accum_idx + 3u] = accumulation[accum_idx + 3u] * decay + b;
     accumulation[accum_idx + 4u] = accumulation[accum_idx + 4u] * decay + vx;
     accumulation[accum_idx + 5u] = accumulation[accum_idx + 5u] * decay + vy;
+
+    // Track max density for per-image normalization.
+    // For positive f32, bitcast<u32> preserves ordering (IEEE 754), so atomicMax works.
+    let final_density = accumulation[accum_idx];
+    let density_bits = bitcast<u32>(max(final_density, 0.0));
+    atomicMax(&max_density[0], density_bits);
 }
