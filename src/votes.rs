@@ -264,3 +264,116 @@ fn today() -> String {
     let day = day_of_year % 30 + 1;
     format!("{year}-{month:02}-{day:02}")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_cache() -> LineageCache {
+        let mut cache = LineageCache::default();
+        cache.register("grandparent_a", &None, &None);
+        cache.register("grandparent_b", &None, &None);
+        cache.register("parent_a", &Some("grandparent_a".into()), &None);
+        cache.register("parent_b", &Some("grandparent_b".into()), &None);
+        cache.register("child", &Some("parent_a".into()), &Some("parent_b".into()));
+        cache
+    }
+
+    #[test]
+    fn distance_self_is_zero() {
+        let cache = make_cache();
+        assert_eq!(cache.genetic_distance("child", "child", 8), 0);
+    }
+
+    #[test]
+    fn distance_to_parent_is_one() {
+        let cache = make_cache();
+        assert_eq!(cache.genetic_distance("child", "parent_a", 8), 1);
+        assert_eq!(cache.genetic_distance("child", "parent_b", 8), 1);
+    }
+
+    #[test]
+    fn distance_to_grandparent_is_two() {
+        let cache = make_cache();
+        assert_eq!(cache.genetic_distance("child", "grandparent_a", 8), 2);
+    }
+
+    #[test]
+    fn distance_between_unrelated_is_max_depth() {
+        let cache = make_cache();
+        assert_eq!(cache.genetic_distance("parent_a", "parent_b", 8), 8);
+    }
+
+    #[test]
+    fn distance_siblings_share_parent() {
+        let mut cache = LineageCache::default();
+        cache.register("dad", &None, &None);
+        cache.register("mom", &None, &None);
+        cache.register("sibling_a", &Some("dad".into()), &Some("mom".into()));
+        cache.register("sibling_b", &Some("dad".into()), &Some("mom".into()));
+        assert_eq!(cache.genetic_distance("sibling_a", "sibling_b", 8), 1);
+    }
+
+    #[test]
+    fn distance_unknown_genomes_returns_max_depth() {
+        let cache = LineageCache::default();
+        assert_eq!(cache.genetic_distance("unknown_a", "unknown_b", 8), 8);
+    }
+
+    #[test]
+    fn register_updates_cache() {
+        let mut cache = LineageCache::default();
+        cache.register("new_genome", &Some("pa".into()), &Some("pb".into()));
+        assert_eq!(cache.genetic_distance("new_genome", "pa", 8), 1);
+    }
+
+    #[test]
+    fn vote_ledger_empty_pick_returns_none() {
+        let ledger = VoteLedger::default();
+        assert!(ledger.pick_voted(0).is_none());
+    }
+
+    #[test]
+    fn vote_ledger_positive_score_is_pickable() {
+        let mut ledger = VoteLedger::default();
+        ledger.entries.insert(
+            "test_genome".into(),
+            VoteEntry {
+                score: 3,
+                file: "/tmp/test_genome.json".into(),
+                last_seen: "2026-01-01".into(),
+            },
+        );
+        let picked = ledger.pick_voted(0);
+        assert!(picked.is_some());
+        assert_eq!(picked.unwrap().to_str().unwrap(), "/tmp/test_genome.json");
+    }
+
+    #[test]
+    fn vote_ledger_negative_score_not_pickable() {
+        let mut ledger = VoteLedger::default();
+        ledger.entries.insert(
+            "bad_genome".into(),
+            VoteEntry {
+                score: -5,
+                file: "/tmp/bad.json".into(),
+                last_seen: "2026-01-01".into(),
+            },
+        );
+        assert!(ledger.pick_voted(0).is_none());
+    }
+
+    #[test]
+    fn vote_ledger_zero_score_not_pickable() {
+        let mut ledger = VoteLedger::default();
+        ledger.entries.insert(
+            "meh".into(),
+            VoteEntry {
+                score: 0,
+                file: "/tmp/meh.json".into(),
+                last_seen: "2026-01-01".into(),
+            },
+        );
+        assert!(ledger.pick_voted(0).is_none());
+    }
+}
