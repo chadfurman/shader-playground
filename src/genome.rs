@@ -564,6 +564,31 @@ impl FlameGenome {
         Self::load(&entry.path())
     }
 
+    /// Load a random genome from directory, excluding blacklisted names.
+    pub fn load_random_filtered(
+        dir: &Path,
+        blacklist: &std::collections::HashSet<String>,
+    ) -> Result<Self, String> {
+        use rand::prelude::IndexedRandom;
+        let entries: Vec<_> = fs::read_dir(dir)
+            .map_err(|e| format!("read dir: {e}"))?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let path = e.path();
+                path.extension().is_some_and(|ext| ext == "json")
+                    && path.file_name().is_some_and(|n| n != "votes.json")
+                    && !blacklist.contains(
+                        path.file_stem().and_then(|s| s.to_str()).unwrap_or("")
+                    )
+            })
+            .collect();
+        if entries.is_empty() {
+            return Err("no eligible genomes found".into());
+        }
+        let entry = entries.choose(&mut rand::rng()).ok_or("empty")?;
+        Self::load(&entry.path())
+    }
+
     /// Apply a single transform on CPU (simplified variations for attractor estimation).
     fn apply_xform_cpu(p: (f32, f32), xf: &FlameTransform) -> (f32, f32) {
         let ax = xf.a * p.0 + xf.b * p.1 + xf.offset[0];
