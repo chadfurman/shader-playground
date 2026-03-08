@@ -159,28 +159,37 @@ fn audio_biased_variation_pick(rng: &mut impl Rng, audio: &AudioFeatures) -> usi
 }
 
 impl FlameGenome {
-    /// Pack global params into a fixed [f32; 16] for the uniform buffer.
+    /// Pack global params into a fixed [f32; 20] for the uniform buffer.
     /// Layout:
     ///   [0] speed  [1] zoom  [2] trail  [3] flame_brightness
     ///   [4] kifs_fold  [5] kifs_scale  [6] kifs_brightness  [7] drift_speed
     ///   [8] color_shift  [9] vibrancy  [10] bloom_intensity  [11] (reserved)
-    ///   [12] noise_disp  [13] curl_disp  [14] tangent_clamp  [15] (reserved)
-    pub fn flatten_globals(&self) -> [f32; 16] {
-        let mut g = [0.0f32; 16];
+    ///   [12] noise_disp  [13] curl_disp  [14] tangent_clamp  [15] color_blend
+    ///   [16] spin_speed_max  [17] position_drift  [18] warmup_iters  [19] (reserved)
+    pub fn flatten_globals(&self, cfg: &crate::weights::RuntimeConfig) -> [f32; 20] {
+        let mut g = [0.0f32; 20];
         g[0] = self.global.speed;
         g[1] = self.global.zoom;
-        g[2] = self.global.trail;
-        g[3] = self.global.flame_brightness;
+        g[2] = cfg.trail;
+        // Scale flame_brightness for accumulation depth: with decay 0.995, density is
+        // ~200x higher than single-frame. Multiply by (1-decay) to normalize sensitivity.
+        g[3] = self.global.flame_brightness * (1.0 - cfg.accumulation_decay);
         g[4] = self.kifs.fold_angle;
         g[5] = self.kifs.scale;
         g[6] = self.kifs.brightness;
         // g[7] = drift_speed (set by weights, default 0)
         // g[8] = color_shift (set by weights, default 0)
-        g[9] = 0.7;   // vibrancy base
-        g[10] = 0.05;  // bloom_intensity base
-        g[12] = 0.08;  // noise_displacement base
-        g[13] = 0.05;  // curl_displacement base
-        g[14] = 4.0;   // tangent_clamp base
+        g[9] = cfg.vibrancy;
+        g[10] = cfg.bloom_intensity;
+        g[12] = cfg.noise_displacement;
+        g[13] = cfg.curl_displacement;
+        g[14] = cfg.tangent_clamp;
+        g[15] = cfg.color_blend;
+        g[16] = cfg.spin_speed_max;
+        g[17] = cfg.position_drift;
+        g[18] = cfg.warmup_iters;
+        g[11] = cfg.gamma;            // extra.w in shader
+        g[19] = cfg.highlight_power;  // extra3.w in shader
         g
     }
 
@@ -348,7 +357,126 @@ impl FlameGenome {
         Self::load(&entry.path())
     }
 
-    pub fn mutate(&self, audio: &AudioFeatures) -> Self {
+    /// Apply a single transform on CPU (simplified variations for attractor estimation).
+    fn apply_xform_cpu(p: (f32, f32), xf: &FlameTransform) -> (f32, f32) {
+        let (sin_a, cos_a) = xf.angle.sin_cos();
+        let rx = cos_a * p.0 - sin_a * p.1;
+        let ry = sin_a * p.0 + cos_a * p.1;
+        let ax = rx * xf.scale + xf.offset[0];
+        let ay = ry * xf.scale + xf.offset[1];
+
+        let mut vx = 0.0f32;
+        let mut vy = 0.0f32;
+        let r2 = ax * ax + ay * ay;
+        let r_len = r2.sqrt().max(1e-6);
+        let theta = ay.atan2(ax);
+
+        if xf.linear > 0.0 { vx += ax * xf.linear; vy += ay * xf.linear; }
+        if xf.sinusoidal > 0.0 { vx += ax.sin() * xf.sinusoidal; vy += ay.sin() * xf.sinusoidal; }
+        if xf.spherical > 0.0 { let s = xf.spherical / r2.max(0.01); vx += ax * s; vy += ay * s; }
+        if xf.swirl > 0.0 { let (sr, cr) = (r2.sin(), r2.cos()); vx += (ax * sr - ay * cr) * xf.swirl; vy += (ax * cr + ay * sr) * xf.swirl; }
+        if xf.horseshoe > 0.0 { let h = xf.horseshoe / r_len; vx += (ax - ay) * (ax + ay) * h; vy += 2.0 * ax * ay * h; }
+        if xf.handkerchief > 0.0 { vx += r_len * (theta + r_len).sin() * xf.handkerchief; vy += r_len * (theta - r_len).cos() * xf.handkerchief; }
+        if xf.julia > 0.0 { let sr = r_len.sqrt(); let t2 = theta / 2.0; vx += sr * t2.cos() * xf.julia; vy += sr * t2.sin() * xf.julia; }
+        if xf.polar > 0.0 { vx += (theta / std::f32::consts::PI) * xf.polar; vy += (r_len - 1.0) * xf.polar; }
+        if xf.disc > 0.0 { let d = theta / std::f32::consts::PI; let pr = std::f32::consts::PI * r_len; vx += d * pr.sin() * xf.disc; vy += d * pr.cos() * xf.disc; }
+        if xf.rings > 0.0 { let c2 = 0.04f32; let rr = ((r_len + c2) % (2.0 * c2)) - c2 + r_len * (1.0 - c2); vx += rr * theta.cos() * xf.rings; vy += rr * theta.sin() * xf.rings; }
+        if xf.bubble > 0.0 { let b = 4.0 / (r2 + 4.0); vx += ax * b * xf.bubble; vy += ay * b * xf.bubble; }
+        if xf.fisheye > 0.0 { let f = 2.0 / (r_len + 1.0); vx += f * ay * xf.fisheye; vy += f * ax * xf.fisheye; }
+        if xf.diamond > 0.0 { vx += theta.sin() * r_len.cos() * xf.diamond; vy += theta.cos() * r_len.sin() * xf.diamond; }
+        if xf.bent > 0.0 { let bx = if ax >= 0.0 { ax } else { 2.0 * ax }; let by = if ay >= 0.0 { ay } else { ay / 2.0 }; vx += bx * xf.bent; vy += by * xf.bent; }
+        if xf.eyefish > 0.0 { let e = 2.0 / (r_len + 1.0); vx += e * ax * xf.eyefish; vy += e * ay * xf.eyefish; }
+        if xf.cross > 0.0 { let c = 1.0 / (ax * ax - ay * ay).abs().max(0.01); vx += ax * c * xf.cross; vy += ay * c * xf.cross; }
+        if xf.cosine > 0.0 { vx += ax.cos() * ay.cosh() * xf.cosine; vy -= ax.sin() * ay.sinh() * xf.cosine; }
+        if xf.blob > 0.0 { let br = r_len * (0.5 + 0.5 * (3.0 * theta).sin()); vx += br * theta.cos() * xf.blob; vy += br * theta.sin() * xf.blob; }
+        if xf.fan > 0.0 { let t2 = std::f32::consts::PI * 0.04; let t_half = t2 / 2.0; let f = if (theta + 0.2) % t2 > t_half { theta - t_half } else { theta + t_half }; vx += r_len * f.cos() * xf.fan; vy += r_len * f.sin() * xf.fan; }
+        let others = xf.spiral + xf.exponential + xf.waves + xf.popcorn + xf.tangent + xf.noise + xf.curl;
+        if others > 0.0 { vx += ax * others; vy += ay * others; }
+
+        (vx.clamp(-100.0, 100.0), vy.clamp(-100.0, 100.0))
+    }
+
+    /// Estimate attractor extent via CPU chaos game (percentile-based, outlier-resistant).
+    fn estimate_attractor_extent(&self) -> f32 {
+        let mut rng = rand::rng();
+        let mut p = (0.5f32, 0.3f32);
+        let mut xs = Vec::with_capacity(400);
+        let mut ys = Vec::with_capacity(400);
+
+        let total_w: f32 = self.transforms.iter().map(|xf| xf.weight).sum();
+        if total_w <= 0.0 || self.transforms.is_empty() {
+            return 0.0;
+        }
+
+        for i in 0..500 {
+            let r: f32 = rng.random::<f32>() * total_w;
+            let mut cumsum = 0.0;
+            let mut tidx = 0;
+            for (j, xf) in self.transforms.iter().enumerate() {
+                cumsum += xf.weight;
+                if r < cumsum { tidx = j; break; }
+            }
+            p = Self::apply_xform_cpu(p, &self.transforms[tidx]);
+            if i >= 100 {
+                xs.push(p.0);
+                ys.push(p.1);
+            }
+        }
+
+        xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        ys.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let lo = (xs.len() as f32 * 0.05) as usize;
+        let hi = (xs.len() as f32 * 0.95) as usize;
+        let extent_x = (xs[hi] - xs[lo]).abs();
+        let extent_y = (ys[hi] - ys[lo]).abs();
+        extent_x.max(extent_y)
+    }
+
+    /// Auto-adjust zoom to fit the attractor. Returns suggested zoom value.
+    pub fn auto_zoom(&self, cfg: &crate::weights::RuntimeConfig) -> f32 {
+        let extent = self.estimate_attractor_extent();
+        let extent = extent.max(0.5);
+        let zoom = cfg.zoom_target / extent;
+        zoom.clamp(cfg.zoom_min, cfg.zoom_max)
+    }
+
+    pub fn mutate(&self, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig) -> Self {
+        // Seed-biased mutation: sometimes start from a random seed genome
+        let mut rng = rand::rng();
+        let base = if rng.random::<f32>() < cfg.seed_mutation_bias {
+            let seeds_dir = crate::project_dir().join("genomes").join("seeds");
+            match FlameGenome::load_random(&seeds_dir) {
+                Ok(seed) => {
+                    eprintln!("[mutate] starting from seed: {}", seed.name);
+                    seed
+                }
+                Err(_) => self.clone(),
+            }
+        } else {
+            self.clone()
+        };
+
+        let retries = cfg.max_mutation_retries.max(1);
+        for attempt in 0..retries {
+            let child = base.mutate_inner(audio);
+            let extent = child.estimate_attractor_extent();
+            if extent > cfg.min_attractor_extent {
+                let mut result = child;
+                result.global.zoom = result.auto_zoom(cfg);
+                return result;
+            }
+            if attempt < retries - 1 {
+                eprintln!("[mutate] attempt {} rejected (attractor extent={:.3}), retrying", attempt + 1, extent);
+            }
+        }
+        eprintln!("[mutate] all attempts degenerate, keeping parent");
+        let mut result = self.clone();
+        result.name = format!("mutant-{}", rand::rng().random_range(1000..9999u32));
+        result.global.zoom = result.auto_zoom(cfg);
+        result
+    }
+
+    fn mutate_inner(&self, audio: &AudioFeatures) -> Self {
         let mut child = self.clone();
         let mut rng = rand::rng();
 

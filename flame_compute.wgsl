@@ -10,7 +10,8 @@ struct Uniforms {
     globals: vec4<f32>,   // speed, zoom, trail, flame_brightness
     kifs: vec4<f32>,      // fold_angle, scale, brightness, drift_speed
     extra: vec4<f32>,     // color_shift, vibrancy, bloom_intensity, symmetry
-    extra2: vec4<f32>,     // crossfade_alpha, reserved, reserved, reserved
+    extra2: vec4<f32>,     // noise_disp, curl_disp, tangent_clamp, color_blend
+    extra3: vec4<f32>,     // spin_speed_max, position_drift, warmup_iters, reserved
 }
 
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;
@@ -68,12 +69,47 @@ fn vnoise(t: f32, seed: u32) -> f32 {
 
 const TAU: f32 = 6.28318530;
 
+// Multi-palette system — blends between several rich Iq cosine palettes
+// to produce the kind of deep, saturated color variety Electric Sheep is known for.
+fn palette_a(t: f32) -> vec3<f32> {
+    // Fiery: deep orange → gold → magenta → violet
+    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.5) * cos(TAU * (vec3(1.0, 0.7, 0.4) * t + vec3(0.00, 0.15, 0.20)));
+}
+fn palette_b(t: f32) -> vec3<f32> {
+    // Ocean: deep blue → cyan → teal → emerald
+    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.5) * cos(TAU * (vec3(0.8, 1.0, 1.0) * t + vec3(0.20, 0.00, 0.50)));
+}
+fn palette_c(t: f32) -> vec3<f32> {
+    // Neon: electric pink → hot orange → yellow → lime
+    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.4) * cos(TAU * (vec3(1.0, 1.0, 0.5) * t + vec3(0.80, 0.90, 0.30)));
+}
+fn palette_d(t: f32) -> vec3<f32> {
+    // Deep: indigo → purple → crimson → copper
+    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.5) * cos(TAU * (vec3(0.7, 0.8, 1.0) * t + vec3(0.55, 0.40, 0.00)));
+}
+
 fn palette(t: f32) -> vec3<f32> {
-    let a = vec3(0.5, 0.5, 0.5);
-    let b = vec3(0.5, 0.5, 0.5);
-    let c = vec3(1.0, 1.0, 1.0);
-    let d = vec3(0.00, 0.33, 0.67);
-    return a + b * cos(TAU * (c * t + d));
+    // Cycle through palettes based on color index position
+    // This creates the rich multi-hue look of Electric Sheep
+    let phase = fract(t * 0.5); // slow palette rotation
+    let sector = t * 4.0;       // which palette region we're in
+    let blend = fract(sector);
+    let idx = u32(floor(sector)) % 4u;
+
+    var c1: vec3<f32>;
+    var c2: vec3<f32>;
+    switch(idx) {
+        case 0u: { c1 = palette_a(t); c2 = palette_b(t); }
+        case 1u: { c1 = palette_b(t); c2 = palette_c(t); }
+        case 2u: { c1 = palette_c(t); c2 = palette_d(t); }
+        default: { c1 = palette_d(t); c2 = palette_a(t); }
+    }
+    return mix(c1, c2, smoothstep(0.0, 1.0, blend));
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
 }
 
 // ── Flame Variations ──
@@ -251,15 +287,15 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
 
     let drift = u.kifs.w; // drift_speed
 
-    // Per-transform seeded drift
+    // Per-transform seeded drift — all multipliers from uniforms
     let seed = hash_u(idx * 31337u + 42u);
     let drift_amt = 0.3 + hash_f(seed) * 0.7; // 0.3–1.0 per transform
-    // Steady spin — each transform rotates at its own constant speed, never reverses
-    let spin_speed = (hash_f(seed + 300u) * 2.0 - 1.0) * 0.15; // ±0.15 rad/s
+    let spin_max = u.extra3.x;  // spin_speed_max from weights
+    let pos_drift = u.extra3.y; // position_drift from weights
+    let spin_speed = (hash_f(seed + 300u) * 2.0 - 1.0) * spin_max;
     let angle_drift = t * spin_speed * drift * drift_amt;
-    // Position: gentle bounded noise wander
-    let ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * 0.08;
-    let oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * 0.08;
+    let ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * pos_drift;
+    let oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * pos_drift;
 
     let q = rot2(angle + angle_drift) * p * scale
           + vec2(ox + ox_drift, oy + oy_drift);
@@ -359,9 +395,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
 
         p = apply_xform(p, tidx, t, &rng);
-        color_idx = color_idx * 0.3 + xform_color(tidx) * 0.7;
+        let cb = u.extra2.w;  // color_blend from weights
+        color_idx = color_idx * (1.0 - cb) + xform_color(tidx) * cb;
 
-        if (i < 20u) { continue; }
+        if (i < u32(u.extra3.z)) { continue; }
 
         // Final transform (if present)
         var plot_p = p;

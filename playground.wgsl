@@ -1,8 +1,10 @@
-// ── Fractal Flame + KIFS Background ──
+// ── Fractal Flame Display Shader ──
 //
-// Flame: reads compute histogram, log-density tonemapping
-// Background: KIFS fractal runs per-pixel in fragment shader
-// Both blend with feedback for persistence.
+// Electric Sheep-style rendering pipeline:
+// 1. Log-density mapping (Scott Draves' algorithm)
+// 2. Vibrancy-aware color blending
+// 3. Gamma correction
+// 4. Bloom + feedback trail
 
 struct Uniforms {
     time: f32,
@@ -11,84 +13,21 @@ struct Uniforms {
     mouse: vec2<f32>,
     transform_count: u32,
     _pad: u32,
-    globals: vec4<f32>,
-    kifs: vec4<f32>,
-    extra: vec4<f32>,
-    extra2: vec4<f32>,  // crossfade_alpha, reserved, reserved, reserved
+    globals: vec4<f32>,     // speed, zoom, trail, flame_brightness
+    kifs: vec4<f32>,        // fold_angle, scale, brightness, drift_speed
+    extra: vec4<f32>,       // color_shift, vibrancy, bloom_intensity, gamma
+    extra2: vec4<f32>,      // noise_disp, curl_disp, tangent_clamp, color_blend
+    extra3: vec4<f32>,      // spin_speed_max, position_drift, warmup_iters, highlight_power
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var prev_frame: texture_2d<f32>;
 @group(0) @binding(2) var prev_sampler: sampler;
-@group(0) @binding(3) var<storage, read> histogram: array<u32>;
+@group(0) @binding(3) var<storage, read> accumulation: array<f32>;
 @group(0) @binding(4) var crossfade_tex: texture_2d<f32>;
 
 const PI: f32  = 3.14159265;
 const TAU: f32 = 6.28318530;
-
-fn rot2(a: f32) -> mat2x2<f32> {
-    let c = cos(a); let s = sin(a);
-    return mat2x2(c, -s, s, c);
-}
-
-// Cosine palette (Inigo Quilez)
-fn palette(t: f32) -> vec3<f32> {
-    let a = vec3(0.5, 0.5, 0.5);
-    let b = vec3(0.5, 0.5, 0.5);
-    let c = vec3(1.0, 1.0, 1.0);
-    let d = vec3(0.00, 0.33, 0.67);
-    return a + b * cos(TAU * (c * t + d));
-}
-
-// Second palette (warmer, for KIFS background)
-fn palette_warm(t: f32) -> vec3<f32> {
-    let a = vec3(0.5, 0.5, 0.5);
-    let b = vec3(0.5, 0.5, 0.5);
-    let c = vec3(1.0, 0.7, 0.4);
-    let d = vec3(0.00, 0.15, 0.20);
-    return a + b * cos(TAU * (c * t + d));
-}
-
-// ── KIFS Background ──
-
-fn kifs_fractal(uv: vec2<f32>, t: f32, fold_param: f32, ifs_scale: f32) -> vec3<f32> {
-    var p = uv;
-    var min_trap = 100.0;
-    var trap_idx = 0.0;
-    var line_trap = 100.0;
-    var total_scale = 1.0;
-
-    let base_angle = fold_param * PI;
-
-    for (var i = 0; i < 18; i++) {
-        p = abs(p);
-        if (p.x < p.y) { p = p.yx; }
-
-        let angle = base_angle + f32(i) * 0.18 + sin(t * 0.3 + f32(i) * 0.4) * 0.15;
-        p = rot2(angle) * p;
-
-        let offset = vec2(
-            1.0 + 0.15 * sin(t * 0.2 + f32(i) * 0.5),
-            0.8 + 0.1 * cos(t * 0.25 + f32(i) * 0.3)
-        );
-        p = p * ifs_scale - offset;
-        total_scale *= ifs_scale;
-
-        let d = length(p) / total_scale;
-        if (d < min_trap) {
-            min_trap = d;
-            trap_idx = f32(i) + d * 3.0;
-        }
-        line_trap = min(line_trap, abs(p.x) / total_scale);
-    }
-
-    let point_glow = exp(-min_trap * 6.0);
-    let line_glow  = exp(-line_trap * 10.0) * 0.7;
-    let hue = fract(trap_idx * 0.07 + t * 0.04);
-    let line_hue = fract(trap_idx * 0.12 + 0.5 + t * 0.03);
-
-    return palette_warm(hue) * point_glow + palette_warm(line_hue) * line_glow;
-}
 
 // ── Vertex ──
 
@@ -105,63 +44,93 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let px = vec2<u32>(u32(pos.x), u32(pos.y));
     let w = u32(u.resolution.x);
-    let uv = (pos.xy - u.resolution * 0.5) / u.resolution.y * 2.5;
     let tex_uv = pos.xy / u.resolution;
 
-    let speed        = u.globals.x;
     let trail        = u.globals.z;
     let flame_bright = u.globals.w;
-    let t = u.time * speed;
+    let vibrancy     = u.extra.y;
+    let bloom_int    = u.extra.z;
+    let gamma        = u.extra.w;   // gamma correction (default 2.2, stored as 1/gamma for pow)
+    let highlight    = u.extra3.w;  // highlight power — controls hot-spot intensity
 
-    // ── KIFS background layer — disabled ──
-    let bg = vec3(0.0);
-
-    // ── Flame foreground (direct histogram read — trail provides temporal smoothing) ──
-    let h = u32(u.resolution.y);
+    // ── Read accumulation buffer ──
     let buf_idx = (px.y * w + px.x) * 4u;
-    let density = f32(histogram[buf_idx]);
-    let acc_r = f32(histogram[buf_idx + 1u]);
-    let acc_g = f32(histogram[buf_idx + 2u]);
-    let acc_b = f32(histogram[buf_idx + 3u]);
+    let density = accumulation[buf_idx];
+    let acc_r = accumulation[buf_idx + 1u];
+    let acc_g = accumulation[buf_idx + 2u];
+    let acc_b = accumulation[buf_idx + 3u];
+
+    // ── Flam3-style log-density tonemapping ──
+    // Self-normalizing sigmoid: alpha → 0 for empty pixels, → 1 for bright ones.
+    // flame_bright controls the crossover point (scaled on CPU for accumulation depth).
+    let log_density = log(1.0 + density * flame_bright);
+    let alpha = log_density / (log_density + 1.0);
 
     // Recover average color from accumulated RGB
-    let avg_color = select(
+    let raw_color = select(
         vec3(0.0),
         vec3(acc_r, acc_g, acc_b) / max(density * 1000.0, 1.0),
         density > 0.0
     );
 
-    // Log-density alpha (no hard cap — natural falloff)
-    let alpha = log(1.0 + density * flame_bright) / (log(1.0 + density * flame_bright) + 4.0);
+    // ── Flam3 vibrancy blend ──
+    // vibrancy=1: fully color-saturated, scaled by alpha
+    // vibrancy=0: luminance-based with gamma applied inside
+    // Gamma is applied INSIDE the vibrancy calculation, not as a blanket final step
+    let gamma_alpha = pow(max(alpha, 0.001), gamma);
+    let ls = vibrancy * alpha + (1.0 - vibrancy) * gamma_alpha;
+    let flame = ls * raw_color + (1.0 - vibrancy) * gamma_alpha * vec3(1.0);
 
-    // Vibrancy: saturate colors based on density
-    let vibrancy = u.extra.y;
-    let lum = dot(avg_color, vec3(0.299, 0.587, 0.114));
-    let vibrant_color = mix(vec3(lum), avg_color, pow(alpha, max(1.0 - vibrancy, 0.01)));
-    let flame = vibrant_color * alpha;
+    // Highlight power — boosts bright areas for that glowing hot-spot look
+    let highlight_boost = pow(max(alpha, 0.0), highlight) * highlight * 0.3;
+    let lit = flame + vec3(highlight_boost);
 
-    // ── Combine ──
-    var new_col = flame + bg;
-
-    // Feedback trail — temporal accumulation smooths grain across frames
+    // ── Feedback trail — temporal anti-aliasing ──
     let prev = textureSample(prev_frame, prev_sampler, tex_uv).rgb;
-    new_col = new_col + prev * trail;
+    var new_col = lit + prev * trail;
 
-    // Bloom — cheap 5-tap cross
-    let bloom_int = u.extra.z;
+    // ── Multi-radius bloom — 3 scales for soft Electric Sheep halo ──
+    // Radii and weights define the multi-scale bloom character (algorithm, not magic numbers).
+    // bloom_int controls overall intensity from config.
     if (bloom_int > 0.001) {
         let texel = 1.0 / u.resolution;
-        let bloom = (
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-2.0, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2( 2.0, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -2.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  2.0) * texel).rgb
-        ) * 0.25;
-        new_col += bloom * bloom_int;
+        var bloom_sum = vec3(0.0);
+
+        // Tight bloom (2px) — sharp glow around bright structures
+        let r1 = 2.0;
+        bloom_sum += (
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-r1, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2( r1, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -r1) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  r1) * texel).rgb
+        ) * 0.25 * 0.5;
+
+        // Medium bloom (5px) — soft halo
+        let r2 = 5.0;
+        bloom_sum += (
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-r2, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2( r2, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -r2) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  r2) * texel).rgb
+        ) * 0.25 * 0.3;
+
+        // Wide bloom (12px) — atmospheric glow
+        let r3 = 12.0;
+        bloom_sum += (
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-r3, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2( r3, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -r3) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  r3) * texel).rgb
+        ) * 0.25 * 0.2;
+
+        new_col += bloom_sum * bloom_int;
     }
 
-    // Tonemap: soft clamp to prevent blowout
-    var col = new_col / (new_col + vec3(1.0));  // Reinhard
+    // ── Reinhard tonemapping + final gamma ──
+    // Gamma is already applied inside the vibrancy blend (flam3 style).
+    // Apply Reinhard soft clamp then a gentle final gamma for display.
+    var col = new_col / (new_col + vec3(1.0));
+    col = pow(max(col, vec3(0.0)), vec3(gamma));
 
     return vec4(col, 1.0);
 }

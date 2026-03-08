@@ -1,0 +1,96 @@
+{
+  "name": "seed-diamond-lattice",
+  "global": {
+    "speed": 0.2,
+    "zoom": 3.0,
+    "trail": 0.3,
+    "flame_brightness": 0.46
+  },
+  "kifs": {
+    "fold_angle": 0.58,
+    "scale": 1.7,
+    "brightness": 0.0
+  },
+  "transforms": [
+    {
+      "weight": 0.3, "angle": 0.785, "scale": 0.5,
+      "offset": [1.5, 1.5], "color": 0.0,
+      "linear": 0.0, "sinusoidal": 0.0, "spherical": 0.0,
+      "swirl": 0.0, "horseshoe": 0.0, "handkerchief": 0.0,
+      "julia": 0.0, "polar": 0.0, "disc": 0.0,
+      "rings": 0.0, "bubble": 0.0, "fisheye": 0.0,
+      "exponential": 0.0, "spiral": 0.0, "diamond": 0.7,
+      "bent": 0.0, "waves": 0.0, "popcorn": 0.0,
+      "fan": 0.0, "eyefish": 0.0, "cross": 0.0,
+      "tangent": 0.0, "cosine": 0.0, "blob": 0.0,
+      "noise": 0.0, "curl": 0.0
+    },
+    {
+      "weight": 0.25, "angle": -0.785, "scale": 0.5,
+      "offset": [-1.5, 1.5], "color": 0.17,
+      "linear": 0.0, "sinusoidal": 0.0, "spherical": 0.0,
+      "swirl": 0.0, "horseshoe": 0.0, "handkerchief": 0.0,
+      "julia": 0.0, "polar": 0.0, "disc": 0.0,
+      "rings": 0.3, "bubble": 0.0, "fisheye": 0.0,
+      "exponential": 0.0, "spiral": 0.0, "diamond": 0.3,
+      "bent": 0.0, "waves": 0.0, "popcorn": 0.0,
+      "fan": 0.0, "eyefish": 0.0, "cross": 0.0,
+      "tangent": 0.0, "cosine": 0.0, "blob": 0.0,
+      "noise": 0.0, "curl": 0.0
+    },
+    {
+      "weight": 0.25, "angle": 2.356, "scale": 0.45,
+      "offset": [1.5, -1.5], "color": 0.33,
+      "linear": 0.0, "sinusoidal": 0.0, "spherical": 0.0,
+      "swirl": 0.0, "horseshoe": 0.0, "handkerchief": 0.0,
+      "julia": 0.0, "polar": 0.0, "disc": 0.3,
+      "rings": 0.0, "bubble": 0.0, "fisheye": 0.0,
+      "exponential": 0.0, "spiral": 0.0, "diamond": 0.0,
+      "bent": 0.0, "waves": 0.0, "popcorn": 0.0,
+      "fan": 0.0, "eyefish": 0.0, "cross": 0.0,
+      "tangent": 0.0, "cosine": 0.0, "blob": 0.0,
+      "noise": 0.0, "curl": 0.3
+    },
+    {
+      "weight": 0.2, "angle": -2.356, "scale": 0.45,
+      "offset": [-1.5, -1.5], "color": 0.5,
+      "linear": 0.0, "sinusoidal": 0.0, "spherical": 0.0,
+      "swirl": 0.0, "horseshoe": 0.0, "handkerchief": 0.0,
+      "julia": 0.0, "polar": 0.2, "disc": 0.0,
+      "rings": 0.0, "bubble": 0.0, "fisheye": 0.0,
+      "exponential": 0.0, "spiral": 0.0, "diamond": 0.4,
+      "bent": 0.0, "waves": 0.0, "popcorn": 0.0,
+      "fan": 0.0, "eyefish": 0.0, "cross": 0.0,
+      "tangent": 0.0, "cosine": 0.0, "blob": 0.0,
+      "noise": 0.0, "curl": 0.0
+    },
+    {
+      "weight": 0.2, "angle": 0.0, "scale": 0.55,
+      "offset": [0.0, 2.5], "color": 0.67,
+      "linear": 0.0, "sinusoidal": 0.0, "spherical": 0.0,
+      "swirl": 0.0, "horseshoe": 0.0, "handkerchief": 0.0,
+      "julia": 0.0, "polar": 0.0, "disc": 0.0,
+      "rings": 0.2, "bubble": 0.0, "fisheye": 0.0,
+      "exponential": 0.0, "spiral": 0.0, "diamond": 0.3,
+      "bent": 0.0, "waves": 0.0, "popcorn": 0.0,
+      "fan": 0.0, "eyefish": 0.0, "cross": 0.2,
+      "tangent": 0.0, "cosine": 0.0, "blob": 0.0,
+      "noise": 0.0, "curl": 0.0
+    },
+    {
+      "weight": 0.18, "angle": 3.14, "scale": 0.4,
+      "offset": [0.0, -2.5], "color": 0.83,
+      "linear": 0.0, "sinusoidal": 0.0, "spherical": 0.0,
+      "swirl": 0.0, "horseshoe": 0.0, "handkerchief": 0.0,
+      "julia": 0.0, "polar": 0.0, "disc": 0.2,
+      "rings": 0.0, "bubble": 0.0, "fisheye": 0.0,
+      "exponential": 0.0, "spiral": 0.0, "diamond": 0.4,
+      "bent": 0.0, "waves": 0.0, "popcorn": 0.0,
+      "fan": 0.0, "eyefish": 0.0, "cross": 0.0,
+      "tangent": 0.0, "cosine": 0.0, "blob": 0.0,
+      "noise": 0.0, "curl": 0.0
+    }
+  ],
+  "final_transform": null,
+  "symmetry": 4
+}

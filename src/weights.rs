@@ -75,11 +75,106 @@ pub struct RuntimeConfig {
     pub mutation_cooldown: f32,
     #[serde(default = "default_workgroups")]
     pub workgroups: u32,
+    #[serde(default = "default_magnitude_min")]
+    pub magnitude_min: f32,
+    #[serde(default = "default_magnitude_max")]
+    pub magnitude_max: f32,
+    #[serde(default = "default_randomness_range")]
+    pub randomness_range: f32,
+    #[serde(default = "default_vibrancy")]
+    pub vibrancy: f32,
+    #[serde(default = "default_bloom_intensity")]
+    pub bloom_intensity: f32,
+    #[serde(default = "default_noise_displacement")]
+    pub noise_displacement: f32,
+    #[serde(default = "default_curl_displacement")]
+    pub curl_displacement: f32,
+    #[serde(default = "default_tangent_clamp")]
+    pub tangent_clamp: f32,
+    #[serde(default = "default_color_blend")]
+    pub color_blend: f32,
+    #[serde(default = "default_spin_speed_max")]
+    pub spin_speed_max: f32,
+    #[serde(default = "default_position_drift")]
+    pub position_drift: f32,
+    #[serde(default = "default_warmup_iters")]
+    pub warmup_iters: f32,
+    #[serde(default = "default_gamma")]
+    pub gamma: f32,
+    #[serde(default = "default_highlight_power")]
+    pub highlight_power: f32,
+    #[serde(default = "default_zoom_min")]
+    pub zoom_min: f32,
+    #[serde(default = "default_zoom_max")]
+    pub zoom_max: f32,
+    #[serde(default = "default_zoom_target")]
+    pub zoom_target: f32,
+    #[serde(default = "default_min_attractor_extent")]
+    pub min_attractor_extent: f32,
+    #[serde(default = "default_max_mutation_retries")]
+    pub max_mutation_retries: u32,
+    #[serde(default = "default_trail")]
+    pub trail: f32,
+    #[serde(default = "default_accumulation_decay")]
+    pub accumulation_decay: f32,
+    #[serde(default = "default_samples_per_frame")]
+    pub samples_per_frame: u32,
+    #[serde(default = "default_bloom_radius")]
+    pub bloom_radius: f32,
+    #[serde(default = "default_seed_mutation_bias")]
+    pub seed_mutation_bias: f32,
+    #[serde(default)]
+    pub variation_scales: HashMap<String, f32>,
 }
 
 fn default_morph_duration() -> f32 { 8.0 }
 fn default_mutation_cooldown() -> f32 { 3.0 }
 fn default_workgroups() -> u32 { 512 }
+fn default_magnitude_min() -> f32 { 1.0 }
+fn default_magnitude_max() -> f32 { 5.0 }
+fn default_randomness_range() -> f32 { 1.0 }
+fn default_vibrancy() -> f32 { 0.7 }
+fn default_bloom_intensity() -> f32 { 0.05 }
+fn default_noise_displacement() -> f32 { 0.08 }
+fn default_curl_displacement() -> f32 { 0.05 }
+fn default_tangent_clamp() -> f32 { 4.0 }
+fn default_color_blend() -> f32 { 0.7 }
+fn default_spin_speed_max() -> f32 { 0.15 }
+fn default_position_drift() -> f32 { 0.08 }
+fn default_warmup_iters() -> f32 { 20.0 }
+fn default_gamma() -> f32 { 0.4545 }         // 1/2.2 — standard display gamma
+fn default_highlight_power() -> f32 { 2.0 }   // hot-spot glow intensity
+fn default_zoom_min() -> f32 { 1.0 }
+fn default_zoom_max() -> f32 { 5.0 }
+fn default_zoom_target() -> f32 { 3.0 }
+fn default_min_attractor_extent() -> f32 { 0.3 }
+fn default_max_mutation_retries() -> u32 { 5 }
+fn default_trail() -> f32 { 0.15 }                // temporal AA only — accumulation is primary persistence
+fn default_accumulation_decay() -> f32 { 0.995 }
+fn default_samples_per_frame() -> u32 { 256 }
+fn default_bloom_radius() -> f32 { 3.0 }
+fn default_seed_mutation_bias() -> f32 { 0.7 }
+
+const VARIATION_START: usize = 6; // first variation field index in each 32-float transform block
+
+impl RuntimeConfig {
+    /// Apply variation_scales to a flattened transform buffer.
+    /// Multiplies each variation weight by the corresponding scale (default 1.0).
+    pub fn apply_variation_scales(&self, xf_buf: &mut [f32], num_transforms: usize) {
+        if self.variation_scales.is_empty() { return; }
+        for xf in 0..num_transforms {
+            for field_idx in VARIATION_START..PARAMS_PER_XF {
+                let name = XF_FIELDS[field_idx];
+                if let Some(&scale) = self.variation_scales.get(name) {
+                    let buf_idx = xf * PARAMS_PER_XF + field_idx;
+                    if buf_idx < xf_buf.len() {
+                        xf_buf[buf_idx] *= scale;
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Weights {
@@ -152,10 +247,10 @@ impl Weights {
     /// Apply weights to global params only.
     pub fn apply_globals(
         &self,
-        base: &[f32; 16],
+        base: &[f32; 20],
         features: &crate::audio::AudioFeatures,
         time_signals: &TimeSignals,
-    ) -> [f32; 16] {
+    ) -> [f32; 20] {
         let mut result = *base;
         let signals = self.signal_list(features, time_signals);
         for (_signal_idx, (weights, signal_val, divisor)) in signals.iter().enumerate() {
@@ -189,8 +284,8 @@ impl Weights {
                         for xf in 0..num_transforms {
                             let idx = xf * PARAMS_PER_XF + field_offset;
                             if idx < result.len() {
-                                let r = transform_randomness(xf);
-                                let m = transform_magnitude(xf);
+                                let r = transform_randomness(xf, self._config.randomness_range);
+                                let m = transform_magnitude(xf, self._config.magnitude_min, self._config.magnitude_max);
                                 result[idx] += weight * r * m * signal_val / divisor;
                             }
                         }
@@ -223,21 +318,20 @@ impl Weights {
     }
 }
 
-/// Deterministic per-transform randomness (-1.0 to 1.0) seeded by transform index.
-/// Each transform gets a fixed "personality" that scales (and potentially inverts)
-/// how all weight signals affect it.
-fn transform_randomness(xf: usize) -> f32 {
+/// Deterministic per-transform randomness seeded by transform index.
+/// Range: -randomness_range to +randomness_range.
+fn transform_randomness(xf: usize, range: f32) -> f32 {
     let h = xf.wrapping_mul(2654435761);
     let frac = ((h & 0xFFFF) as f32) / 65535.0; // 0.0–1.0
-    frac * 2.0 - 1.0 // -1.0–1.0
+    (frac * 2.0 - 1.0) * range
 }
 
-/// Deterministic per-transform magnitude (1.0 to 5.0) seeded by transform index.
-/// Controls how strongly all weight signals affect this transform overall.
-fn transform_magnitude(xf: usize) -> f32 {
+/// Deterministic per-transform magnitude seeded by transform index.
+/// Range: magnitude_min to magnitude_max.
+fn transform_magnitude(xf: usize, min: f32, max: f32) -> f32 {
     let h = xf.wrapping_mul(1597334677);
     let frac = ((h & 0xFFFF) as f32) / 65535.0; // 0.0–1.0
-    1.0 + frac * 4.0 // 1.0–5.0
+    min + frac * (max - min)
 }
 
 /// Map xfN_ field suffix to its offset within a transform block.
@@ -261,6 +355,12 @@ fn global_index(name: &str) -> Option<usize> {
         "noise_displacement" => Some(12),
         "curl_displacement" => Some(13),
         "tangent_clamp" => Some(14),
+        "color_blend" => Some(15),
+        "spin_speed_max" => Some(16),
+        "position_drift" => Some(17),
+        "warmup_iters" => Some(18),
+        "gamma" => Some(11),
+        "highlight_power" => Some(19),
         _ => None,
     }
 }

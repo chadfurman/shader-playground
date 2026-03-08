@@ -34,7 +34,8 @@ struct Uniforms {
     globals: [f32; 4],   // speed, zoom, trail, flame_brightness
     kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
     extra: [f32; 4],      // color_shift, vibrancy, bloom_intensity, symmetry
-    extra2: [f32; 4],     // crossfade_alpha, reserved, reserved, reserved
+    extra2: [f32; 4],     // noise_disp, curl_disp, tangent_clamp, color_blend
+    extra3: [f32; 4],     // spin_speed_max, position_drift, warmup_iters, reserved
 }
 
 // ── File Watcher ──
@@ -115,6 +116,13 @@ struct Gpu {
     histogram_buffer: wgpu::Buffer,
     transform_buffer: wgpu::Buffer,
     workgroups: u32,
+    // Accumulation pipeline
+    accumulation_pipeline: wgpu::ComputePipeline,
+    accumulation_pipeline_layout: wgpu::PipelineLayout,
+    accumulation_bind_group_layout: wgpu::BindGroupLayout,
+    accumulation_bind_group: wgpu::BindGroup,
+    accumulation_buffer: wgpu::Buffer,
+    accumulation_uniform_buffer: wgpu::Buffer,
 }
 
 impl Gpu {
@@ -309,13 +317,20 @@ impl Gpu {
             &compute_src,
         );
 
+        // ── Accumulation buffer (needed by render bind groups) ──
+        let accumulation_buffer = create_accumulation_buffer(
+            &device,
+            config.width,
+            config.height,
+        );
+
         let bind_group_a = create_render_bind_group(
             &device,
             &bind_group_layout,
             &uniform_buffer,
             &frame_b,
             &sampler,
-            &histogram_buffer,
+            &accumulation_buffer,
             &crossfade_view,
         );
         let bind_group_b = create_render_bind_group(
@@ -324,7 +339,7 @@ impl Gpu {
             &uniform_buffer,
             &frame_a,
             &sampler,
-            &histogram_buffer,
+            &accumulation_buffer,
             &crossfade_view,
         );
 
@@ -334,6 +349,73 @@ impl Gpu {
             &histogram_buffer,
             &uniform_buffer,
             &transform_buffer,
+        );
+
+        // 16 bytes: vec2f resolution + f32 decay + f32 pad
+        let accumulation_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("accumulation_uniforms"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let accumulation_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("accumulation"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let accumulation_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("accumulation"),
+                bind_group_layouts: &[&accumulation_bind_group_layout],
+                immediate_size: 0,
+            });
+
+        let accumulation_src = load_accumulation_source();
+        let accumulation_pipeline = create_accumulation_pipeline(
+            &device,
+            &accumulation_pipeline_layout,
+            &accumulation_src,
+        );
+
+        let accumulation_bind_group = create_accumulation_bind_group(
+            &device,
+            &accumulation_bind_group_layout,
+            &histogram_buffer,
+            &accumulation_buffer,
+            &accumulation_uniform_buffer,
         );
 
         Self {
@@ -361,7 +443,13 @@ impl Gpu {
             compute_pipeline_layout,
             histogram_buffer,
             transform_buffer,
-            workgroups: 512,
+            workgroups: 256, // default samples_per_frame
+            accumulation_pipeline,
+            accumulation_pipeline_layout,
+            accumulation_bind_group_layout,
+            accumulation_bind_group,
+            accumulation_buffer,
+            accumulation_uniform_buffer,
         }
     }
 
@@ -394,6 +482,7 @@ impl Gpu {
 
         // Recreate histogram for new dimensions
         self.histogram_buffer = create_histogram_buffer(&self.device, w, h);
+        self.accumulation_buffer = create_accumulation_buffer(&self.device, w, h);
 
         self.rebuild_bind_groups();
     }
@@ -433,7 +522,7 @@ impl Gpu {
             &self.uniform_buffer,
             &self.frame_b,
             &self.sampler,
-            &self.histogram_buffer,
+            &self.accumulation_buffer,
             &self.crossfade_view,
         );
         self.bind_group_b = create_render_bind_group(
@@ -442,7 +531,7 @@ impl Gpu {
             &self.uniform_buffer,
             &self.frame_a,
             &self.sampler,
-            &self.histogram_buffer,
+            &self.accumulation_buffer,
             &self.crossfade_view,
         );
         self.compute_bind_group = create_compute_bind_group(
@@ -451,6 +540,13 @@ impl Gpu {
             &self.histogram_buffer,
             &self.uniform_buffer,
             &self.transform_buffer,
+        );
+        self.accumulation_bind_group = create_accumulation_bind_group(
+            &self.device,
+            &self.accumulation_bind_group_layout,
+            &self.histogram_buffer,
+            &self.accumulation_buffer,
+            &self.accumulation_uniform_buffer,
         );
     }
 
@@ -486,6 +582,21 @@ impl Gpu {
             cpass.set_pipeline(&self.compute_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
             cpass.dispatch_workgroups(self.workgroups, 1, 1);
+        }
+
+        // 2.5. Accumulation pass: blend histogram into persistent buffer
+        {
+            let mut apass = encoder.begin_compute_pass(
+                &wgpu::ComputePassDescriptor {
+                    label: Some("accumulation"),
+                    ..Default::default()
+                },
+            );
+            apass.set_pipeline(&self.accumulation_pipeline);
+            apass.set_bind_group(0, &self.accumulation_bind_group, &[]);
+            let wg_x = (self.config.width + 15) / 16;
+            let wg_y = (self.config.height + 15) / 16;
+            apass.dispatch_workgroups(wg_x, wg_y, 1);
         }
 
         // 3. Render to feedback texture
@@ -539,28 +650,12 @@ impl Gpu {
         self.ping = !self.ping;
     }
 
-    fn snapshot_crossfade(&mut self) {
-        // After render(), ping has been toggled. If ping is now false, the last
-        // render wrote to frame_a. If ping is now true, last render wrote to frame_b.
-        let source = if !self.ping { &self.frame_a_tex } else { &self.frame_b_tex };
 
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-        encoder.copy_texture_to_texture(
-            source.as_image_copy(),
-            self.crossfade_tex.as_image_copy(),
-            wgpu::Extent3d {
-                width: self.config.width,
-                height: self.config.height,
-                depth_or_array_layers: 1,
-            },
-        );
-        self.queue.submit(std::iter::once(encoder.finish()));
-    }
 }
 
 // ── Helper Functions ──
 
-fn project_dir() -> PathBuf {
+pub fn project_dir() -> PathBuf {
     let mut dir = std::env::current_dir().unwrap();
     loop {
         if dir.join("Cargo.toml").exists() {
@@ -592,6 +687,15 @@ fn load_shader_source() -> String {
 fn load_compute_source() -> String {
     fs::read_to_string(compute_path())
         .unwrap_or_else(|_| include_str!("../flame_compute.wgsl").to_string())
+}
+
+fn accumulation_path() -> PathBuf {
+    project_dir().join("accumulation.wgsl")
+}
+
+fn load_accumulation_source() -> String {
+    fs::read_to_string(accumulation_path())
+        .unwrap_or_else(|_| include_str!("../accumulation.wgsl").to_string())
 }
 
 fn load_params() -> Vec<f32> {
@@ -626,6 +730,66 @@ fn create_histogram_buffer(
         size: pixel_count * 4 * 4, // 4 u32s per pixel
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
+    })
+}
+
+fn create_accumulation_buffer(
+    device: &wgpu::Device,
+    w: u32,
+    h: u32,
+) -> wgpu::Buffer {
+    let pixel_count = w.max(1) as u64 * h.max(1) as u64;
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("accumulation"),
+        size: pixel_count * 4 * 4, // 4 f32s per pixel (density, R, G, B)
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+fn create_accumulation_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    histogram: &wgpu::Buffer,
+    accumulation: &wgpu::Buffer,
+    uniform_buffer: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("accumulation"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: histogram.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: accumulation.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+        ],
+    })
+}
+
+fn create_accumulation_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader_src: &str,
+) -> wgpu::ComputePipeline {
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("accumulation"),
+        source: wgpu::ShaderSource::Wgsl(shader_src.into()),
+    });
+    device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("accumulation"),
+        layout: Some(layout),
+        module: &module,
+        entry_point: Some("main"),
+        compilation_options: Default::default(),
+        cache: None,
     })
 }
 
@@ -689,7 +853,7 @@ fn create_render_bind_group(
     uniform_buffer: &wgpu::Buffer,
     prev_frame: &wgpu::TextureView,
     sampler: &wgpu::Sampler,
-    histogram: &wgpu::Buffer,
+    accumulation: &wgpu::Buffer,
     crossfade_view: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -710,7 +874,7 @@ fn create_render_bind_group(
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: histogram.as_entire_binding(),
+                resource: accumulation.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 4,
@@ -812,7 +976,7 @@ struct App {
     start: Instant,
     frame: u32,
     mouse: [f32; 2],
-    globals: [f32; 16],
+    globals: [f32; 20],
     xf_params: Vec<f32>,
     num_transforms: usize,
     last_frame_time: Instant,
@@ -828,9 +992,9 @@ struct App {
     last_mutation_time: f32,
     random_walk: f32,
     // Ease-in-out genome morph
-    morph_start_globals: [f32; 16],
+    morph_start_globals: [f32; 20],
     morph_start_xf: Vec<f32>,
-    morph_base_globals: [f32; 16],  // current interpolated genome base (no audio)
+    morph_base_globals: [f32; 20],  // current interpolated genome base (no audio)
     morph_base_xf: Vec<f32>,       // current interpolated xf base (no audio)
     morph_progress: f32,            // 0.0 → 1.0
 }
@@ -842,12 +1006,25 @@ fn smoothstep(t: f32) -> f32 {
 
 impl App {
     fn new() -> Self {
-        // Randomize startup — mutate default genome so every launch is unique
-        let mut genome = FlameGenome::default_genome();
-        for _ in 0..3 {
-            genome = genome.mutate(&AudioFeatures::default());
-        }
-        let initial_globals = genome.flatten_globals();
+        // Try loading a curated seed genome; fall back to mutated default
+        let weights = load_weights();
+        let seeds_dir = project_dir().join("genomes").join("seeds");
+        let genome = if seeds_dir.exists() {
+            FlameGenome::load_random(&seeds_dir).unwrap_or_else(|_| {
+                let mut g = FlameGenome::default_genome();
+                for _ in 0..3 {
+                    g = g.mutate(&AudioFeatures::default(), &weights._config);
+                }
+                g
+            })
+        } else {
+            let mut g = FlameGenome::default_genome();
+            for _ in 0..3 {
+                g = g.mutate(&AudioFeatures::default(), &weights._config);
+            }
+            g
+        };
+        let initial_globals = genome.flatten_globals(&weights._config);
         let initial_xf = genome.flatten_transforms();
         let num_transforms = genome.total_buffer_transforms();
         Self {
@@ -864,7 +1041,7 @@ impl App {
             genome,
             genome_history: Vec::new(),
             audio_features: AudioFeatures::default(),
-            weights: load_weights(),
+            weights,
             audio_enabled: true,
             audio_info: false,
             audio_info_timer: 0.0,
@@ -945,7 +1122,7 @@ impl App {
         if reload_params {
             let override_params = load_params();
             // Override globals from params.json (first 12 entries map to globals)
-            for i in 0..16.min(override_params.len()) {
+            for i in 0..20.min(override_params.len()) {
                 self.globals[i] = override_params[i];
                 self.morph_base_globals[i] = override_params[i];
             }
@@ -954,10 +1131,10 @@ impl App {
         if reload_weights {
             self.weights = load_weights();
             if let Some(gpu) = &mut self.gpu {
-                gpu.workgroups = self.weights._config.workgroups;
+                gpu.workgroups = self.weights._config.samples_per_frame;
             }
-            eprintln!("[weights] reloaded (workgroups={}, morph={}s, cooldown={}s)",
-                self.weights._config.workgroups,
+            eprintln!("[weights] reloaded (samples_per_frame={}, morph={}s, cooldown={}s)",
+                self.weights._config.samples_per_frame,
                 self.weights._config.morph_duration,
                 self.weights._config.mutation_cooldown);
         }
@@ -997,7 +1174,7 @@ impl ApplicationHandler for App {
                 eprintln!("[genome] loaded: {}", g.name);
                 self.genome = g;
                 // Snap (no morph) on initial load
-                let g_globals = self.genome.flatten_globals();
+                let g_globals = self.genome.flatten_globals(&self.weights._config);
                 let g_xf = self.genome.flatten_transforms();
                 self.globals = g_globals;
                 self.xf_params = g_xf.clone();
@@ -1056,7 +1233,7 @@ impl ApplicationHandler for App {
                     if self.genome_history.len() > 10 {
                         self.genome_history.remove(0);
                     }
-                    self.genome = self.genome.mutate(&self.audio_features);
+                    self.genome = self.genome.mutate(&self.audio_features, &self.weights._config);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
                     eprintln!("[evolve] → {}", self.genome.name);
@@ -1160,10 +1337,10 @@ impl ApplicationHandler for App {
                     let t = smoothstep(self.morph_progress);
 
                     // Interpolate genome base values (ease-in-out)
-                    let genome_globals = self.genome.flatten_globals();
+                    let genome_globals = self.genome.flatten_globals(&self.weights._config);
                     let genome_xf = self.genome.flatten_transforms();
 
-                    for i in 0..16 {
+                    for i in 0..20 {
                         self.morph_base_globals[i] = self.morph_start_globals[i]
                             + (genome_globals[i] - self.morph_start_globals[i]) * t;
                     }
@@ -1190,6 +1367,11 @@ impl ApplicationHandler for App {
                     self.globals = modulated_globals;
                     self.xf_params = modulated_xf;
 
+                    // Apply variation CRISPR — scale/zero out variations from config
+                    self.weights._config.apply_variation_scales(
+                        &mut self.xf_params, self.num_transforms,
+                    );
+
                     // Auto-evolve via mutation_rate
                     let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);
                     self.mutation_accum += mr * dt;
@@ -1202,7 +1384,7 @@ impl ApplicationHandler for App {
                         if self.genome_history.len() > 10 {
                             self.genome_history.remove(0);
                         }
-                        self.genome = self.genome.mutate(&self.audio_features);
+                        self.genome = self.genome.mutate(&self.audio_features, &self.weights._config);
                         self.last_mutation_time = self.start.elapsed().as_secs_f32();
                         self.begin_morph();
                         eprintln!("[auto-evolve] → {}", self.genome.name);
@@ -1243,12 +1425,26 @@ impl ApplicationHandler for App {
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
                     extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
                     extra2: [self.globals[12], self.globals[13], self.globals[14], self.globals[15]],
+                    extra3: [self.globals[16], self.globals[17], self.globals[18], self.globals[19]],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
                 let xf_write_len = self.num_transforms * 32;
                 let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
                 gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
+
+                // Write accumulation uniforms
+                let accum_uniforms: [f32; 4] = [
+                    gpu.config.width as f32,
+                    gpu.config.height as f32,
+                    self.weights._config.accumulation_decay,
+                    0.0,
+                ];
+                gpu.queue.write_buffer(
+                    &gpu.accumulation_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&accum_uniforms),
+                );
 
                 gpu.render();
                 self.frame += 1;
