@@ -1561,6 +1561,7 @@ impl App {
         let mut reload_params = false;
         let mut reload_weights = false;
         let mut reload_features = false;
+        let mut reload_votes = false;
         let shader = shader_path();
         let compute = compute_path();
         let params = params_path();
@@ -1579,6 +1580,9 @@ impl App {
             }
             if path.ends_with("audio_features.json") {
                 reload_features = true;
+            }
+            if path.ends_with("votes.json") {
+                reload_votes = true;
             }
         }
         if reload_shader {
@@ -1617,6 +1621,10 @@ impl App {
                 }
             }
         }
+        if reload_votes {
+            self.vote_ledger = VoteLedger::load(&project_dir().join("genomes"));
+            eprintln!("[reload] votes.json");
+        }
     }
 }
 
@@ -1633,7 +1641,7 @@ impl ApplicationHandler for App {
         self.window = Some(window);
 
         // Watch all shader files + params
-        let paths = vec![shader_path(), compute_path(), params_path(), weights_path(), audio_features_path()];
+        let paths = vec![shader_path(), compute_path(), params_path(), weights_path(), audio_features_path(), project_dir().join("genomes").join("votes.json")];
         match FileWatcher::new(&paths) {
             Ok(w) => self.watcher = Some(w),
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
