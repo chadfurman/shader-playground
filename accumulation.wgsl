@@ -23,8 +23,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     let px = gid.y * w + gid.x;
-    let hist_idx = px * 6u;
-    let accum_idx = px * 6u;
+    let hist_idx = px * 7u;
+    let accum_idx = px * 7u;
 
     // Read raw histogram for this frame
     let density = f32(histogram[hist_idx]);
@@ -34,6 +34,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // Velocity stored as signed fixed-point (reinterpret u32 as i32)
     let vx = f32(i32(histogram[hist_idx + 4u]));
     let vy = f32(i32(histogram[hist_idx + 5u]));
+    let depth = f32(histogram[hist_idx + 6u]);
 
     // Exponential decay blend: accum = accum * decay + new_frame
     let decay = params.decay;
@@ -43,6 +44,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     accumulation[accum_idx + 3u] = accumulation[accum_idx + 3u] * decay + b;
     accumulation[accum_idx + 4u] = accumulation[accum_idx + 4u] * decay + vx;
     accumulation[accum_idx + 5u] = accumulation[accum_idx + 5u] * decay + vy;
+    accumulation[accum_idx + 6u] = accumulation[accum_idx + 6u] * decay + depth;
 
     // Track max density for per-image normalization.
     // For positive f32, bitcast<u32> preserves ordering (IEEE 754), so atomicMax works.

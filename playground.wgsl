@@ -60,8 +60,8 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let gamma        = u.extra.w;
     let blur_max     = u.extra3.w;  // velocity_blur_max from config
 
-    // ── Read accumulation buffer (6 channels: density, R, G, B, vx, vy) ──
-    let buf_idx = (px.y * w + px.x) * 6u;
+    // ── Read accumulation buffer (7 channels: density, R, G, B, vx, vy, depth) ──
+    let buf_idx = (px.y * w + px.x) * 7u;
     let density = accumulation[buf_idx];
     let acc_r = accumulation[buf_idx + 1u];
     let acc_g = accumulation[buf_idx + 2u];
@@ -96,7 +96,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             let offset = step * f32(tap);
             let sx = clamp(i32(f32(px.x) + offset.x), 0, i32(w) - 1);
             let sy = clamp(i32(f32(px.y) + offset.y), 0, i32(h) - 1);
-            let si = (u32(sy) * w + u32(sx)) * 6u;
+            let si = (u32(sy) * w + u32(sx)) * 7u;
             let sd = accumulation[si];
             // Weight taps by distance falloff
             let weight = 1.0 / (1.0 + f32(tap) * 0.3);
@@ -108,12 +108,59 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             // Also sample in reverse direction
             let rx = clamp(i32(f32(px.x) - offset.x), 0, i32(w) - 1);
             let ry = clamp(i32(f32(px.y) - offset.y), 0, i32(h) - 1);
-            let ri = (u32(ry) * w + u32(rx)) * 6u;
+            let ri = (u32(ry) * w + u32(rx)) * 7u;
             let rd = accumulation[ri];
             blur_density += rd * weight;
             blur_r += accumulation[ri + 1u] * weight;
             blur_g += accumulation[ri + 2u] * weight;
             blur_b += accumulation[ri + 3u] * weight;
+        }
+    }
+
+    // ── Depth of Field blur ──
+    let dof_strength = u.extra4.w;
+    if (dof_strength > 0.001) {
+        let dof_focal = u.extra5.x;
+        let raw_depth = accumulation[buf_idx + 6u];
+        let avg_depth = select(0.0, raw_depth / max(density, 1.0), density > 0.0);
+
+        // Focal distance: if dof_focal is 0, use default of 1.0
+        let focal = select(dof_focal, 1.0, dof_focal < 0.001);
+
+        // Circle of confusion proportional to distance from focal plane
+        let coc = abs(avg_depth - focal) * dof_strength;
+        let blur_radius = clamp(coc * 8.0, 0.0, 16.0);
+
+        if (blur_radius > 0.5) {
+            var dof_col = vec3(0.0);
+            var dof_weight = 0.0;
+            let dof_texel = 1.0 / u.resolution;
+            for (var di = 0; di < 8; di++) {
+                let angle = f32(di) * 0.785398;  // TAU/8
+                let d_offset = vec2(cos(angle), sin(angle)) * blur_radius * dof_texel;
+                let sample_uv = tex_uv + d_offset;
+                let sample_px = vec2<u32>(
+                    u32(clamp(sample_uv.x * f32(w), 0.0, f32(w) - 1.0)),
+                    u32(clamp(sample_uv.y * f32(h), 0.0, f32(h) - 1.0))
+                );
+                let si_idx = (sample_px.y * w + sample_px.x) * 7u;
+                let sd = accumulation[si_idx];
+                if (sd > 0.0) {
+                    let s_col = vec3(
+                        accumulation[si_idx + 1u],
+                        accumulation[si_idx + 2u],
+                        accumulation[si_idx + 3u]
+                    ) / sd;
+                    dof_col += s_col;
+                    dof_weight += 1.0;
+                }
+            }
+            if (dof_weight > 0.0) {
+                let dof_blend = clamp(coc * 2.0, 0.0, 1.0);
+                blur_r = blur_r * (1.0 - dof_blend) + (dof_col.x / dof_weight) * blur_density * dof_blend;
+                blur_g = blur_g * (1.0 - dof_blend) + (dof_col.y / dof_weight) * blur_density * dof_blend;
+                blur_b = blur_b * (1.0 - dof_blend) + (dof_col.z / dof_weight) * blur_density * dof_blend;
+            }
         }
     }
 
@@ -153,10 +200,10 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let by = clamp(i32(px.y) + 1, 0, i32(h) - 1);
 
     // Density gradient
-    let li = (u32(px.y) * w + u32(lx)) * 6u;
-    let ri = (u32(px.y) * w + u32(rx2)) * 6u;
-    let ti = (u32(ty) * w + px.x) * 6u;
-    let bi = (u32(by) * w + px.x) * 6u;
+    let li = (u32(px.y) * w + u32(lx)) * 7u;
+    let ri = (u32(px.y) * w + u32(rx2)) * 7u;
+    let ti = (u32(ty) * w + px.x) * 7u;
+    let bi = (u32(by) * w + px.x) * 7u;
     let d_left  = accumulation[li];
     let d_right = accumulation[ri];
     let d_top   = accumulation[ti];

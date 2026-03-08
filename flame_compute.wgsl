@@ -368,39 +368,41 @@ fn xform_color(idx: u32) -> f32 {
     return xf(idx, 7u);
 }
 
-// Splat helper — writes density + color + velocity to one pixel
-fn splat_pixel(bi: u32, wt: f32, ic: u32, ig: u32, ib: u32, ivx: i32, ivy: i32) {
+// Splat helper — writes density + color + velocity + depth to one pixel
+fn splat_pixel(bi: u32, wt: f32, ic: u32, ig: u32, ib: u32, ivx: i32, ivy: i32, idepth: u32) {
     atomicAdd(&histogram[bi],      u32(wt * 1000.0));
     atomicAdd(&histogram[bi + 1u], u32(f32(ic) * wt));
     atomicAdd(&histogram[bi + 2u], u32(f32(ig) * wt));
     atomicAdd(&histogram[bi + 3u], u32(f32(ib) * wt));
     atomicAdd(&histogram[bi + 4u], u32(i32(f32(ivx) * wt)));
     atomicAdd(&histogram[bi + 5u], u32(i32(f32(ivy) * wt)));
+    atomicAdd(&histogram[bi + 6u], u32(f32(idepth) * wt));
 }
 
 // Bilinear sub-pixel splat — distributes point across 2x2 quad.
 // Skips neighbor pixels when sub-pixel offset < 10% to save atomic ops.
-fn splat_point(cx: i32, cy: i32, fx: f32, fy: f32, col: vec3<f32>, vel: vec2<f32>, w: u32, h: u32) {
+fn splat_point(cx: i32, cy: i32, fx: f32, fy: f32, col: vec3<f32>, vel: vec2<f32>, depth: f32, w: u32, h: u32) {
     let ic = u32(col.x * 1000.0);
     let ig = u32(col.y * 1000.0);
     let ib = u32(col.z * 1000.0);
     let ivx = i32(vel.x * 10000.0);
     let ivy = i32(vel.y * 10000.0);
+    let idepth = u32(depth * 1000.0);
 
     // Center pixel (always valid — caller checked bounds)
-    splat_pixel((u32(cy) * w + u32(cx)) * 6u, (1.0 - fx) * (1.0 - fy), ic, ig, ib, ivx, ivy);
+    splat_pixel((u32(cy) * w + u32(cx)) * 7u, (1.0 - fx) * (1.0 - fy), ic, ig, ib, ivx, ivy, idepth);
 
     // Only splat neighbors when sub-pixel offset is significant
     let nx = cx + 1;
     let ny = cy + 1;
     if (fx > 0.1 && nx < i32(w)) {
-        splat_pixel((u32(cy) * w + u32(nx)) * 6u, fx * (1.0 - fy), ic, ig, ib, ivx, ivy);
+        splat_pixel((u32(cy) * w + u32(nx)) * 7u, fx * (1.0 - fy), ic, ig, ib, ivx, ivy, idepth);
     }
     if (fy > 0.1 && ny < i32(h)) {
-        splat_pixel((u32(ny) * w + u32(cx)) * 6u, (1.0 - fx) * fy, ic, ig, ib, ivx, ivy);
+        splat_pixel((u32(ny) * w + u32(cx)) * 7u, (1.0 - fx) * fy, ic, ig, ib, ivx, ivy, idepth);
     }
     if (fx > 0.1 && fy > 0.1 && nx < i32(w) && ny < i32(h)) {
-        splat_pixel((u32(ny) * w + u32(nx)) * 6u, fx * fy, ic, ig, ib, ivx, ivy);
+        splat_pixel((u32(ny) * w + u32(nx)) * 7u, fx * fy, ic, ig, ib, ivx, ivy, idepth);
     }
 }
 
@@ -512,10 +514,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let px_x = i32(screen.x);
             let px_y = i32(screen.y);
 
+            let point_depth = length(sym_p);
+
             if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
                 let frac_x = screen.x - f32(px_x);
                 let frac_y = screen.y - f32(px_y);
-                splat_point(px_x, px_y, frac_x, frac_y, base_col, vel, w, h);
+                splat_point(px_x, px_y, frac_x, frac_y, base_col, vel, point_depth, w, h);
             }
 
             // Bilateral mirror
@@ -528,7 +532,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                     let mfrac_x = mscreen.x - f32(mpx_x);
                     let mfrac_y = mscreen.y - f32(mpx_y);
                     let mvel = vec2(-vel.x, vel.y);
-                    splat_point(mpx_x, mpx_y, mfrac_x, mfrac_y, base_col, mvel, w, h);
+                    splat_point(mpx_x, mpx_y, mfrac_x, mfrac_y, base_col, mvel, point_depth, w, h);
                 }
             }
         }

@@ -845,7 +845,7 @@ fn create_histogram_buffer(
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("histogram"),
-        size: pixel_count * 6 * 4, // 6 u32s per pixel (density, R, G, B, vx, vy)
+        size: pixel_count * 7 * 4, // 7 u32s per pixel (density, R, G, B, vx, vy, depth)
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
@@ -859,7 +859,7 @@ fn create_accumulation_buffer(
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("accumulation"),
-        size: pixel_count * 6 * 4, // 6 f32s per pixel (density, R, G, B, vx, vy)
+        size: pixel_count * 7 * 4, // 7 f32s per pixel (density, R, G, B, vx, vy, depth)
         usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     })
