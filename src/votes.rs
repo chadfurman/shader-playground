@@ -79,18 +79,18 @@ impl VoteLedger {
     }
 
     /// Pick a genome from the vote-weighted pool.
-    /// Weight = max(score + 1, 0), so score 0 = weight 1, score 3 = weight 4.
-    /// Excludes blacklisted genomes.
-    pub fn pick_voted(&self, threshold: i32) -> Option<PathBuf> {
+    /// Only includes genomes with positive scores (score > 0).
+    /// Weight = score, so score 1 = weight 1, score 3 = weight 3.
+    pub fn pick_voted(&self, _threshold: i32) -> Option<PathBuf> {
         let eligible: Vec<_> = self.entries.iter()
-            .filter(|(_, e)| e.score > threshold)
+            .filter(|(_, e)| e.score > 0)
             .collect();
         if eligible.is_empty() {
             return None;
         }
 
         let total_weight: f32 = eligible.iter()
-            .map(|(_, e)| (e.score + 1).max(0) as f32)
+            .map(|(_, e)| e.score.max(1) as f32)
             .sum();
         if total_weight <= 0.0 {
             return None;
@@ -99,7 +99,7 @@ impl VoteLedger {
         let mut rng = rand::rng();
         let mut roll = rng.random::<f32>() * total_weight;
         for (_, entry) in &eligible {
-            let w = (entry.score + 1).max(0) as f32;
+            let w = entry.score.max(1) as f32;
             roll -= w;
             if roll <= 0.0 {
                 return Some(PathBuf::from(&entry.file));

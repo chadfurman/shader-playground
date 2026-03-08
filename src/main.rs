@@ -1916,15 +1916,17 @@ impl ApplicationHandler for App {
                                 self.genome_history.remove(0);
                             }
 
-                            // Screen time weighting: try loading a vote-weighted genome
-                            // to display, then mutate from it
+                            // Screen time weighting: sometimes start from a voted genome
+                            // instead of current — probability = parent_voted_bias
                             let threshold = self.weights._config.vote_blacklist_threshold;
-                            let screen_pick = self.vote_ledger.pick_voted(threshold)
-                                .and_then(|p| FlameGenome::load(&p).ok());
-
-                            let base = if let Some(picked) = screen_pick {
-                                eprintln!("[screen-time] showing voted genome: {}", picked.name);
-                                picked
+                            let base = if rand::random::<f32>() < self.weights._config.parent_voted_bias {
+                                self.vote_ledger.pick_voted(threshold)
+                                    .and_then(|p| FlameGenome::load(&p).ok())
+                                    .map(|picked| {
+                                        eprintln!("[screen-time] showing voted genome: {}", picked.name);
+                                        picked
+                                    })
+                                    .unwrap_or_else(|| self.genome.clone())
                             } else {
                                 self.genome.clone()
                             };
