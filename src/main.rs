@@ -17,6 +17,7 @@ mod device_picker;
 mod flam3;
 mod genome;
 mod sck_audio;
+mod taste;
 mod votes;
 mod weights;
 use crate::genome::{FlameGenome, FavoriteProfile};
@@ -1406,6 +1407,7 @@ struct App {
     favorite_profile: Option<FavoriteProfile>,
     vote_ledger: VoteLedger,
     lineage_cache: crate::votes::LineageCache,
+    taste_engine: crate::taste::TasteEngine,
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
     prev_zoom: f32,
@@ -1466,6 +1468,7 @@ impl App {
             favorite_profile,
             vote_ledger,
             lineage_cache,
+            taste_engine: crate::taste::TasteEngine::new(),
             last_profile_scan: 0.0,
             perf_log: std::fs::OpenOptions::new()
                 .create(true).append(true)
@@ -1483,6 +1486,45 @@ impl App {
             None
         } else {
             Some(profile)
+        }
+    }
+
+    /// Rebuild the taste engine model from all positively-voted + imported genomes.
+    fn rebuild_taste_model(&mut self) {
+        let genomes_dir = project_dir().join("genomes");
+        let flames_dir = genomes_dir.join("flames");
+
+        // Collect good genomes: positively voted + imported flames
+        let mut good_genomes: Vec<FlameGenome> = Vec::new();
+
+        // Positively voted genomes
+        for (_, entry) in &self.vote_ledger.entries {
+            if entry.score > 0 {
+                if let Ok(g) = FlameGenome::load(&std::path::PathBuf::from(&entry.file)) {
+                    good_genomes.push(g);
+                }
+            }
+        }
+
+        // Imported flames (always considered "good")
+        if let Ok(read) = std::fs::read_dir(&flames_dir) {
+            for entry in read.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| ext == "flam3" || ext == "flame") {
+                    if let Ok(g) = crate::flam3::load_random_flame(&flames_dir) {
+                        good_genomes.push(g);
+                        break; // just get a sample, not all
+                    }
+                }
+            }
+        }
+
+        let refs: Vec<&FlameGenome> = good_genomes.iter().collect();
+        let recent_memory = self.weights._config.taste_recent_memory;
+        self.taste_engine.rebuild(&refs, recent_memory);
+
+        if self.taste_engine.is_active(self.weights._config.taste_min_votes) {
+            eprintln!("[taste] model active with {} samples", self.taste_engine.sample_count());
         }
     }
 
@@ -1679,6 +1721,7 @@ impl App {
         }
         if reload_votes {
             self.vote_ledger = VoteLedger::load(&project_dir().join("genomes"));
+            self.rebuild_taste_model();
             eprintln!("[reload] votes.json");
         }
     }
@@ -1732,6 +1775,9 @@ impl ApplicationHandler for App {
             upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
         }
 
+        // Build initial taste model from voted/imported genomes
+        self.rebuild_taste_model();
+
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
     }
 
@@ -1777,7 +1823,7 @@ impl ApplicationHandler for App {
                     }
                     self.flame_locked = false; // unlock on manual mutate
                     let (pa, pb, community) = self.pick_breeding_parents();
-                    self.genome = FlameGenome::mutate(&pa, &pb, &community, &self.audio_features, &self.weights._config, &self.favorite_profile);
+                    self.genome = FlameGenome::mutate(&pa, &pb, &community, &self.audio_features, &self.weights._config, &self.favorite_profile, &mut Some(&mut self.taste_engine));
                     self.lineage_cache.register(&self.genome.name, &self.genome.parent_a, &self.genome.parent_b);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
@@ -1794,12 +1840,14 @@ impl ApplicationHandler for App {
                     let dir = project_dir().join("genomes");
                     let score = self.vote_ledger.vote(&self.genome, 1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
+                    self.rebuild_taste_model();
                     eprintln!("[vote] {} → +1 (score: {})", self.genome.name, score);
                 }
                 Key::Named(NamedKey::ArrowDown) => {
                     let dir = project_dir().join("genomes");
                     let score = self.vote_ledger.vote(&self.genome, -1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
+                    self.rebuild_taste_model();
                     eprintln!("[vote] {} → -1 (score: {})", self.genome.name, score);
                 }
                 Key::Character(ref c) => match c.as_str() {
@@ -1984,6 +2032,7 @@ impl ApplicationHandler for App {
                                 &self.audio_features,
                                 &self.weights._config,
                                 &self.favorite_profile,
+                                &mut Some(&mut self.taste_engine),
                             );
                             self.lineage_cache.register(&self.genome.name, &self.genome.parent_a, &self.genome.parent_b);
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();

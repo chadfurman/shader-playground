@@ -671,8 +671,9 @@ impl FlameGenome {
         parent_b: &FlameGenome,
         community: &Option<FlameGenome>,
         audio: &AudioFeatures,
-        _cfg: &crate::weights::RuntimeConfig,
+        cfg: &crate::weights::RuntimeConfig,
         _profile: &Option<FavoriteProfile>,
+        taste: &mut Option<&mut crate::taste::TasteEngine>,
     ) -> Self {
         use rand::prelude::SliceRandom;
         use rand::Rng;
@@ -772,8 +773,23 @@ impl FlameGenome {
                 + parent_b.global.flame_brightness * (1.0 - blend),
         };
 
-        // Always fresh palette (taste engine placeholder)
-        let palette = Some(generate_random_palette());
+        // Generate palette: use taste engine if available and enabled, else random
+        let palette = Some(if cfg.taste_engine_enabled {
+            if let Some(te) = taste.as_mut() {
+                te.generate_palette(
+                    cfg.taste_min_votes,
+                    cfg.taste_strength,
+                    cfg.taste_exploration_rate,
+                    cfg.taste_diversity_penalty,
+                    cfg.taste_candidates,
+                    cfg.taste_recent_memory,
+                )
+            } else {
+                generate_random_palette()
+            }
+        } else {
+            generate_random_palette()
+        });
 
         let gen_a = parent_a.generation;
         let gen_b = parent_b.generation;
@@ -817,10 +833,11 @@ impl FlameGenome {
         audio: &AudioFeatures,
         cfg: &crate::weights::RuntimeConfig,
         profile: &Option<FavoriteProfile>,
+        taste: &mut Option<&mut crate::taste::TasteEngine>,
     ) -> Self {
         let retries = cfg.max_mutation_retries.max(1);
         for attempt in 0..retries {
-            let bred = FlameGenome::breed(parent_a, parent_b, community, audio, cfg, profile);
+            let bred = FlameGenome::breed(parent_a, parent_b, community, audio, cfg, profile, taste);
             let child = bred.mutate_inner(audio, cfg, profile);
             let extent = child.estimate_attractor_extent();
             if extent > cfg.min_attractor_extent {

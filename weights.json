@@ -96,7 +96,14 @@
       "parent_random_bias": "Probability each transform comes from fresh random seed (default 0.20)",
       "vote_blacklist_threshold": "Score at or below which a genome is blacklisted (default -2)",
       "min_breeding_distance": "Minimum genetic distance between parents for inbreeding avoidance (default 3)",
-      "max_lineage_depth": "Maximum ancestor depth to search for common ancestors (default 8)"
+      "max_lineage_depth": "Maximum ancestor depth to search for common ancestors (default 8)",
+      "taste_engine_enabled": "Enable taste-biased palette generation (default false)",
+      "taste_min_votes": "Minimum positive votes before taste model activates (default 10)",
+      "taste_strength": "How strongly the model biases palette selection, 0-1 (default 0.5)",
+      "taste_exploration_rate": "Probability of ignoring taste model for random palette, 0-1 (default 0.1)",
+      "taste_diversity_penalty": "Penalize palettes similar to recent ones, 0-1 (default 0.3)",
+      "taste_candidates": "Number of candidate palettes to generate and score (default 20)",
+      "taste_recent_memory": "Number of recent palettes to remember for diversity nudge (default 5)"
     }
   },
   "_config": {
@@ -150,7 +157,14 @@
     "parent_random_bias": 0.20,
     "vote_blacklist_threshold": -2,
     "min_breeding_distance": 3,
-    "max_lineage_depth": 8
+    "max_lineage_depth": 8,
+    "taste_engine_enabled": false,
+    "taste_min_votes": 10,
+    "taste_strength": 0.5,
+    "taste_exploration_rate": 0.1,
+    "taste_diversity_penalty": 0.3,
+    "taste_candidates": 20,
+    "taste_recent_memory": 5
   },
   "bass": {
     "color_shift": -0.01,

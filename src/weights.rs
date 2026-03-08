@@ -171,6 +171,20 @@ pub struct RuntimeConfig {
     pub min_breeding_distance: u32,
     #[serde(default = "default_max_lineage_depth")]
     pub max_lineage_depth: u32,
+    #[serde(default)]
+    pub taste_engine_enabled: bool,
+    #[serde(default = "default_taste_min_votes")]
+    pub taste_min_votes: u32,
+    #[serde(default = "default_taste_strength")]
+    pub taste_strength: f32,
+    #[serde(default = "default_taste_exploration_rate")]
+    pub taste_exploration_rate: f32,
+    #[serde(default = "default_taste_diversity_penalty")]
+    pub taste_diversity_penalty: f32,
+    #[serde(default = "default_taste_candidates")]
+    pub taste_candidates: u32,
+    #[serde(default = "default_taste_recent_memory")]
+    pub taste_recent_memory: usize,
 }
 
 fn default_morph_duration() -> f32 { 8.0 }
@@ -215,6 +229,12 @@ fn default_parent_random_bias() -> f32 { 0.20 }
 fn default_vote_blacklist_threshold() -> i32 { -2 }
 fn default_min_breeding_distance() -> u32 { 3 }
 fn default_max_lineage_depth() -> u32 { 8 }
+fn default_taste_min_votes() -> u32 { 10 }
+fn default_taste_strength() -> f32 { 0.5 }
+fn default_taste_exploration_rate() -> f32 { 0.1 }
+fn default_taste_diversity_penalty() -> f32 { 0.3 }
+fn default_taste_candidates() -> u32 { 20 }
+fn default_taste_recent_memory() -> usize { 5 }
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 
