@@ -1911,8 +1911,28 @@ impl ApplicationHandler for App {
                             if self.genome_history.len() > 10 {
                                 self.genome_history.remove(0);
                             }
+
+                            // Screen time weighting: try loading a vote-weighted genome
+                            // to display, then mutate from it
+                            let threshold = self.weights._config.vote_blacklist_threshold;
+                            let screen_pick = self.vote_ledger.pick_voted(threshold)
+                                .and_then(|p| FlameGenome::load(&p).ok());
+
+                            let base = if let Some(picked) = screen_pick {
+                                eprintln!("[screen-time] showing voted genome: {}", picked.name);
+                                picked
+                            } else {
+                                self.genome.clone()
+                            };
+
                             let (voted, saved) = self.pick_crossover_parents();
-                            self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile, &voted, &saved);
+                            self.genome = base.mutate(
+                                &self.audio_features,
+                                &self.weights._config,
+                                &self.favorite_profile,
+                                &voted,
+                                &saved,
+                            );
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
                             eprintln!("[auto-evolve] → {}", self.genome.name);
