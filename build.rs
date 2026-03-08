@@ -10,8 +10,7 @@ fn main() {
         let xcode = String::from_utf8_lossy(&output.stdout).trim().to_string();
         let swift_55 =
             format!("{xcode}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/macosx");
-        let swift_new =
-            format!("{xcode}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx");
+        let swift_new = format!("{xcode}/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/macosx");
         println!("cargo:rustc-link-arg=-Wl,-rpath,{swift_55}");
         println!("cargo:rustc-link-arg=-Wl,-rpath,{swift_new}");
     }

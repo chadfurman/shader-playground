@@ -1,24 +1,51 @@
 use std::fs;
 use std::path::Path;
 
-use quick_xml::events::Event;
 use quick_xml::Reader;
-use rand::prelude::IndexedRandom;
+use quick_xml::events::Event;
 use rand::Rng;
+use rand::prelude::IndexedRandom;
 
 use crate::genome::{FlameGenome, FlameTransform, GlobalParams, KifsParams};
 
 const VARIATION_PARAM_NAMES: [&str; 8] = [
-    "rings2_val", "blob_low", "blob_high", "blob_waves",
-    "julian_power", "julian_dist", "ngon_sides", "ngon_corners",
+    "rings2_val",
+    "blob_low",
+    "blob_high",
+    "blob_waves",
+    "julian_power",
+    "julian_dist",
+    "ngon_sides",
+    "ngon_corners",
 ];
 
 const VARIATION_NAMES: [&str; 26] = [
-    "linear", "sinusoidal", "spherical", "swirl", "horseshoe", "handkerchief",
-    "julia", "polar", "disc", "rings", "bubble", "fisheye",
-    "exponential", "spiral", "diamond", "bent", "waves", "popcorn",
-    "fan", "eyefish", "cross", "tangent", "cosine", "blob",
-    "noise", "curl",
+    "linear",
+    "sinusoidal",
+    "spherical",
+    "swirl",
+    "horseshoe",
+    "handkerchief",
+    "julia",
+    "polar",
+    "disc",
+    "rings",
+    "bubble",
+    "fisheye",
+    "exponential",
+    "spiral",
+    "diamond",
+    "bent",
+    "waves",
+    "popcorn",
+    "fan",
+    "eyefish",
+    "cross",
+    "tangent",
+    "cosine",
+    "blob",
+    "noise",
+    "curl",
 ];
 
 pub struct Flam3File {
@@ -84,10 +111,10 @@ impl Flam3File {
                 }
                 Ok(Event::End(ref e)) => {
                     let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                    if tag == "flame" {
-                        if let Some(builder) = current_flame.take() {
-                            flames.push(builder.build());
-                        }
+                    if tag == "flame"
+                        && let Some(builder) = current_flame.take()
+                    {
+                        flames.push(builder.build());
                     }
                 }
                 Ok(Event::Eof) => break,
@@ -167,10 +194,10 @@ fn parse_xform(e: &quick_xml::events::BytesStart) -> FlameTransform {
                 if nums.len() >= 6 {
                     // Flam3 coefs="a d b e c f" (column-major)
                     // Map to our row-major: a=coefs[0], b=coefs[2], c=coefs[1], d=coefs[3]
-                    xf.a = nums[0];         // flam3 a
-                    xf.b = nums[2];         // flam3 b
-                    xf.c = nums[1];         // flam3 d
-                    xf.d = nums[3];         // flam3 e
+                    xf.a = nums[0]; // flam3 a
+                    xf.b = nums[2]; // flam3 b
+                    xf.c = nums[1]; // flam3 d
+                    xf.d = nums[3]; // flam3 e
                     xf.offset[0] = nums[4]; // flam3 c (translation x)
                     xf.offset[1] = nums[5]; // flam3 f (translation y)
                 }
@@ -184,9 +211,17 @@ fn parse_xform(e: &quick_xml::events::BytesStart) -> FlameTransform {
                     // Parametric variation parameter
                     let v: f32 = val.parse().unwrap_or(0.0);
                     xf.variation_params.insert(other.to_string(), v);
-                } else if !["symmetry", "opacity", "animate", "motion_frequency",
-                            "motion_function", "var_color", "post", "chaos"]
-                    .contains(&other)
+                } else if ![
+                    "symmetry",
+                    "opacity",
+                    "animate",
+                    "motion_frequency",
+                    "motion_function",
+                    "var_color",
+                    "post",
+                    "chaos",
+                ]
+                .contains(&other)
                 {
                     // Log unsupported variations (skip known non-variation attrs)
                     if !other.starts_with("pre_") && !other.starts_with("post_") {
@@ -274,8 +309,7 @@ pub fn load_random_flame(dir: &Path) -> Result<FlameGenome, String> {
 
     let entry = entries.choose(&mut rand::rng()).ok_or("empty")?;
     let path = entry.path();
-    let xml = fs::read_to_string(&path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let xml = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
 
     let flam3 = Flam3File::parse(&xml)?;
     if flam3.flames.is_empty() {
@@ -283,10 +317,7 @@ pub fn load_random_flame(dir: &Path) -> Result<FlameGenome, String> {
     }
 
     // Pick a random flame from the file
-    let flame = flam3
-        .flames
-        .into_iter()
-        .collect::<Vec<_>>();
+    let flame = flam3.flames.into_iter().collect::<Vec<_>>();
     let idx = rand::rng().random_range(0..flame.len());
     Ok(flame.into_iter().nth(idx).unwrap())
 }

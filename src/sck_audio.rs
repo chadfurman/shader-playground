@@ -36,8 +36,7 @@ fn init_and_start(
     Ok((stream, SAMPLE_RATE))
 }
 
-fn build_sck_filter_and_config(
-) -> Result<(SCContentFilter, SCStreamConfiguration), String> {
+fn build_sck_filter_and_config() -> Result<(SCContentFilter, SCStreamConfiguration), String> {
     let content =
         SCShareableContent::get().map_err(|e| format!("SCShareableContent::get failed: {e}"))?;
     let display = content

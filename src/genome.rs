@@ -10,11 +10,32 @@ use crate::audio::AudioFeatures;
 const VARIATION_COUNT: usize = 26;
 
 const VARIATION_NAMES: [&str; VARIATION_COUNT] = [
-    "linear", "sinusoidal", "spherical", "swirl", "horseshoe", "handkerchief",
-    "julia", "polar", "disc", "rings", "bubble", "fisheye",
-    "exponential", "spiral", "diamond", "bent", "waves", "popcorn",
-    "fan", "eyefish", "cross", "tangent", "cosine", "blob",
-    "noise", "curl",
+    "linear",
+    "sinusoidal",
+    "spherical",
+    "swirl",
+    "horseshoe",
+    "handkerchief",
+    "julia",
+    "polar",
+    "disc",
+    "rings",
+    "bubble",
+    "fisheye",
+    "exponential",
+    "spiral",
+    "diamond",
+    "bent",
+    "waves",
+    "popcorn",
+    "fan",
+    "eyefish",
+    "cross",
+    "tangent",
+    "cosine",
+    "blob",
+    "noise",
+    "curl",
 ];
 
 pub struct FavoriteProfile {
@@ -67,9 +88,7 @@ impl FavoriteProfile {
             }
         }
 
-        Self {
-            variation_freq,
-        }
+        Self { variation_freq }
     }
 
     fn uniform_default() -> Self {
@@ -90,15 +109,20 @@ fn fitness_biased_variation_pick(
     }
     let profile = profile.as_ref().unwrap();
     let uniform = 1.0 / VARIATION_NAMES.len() as f32;
-    let weights: Vec<f32> = VARIATION_NAMES.iter().map(|name| {
-        let freq = profile.variation_freq.get(*name).copied().unwrap_or(0.1);
-        uniform * (1.0 - bias) + freq * bias
-    }).collect();
+    let weights: Vec<f32> = VARIATION_NAMES
+        .iter()
+        .map(|name| {
+            let freq = profile.variation_freq.get(*name).copied().unwrap_or(0.1);
+            uniform * (1.0 - bias) + freq * bias
+        })
+        .collect();
     let total: f32 = weights.iter().sum();
     let mut r = rng.random_range(0.0..total);
     for (i, w) in weights.iter().enumerate() {
         r -= w;
-        if r <= 0.0 { return i; }
+        if r <= 0.0 {
+            return i;
+        }
     }
     VARIATION_NAMES.len() - 1
 }
@@ -116,10 +140,10 @@ const ORBY_VARIATIONS: [usize; 7] = [
 ];
 
 // Variation groups biased by audio frequency content
-const BASS_VARIATIONS: [usize; 4] = [2, 10, 23, 11];   // spherical, bubble, blob, fisheye
-const MIDS_VARIATIONS: [usize; 4] = [1, 16, 22, 5];    // sinusoidal, waves, cosine, handkerchief
+const BASS_VARIATIONS: [usize; 4] = [2, 10, 23, 11]; // spherical, bubble, blob, fisheye
+const MIDS_VARIATIONS: [usize; 4] = [1, 16, 22, 5]; // sinusoidal, waves, cosine, handkerchief
 const HIGHS_VARIATIONS: [usize; 5] = [6, 8, 20, 21, 14]; // julia, disc, cross, tangent, diamond
-const BEAT_VARIATIONS: [usize; 3] = [13, 3, 7];          // spiral, swirl, polar
+const BEAT_VARIATIONS: [usize; 3] = [13, 3, 7]; // spiral, swirl, polar
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FlameTransform {
@@ -147,26 +171,46 @@ pub struct FlameTransform {
     pub horseshoe: f32,
     pub handkerchief: f32,
     // New 20 variations
-    #[serde(default)] pub julia: f32,
-    #[serde(default)] pub polar: f32,
-    #[serde(default)] pub disc: f32,
-    #[serde(default)] pub rings: f32,
-    #[serde(default)] pub bubble: f32,
-    #[serde(default)] pub fisheye: f32,
-    #[serde(default)] pub exponential: f32,
-    #[serde(default)] pub spiral: f32,
-    #[serde(default)] pub diamond: f32,
-    #[serde(default)] pub bent: f32,
-    #[serde(default)] pub waves: f32,
-    #[serde(default)] pub popcorn: f32,
-    #[serde(default)] pub fan: f32,
-    #[serde(default)] pub eyefish: f32,
-    #[serde(default)] pub cross: f32,
-    #[serde(default)] pub tangent: f32,
-    #[serde(default)] pub cosine: f32,
-    #[serde(default)] pub blob: f32,
-    #[serde(default)] pub noise: f32,
-    #[serde(default)] pub curl: f32,
+    #[serde(default)]
+    pub julia: f32,
+    #[serde(default)]
+    pub polar: f32,
+    #[serde(default)]
+    pub disc: f32,
+    #[serde(default)]
+    pub rings: f32,
+    #[serde(default)]
+    pub bubble: f32,
+    #[serde(default)]
+    pub fisheye: f32,
+    #[serde(default)]
+    pub exponential: f32,
+    #[serde(default)]
+    pub spiral: f32,
+    #[serde(default)]
+    pub diamond: f32,
+    #[serde(default)]
+    pub bent: f32,
+    #[serde(default)]
+    pub waves: f32,
+    #[serde(default)]
+    pub popcorn: f32,
+    #[serde(default)]
+    pub fan: f32,
+    #[serde(default)]
+    pub eyefish: f32,
+    #[serde(default)]
+    pub cross: f32,
+    #[serde(default)]
+    pub tangent: f32,
+    #[serde(default)]
+    pub cosine: f32,
+    #[serde(default)]
+    pub blob: f32,
+    #[serde(default)]
+    pub noise: f32,
+    #[serde(default)]
+    pub curl: f32,
     /// Per-variation parametric values (e.g. rings2_val, blob_low, etc.)
     #[serde(default)]
     pub variation_params: HashMap<String, f32>,
@@ -176,20 +220,40 @@ impl Default for FlameTransform {
     fn default() -> Self {
         Self {
             weight: 0.0,
-            a: 1.0, b: 0.0, c: 0.0, d: 1.0,
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
             offset: [0.0, 0.0],
             color: 0.0,
             angle: None,
             scale: None,
-            linear: 0.0, sinusoidal: 0.0, spherical: 0.0,
-            swirl: 0.0, horseshoe: 0.0, handkerchief: 0.0,
-            julia: 0.0, polar: 0.0, disc: 0.0,
-            rings: 0.0, bubble: 0.0, fisheye: 0.0,
-            exponential: 0.0, spiral: 0.0, diamond: 0.0,
-            bent: 0.0, waves: 0.0, popcorn: 0.0,
-            fan: 0.0, eyefish: 0.0, cross: 0.0,
-            tangent: 0.0, cosine: 0.0, blob: 0.0,
-            noise: 0.0, curl: 0.0,
+            linear: 0.0,
+            sinusoidal: 0.0,
+            spherical: 0.0,
+            swirl: 0.0,
+            horseshoe: 0.0,
+            handkerchief: 0.0,
+            julia: 0.0,
+            polar: 0.0,
+            disc: 0.0,
+            rings: 0.0,
+            bubble: 0.0,
+            fisheye: 0.0,
+            exponential: 0.0,
+            spiral: 0.0,
+            diamond: 0.0,
+            bent: 0.0,
+            waves: 0.0,
+            popcorn: 0.0,
+            fan: 0.0,
+            eyefish: 0.0,
+            cross: 0.0,
+            tangent: 0.0,
+            cosine: 0.0,
+            blob: 0.0,
+            noise: 0.0,
+            curl: 0.0,
             variation_params: HashMap::new(),
         }
     }
@@ -198,14 +262,17 @@ impl Default for FlameTransform {
 impl FlameTransform {
     /// Convert legacy angle/scale fields into a/b/c/d affine coefficients.
     pub fn fixup_legacy(&mut self) {
-        if let (Some(angle), Some(scale)) = (self.angle, self.scale) {
-            if self.a == 0.0 && self.b == 0.0 && self.c == 0.0 && self.d == 0.0 {
-                let (s, cos_a) = angle.sin_cos();
-                self.a = cos_a * scale;
-                self.b = -s * scale;
-                self.c = s * scale;
-                self.d = cos_a * scale;
-            }
+        if let (Some(angle), Some(scale)) = (self.angle, self.scale)
+            && self.a == 0.0
+            && self.b == 0.0
+            && self.c == 0.0
+            && self.d == 0.0
+        {
+            let (s, cos_a) = angle.sin_cos();
+            self.a = cos_a * scale;
+            self.b = -s * scale;
+            self.c = s * scale;
+            self.d = cos_a * scale;
         }
         self.angle = None;
         self.scale = None;
@@ -213,15 +280,32 @@ impl FlameTransform {
 
     fn get_variation(&self, idx: usize) -> f32 {
         match idx {
-            0 => self.linear, 1 => self.sinusoidal, 2 => self.spherical,
-            3 => self.swirl, 4 => self.horseshoe, 5 => self.handkerchief,
-            6 => self.julia, 7 => self.polar, 8 => self.disc,
-            9 => self.rings, 10 => self.bubble, 11 => self.fisheye,
-            12 => self.exponential, 13 => self.spiral, 14 => self.diamond,
-            15 => self.bent, 16 => self.waves, 17 => self.popcorn,
-            18 => self.fan, 19 => self.eyefish, 20 => self.cross,
-            21 => self.tangent, 22 => self.cosine, 23 => self.blob,
-            24 => self.noise, 25 => self.curl,
+            0 => self.linear,
+            1 => self.sinusoidal,
+            2 => self.spherical,
+            3 => self.swirl,
+            4 => self.horseshoe,
+            5 => self.handkerchief,
+            6 => self.julia,
+            7 => self.polar,
+            8 => self.disc,
+            9 => self.rings,
+            10 => self.bubble,
+            11 => self.fisheye,
+            12 => self.exponential,
+            13 => self.spiral,
+            14 => self.diamond,
+            15 => self.bent,
+            16 => self.waves,
+            17 => self.popcorn,
+            18 => self.fan,
+            19 => self.eyefish,
+            20 => self.cross,
+            21 => self.tangent,
+            22 => self.cosine,
+            23 => self.blob,
+            24 => self.noise,
+            25 => self.curl,
             _ => 0.0,
         }
     }
@@ -234,35 +318,56 @@ impl FlameTransform {
 
     fn set_variation(&mut self, idx: usize, val: f32) {
         match idx {
-            0 => self.linear = val, 1 => self.sinusoidal = val, 2 => self.spherical = val,
-            3 => self.swirl = val, 4 => self.horseshoe = val, 5 => self.handkerchief = val,
-            6 => self.julia = val, 7 => self.polar = val, 8 => self.disc = val,
-            9 => self.rings = val, 10 => self.bubble = val, 11 => self.fisheye = val,
-            12 => self.exponential = val, 13 => self.spiral = val, 14 => self.diamond = val,
-            15 => self.bent = val, 16 => self.waves = val, 17 => self.popcorn = val,
-            18 => self.fan = val, 19 => self.eyefish = val, 20 => self.cross = val,
-            21 => self.tangent = val, 22 => self.cosine = val, 23 => self.blob = val,
-            24 => self.noise = val, 25 => self.curl = val,
+            0 => self.linear = val,
+            1 => self.sinusoidal = val,
+            2 => self.spherical = val,
+            3 => self.swirl = val,
+            4 => self.horseshoe = val,
+            5 => self.handkerchief = val,
+            6 => self.julia = val,
+            7 => self.polar = val,
+            8 => self.disc = val,
+            9 => self.rings = val,
+            10 => self.bubble = val,
+            11 => self.fisheye = val,
+            12 => self.exponential = val,
+            13 => self.spiral = val,
+            14 => self.diamond = val,
+            15 => self.bent = val,
+            16 => self.waves = val,
+            17 => self.popcorn = val,
+            18 => self.fan = val,
+            19 => self.eyefish = val,
+            20 => self.cross = val,
+            21 => self.tangent = val,
+            22 => self.cosine = val,
+            23 => self.blob = val,
+            24 => self.noise = val,
+            25 => self.curl = val,
             _ => {}
         }
     }
 
     pub fn random_transform(rng: &mut impl Rng) -> Self {
-        let mut xf = Self::default();
-        xf.weight = rng.random::<f32>() * 0.5 + 0.1;
-        xf.a = rng.random::<f32>() * 2.0 - 1.0;
-        xf.b = rng.random::<f32>() * 2.0 - 1.0;
-        xf.c = rng.random::<f32>() * 2.0 - 1.0;
-        xf.d = rng.random::<f32>() * 2.0 - 1.0;
-        xf.offset = [
-            rng.random::<f32>() * 2.0 - 1.0,
-            rng.random::<f32>() * 2.0 - 1.0,
-        ];
-        xf.color = rng.random::<f32>();
+        let mut xf = Self {
+            weight: rng.random::<f32>() * 0.5 + 0.1,
+            a: rng.random::<f32>() * 2.0 - 1.0,
+            b: rng.random::<f32>() * 2.0 - 1.0,
+            c: rng.random::<f32>() * 2.0 - 1.0,
+            d: rng.random::<f32>() * 2.0 - 1.0,
+            offset: [
+                rng.random::<f32>() * 2.0 - 1.0,
+                rng.random::<f32>() * 2.0 - 1.0,
+            ],
+            color: rng.random::<f32>(),
+            ..Default::default()
+        };
         // Set one random variation to 1.0
         let var_idx = rng.random_range(0..VARIATION_COUNT);
         xf.set_variation(var_idx, 1.0);
-        if var_idx != 0 { xf.linear = 0.0; }
+        if var_idx != 0 {
+            xf.linear = 0.0;
+        }
         xf
     }
 }
@@ -305,7 +410,9 @@ pub struct FlameGenome {
     pub generation: u32,
 }
 
-fn default_symmetry() -> i32 { 1 }
+fn default_symmetry() -> i32 {
+    1
+}
 
 /// Pick a variation index with 20% bias toward "orby" shapes
 fn biased_variation_pick(rng: &mut impl Rng) -> usize {
@@ -345,34 +452,51 @@ impl FlameGenome {
     pub fn perf_summary(&self) -> String {
         let n = self.transforms.len();
         let sym = self.symmetry.abs().max(1);
-        let bilateral = if self.symmetry < 0 { "bilateral" } else { "rotational" };
-        let has_final = if self.final_transform.is_some() { "+final" } else { "" };
+        let bilateral = if self.symmetry < 0 {
+            "bilateral"
+        } else {
+            "rotational"
+        };
+        let has_final = if self.final_transform.is_some() {
+            "+final"
+        } else {
+            ""
+        };
 
         let variation_names: [&str; 26] = [
-            "linear", "sin", "sph", "swirl", "horse", "handk",
-            "julia", "polar", "disc", "rings", "bubble", "fish",
-            "exp", "spiral", "diamond", "bent", "waves", "popcorn",
-            "fan", "eyefish", "cross", "tangent", "cosine", "blob",
-            "noise", "curl",
+            "linear", "sin", "sph", "swirl", "horse", "handk", "julia", "polar", "disc", "rings",
+            "bubble", "fish", "exp", "spiral", "diamond", "bent", "waves", "popcorn", "fan",
+            "eyefish", "cross", "tangent", "cosine", "blob", "noise", "curl",
         ];
 
         let mut xf_descs = Vec::new();
         for (i, xf) in self.transforms.iter().enumerate() {
             let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
             let mut active_vars = Vec::new();
-            for vi in 0..26 {
+            for (vi, &vname) in variation_names.iter().enumerate() {
                 let v = xf.get_variation(vi);
                 if v > 0.01 {
-                    active_vars.push(variation_names[vi]);
+                    active_vars.push(vname);
                 }
             }
-            let vars_str = if active_vars.is_empty() { "none" } else { &active_vars.join("+") };
+            let vars_str = if active_vars.is_empty() {
+                "none"
+            } else {
+                &active_vars.join("+")
+            };
             xf_descs.push(format!("xf{}({:.2}s{:.2}|{})", i, xf.weight, det, vars_str));
         }
 
-        format!("{} | {}xf sym={}{} {} zoom={:.1} [{}]",
-            self.name, n, sym, bilateral, has_final, self.global.zoom,
-            xf_descs.join(" "))
+        format!(
+            "{} | {}xf sym={}{} {} zoom={:.1} [{}]",
+            self.name,
+            n,
+            sym,
+            bilateral,
+            has_final,
+            self.global.zoom,
+            xf_descs.join(" ")
+        )
     }
 
     /// Pack global params into a fixed [f32; 20] for the uniform buffer.
@@ -402,8 +526,8 @@ impl FlameGenome {
         g[16] = cfg.spin_speed_max;
         g[17] = cfg.position_drift;
         g[18] = cfg.warmup_iters;
-        g[11] = cfg.gamma;            // extra.w in shader
-        g[19] = cfg.velocity_blur_max;  // extra3.w in display shader — max directional blur pixels
+        g[11] = cfg.gamma; // extra.w in shader
+        g[19] = cfg.velocity_blur_max; // extra3.w in display shader — max directional blur pixels
         g
     }
 
@@ -424,49 +548,79 @@ impl FlameGenome {
     }
 
     fn push_transform(t: &mut Vec<f32>, xf: &FlameTransform) {
-        t.push(xf.weight);       // 0
-        t.push(xf.a);            // 1
-        t.push(xf.b);            // 2
-        t.push(xf.c);            // 3
-        t.push(xf.d);            // 4
-        t.push(xf.offset[0]);    // 5
-        t.push(xf.offset[1]);    // 6
-        t.push(xf.color);        // 7
-        t.push(xf.linear);       // 8
-        t.push(xf.sinusoidal);   // 9
-        t.push(xf.spherical);    // 10
-        t.push(xf.swirl);        // 11
-        t.push(xf.horseshoe);    // 12
+        t.push(xf.weight); // 0
+        t.push(xf.a); // 1
+        t.push(xf.b); // 2
+        t.push(xf.c); // 3
+        t.push(xf.d); // 4
+        t.push(xf.offset[0]); // 5
+        t.push(xf.offset[1]); // 6
+        t.push(xf.color); // 7
+        t.push(xf.linear); // 8
+        t.push(xf.sinusoidal); // 9
+        t.push(xf.spherical); // 10
+        t.push(xf.swirl); // 11
+        t.push(xf.horseshoe); // 12
         t.push(xf.handkerchief); // 13
-        t.push(xf.julia);        // 14
-        t.push(xf.polar);        // 15
-        t.push(xf.disc);         // 16
-        t.push(xf.rings);        // 17
-        t.push(xf.bubble);       // 18
-        t.push(xf.fisheye);      // 19
-        t.push(xf.exponential);  // 20
-        t.push(xf.spiral);       // 21
-        t.push(xf.diamond);      // 22
-        t.push(xf.bent);         // 23
-        t.push(xf.waves);        // 24
-        t.push(xf.popcorn);      // 25
-        t.push(xf.fan);          // 26
-        t.push(xf.eyefish);      // 27
-        t.push(xf.cross);        // 28
-        t.push(xf.tangent);      // 29
-        t.push(xf.cosine);       // 30
-        t.push(xf.blob);         // 31
-        t.push(xf.noise);        // 32
-        t.push(xf.curl);         // 33
+        t.push(xf.julia); // 14
+        t.push(xf.polar); // 15
+        t.push(xf.disc); // 16
+        t.push(xf.rings); // 17
+        t.push(xf.bubble); // 18
+        t.push(xf.fisheye); // 19
+        t.push(xf.exponential); // 20
+        t.push(xf.spiral); // 21
+        t.push(xf.diamond); // 22
+        t.push(xf.bent); // 23
+        t.push(xf.waves); // 24
+        t.push(xf.popcorn); // 25
+        t.push(xf.fan); // 26
+        t.push(xf.eyefish); // 27
+        t.push(xf.cross); // 28
+        t.push(xf.tangent); // 29
+        t.push(xf.cosine); // 30
+        t.push(xf.blob); // 31
+        t.push(xf.noise); // 32
+        t.push(xf.curl); // 33
         // 8 parametric variation params [34-41]
-        t.push(xf.variation_params.get("rings2_val").copied().unwrap_or(0.5));    // 34
-        t.push(xf.variation_params.get("blob_low").copied().unwrap_or(0.2));      // 35
-        t.push(xf.variation_params.get("blob_high").copied().unwrap_or(1.0));     // 36
-        t.push(xf.variation_params.get("blob_waves").copied().unwrap_or(5.0));    // 37
-        t.push(xf.variation_params.get("julian_power").copied().unwrap_or(2.0));  // 38
-        t.push(xf.variation_params.get("julian_dist").copied().unwrap_or(1.0));   // 39
-        t.push(xf.variation_params.get("ngon_sides").copied().unwrap_or(4.0));    // 40
-        t.push(xf.variation_params.get("ngon_corners").copied().unwrap_or(2.0));  // 41
+        t.push(
+            xf.variation_params
+                .get("rings2_val")
+                .copied()
+                .unwrap_or(0.5),
+        ); // 34
+        t.push(xf.variation_params.get("blob_low").copied().unwrap_or(0.2)); // 35
+        t.push(xf.variation_params.get("blob_high").copied().unwrap_or(1.0)); // 36
+        t.push(
+            xf.variation_params
+                .get("blob_waves")
+                .copied()
+                .unwrap_or(5.0),
+        ); // 37
+        t.push(
+            xf.variation_params
+                .get("julian_power")
+                .copied()
+                .unwrap_or(2.0),
+        ); // 38
+        t.push(
+            xf.variation_params
+                .get("julian_dist")
+                .copied()
+                .unwrap_or(1.0),
+        ); // 39
+        t.push(
+            xf.variation_params
+                .get("ngon_sides")
+                .copied()
+                .unwrap_or(4.0),
+        ); // 40
+        t.push(
+            xf.variation_params
+                .get("ngon_corners")
+                .copied()
+                .unwrap_or(2.0),
+        ); // 41
     }
 
     pub fn transform_count(&self) -> u32 {
@@ -495,31 +649,52 @@ impl FlameGenome {
                 brightness: 0.0,
             },
             transforms: vec![
-                FlameTransform { // spherical inversion — Draves classic
+                FlameTransform {
+                    // spherical inversion — Draves classic
                     weight: 0.25,
-                    a: -0.681206, b: 0.207690, c: -0.077946, d: 0.755065,
-                    offset: [-0.041613, -0.262334], color: 0.0,
+                    a: -0.681206,
+                    b: 0.207690,
+                    c: -0.077946,
+                    d: 0.755065,
+                    offset: [-0.041613, -0.262334],
+                    color: 0.0,
                     spherical: 1.0,
                     ..Default::default()
                 },
-                FlameTransform { // julia branching
+                FlameTransform {
+                    // julia branching
                     weight: 0.25,
-                    a: 0.953766, b: 0.432680, c: 0.483960, d: -0.054248,
-                    offset: [0.642503, -0.995898], color: 0.33,
+                    a: 0.953766,
+                    b: 0.432680,
+                    c: 0.483960,
+                    d: -0.054248,
+                    offset: [0.642503, -0.995898],
+                    color: 0.33,
                     julia: 1.0,
                     ..Default::default()
                 },
-                FlameTransform { // sinusoidal + swirl texture
+                FlameTransform {
+                    // sinusoidal + swirl texture
                     weight: 0.25,
-                    a: 0.840613, b: 0.318971, c: -0.816191, d: -0.430402,
-                    offset: [0.905589, 0.909402], color: 0.66,
-                    sinusoidal: 0.6, swirl: 0.4,
+                    a: 0.840613,
+                    b: 0.318971,
+                    c: -0.816191,
+                    d: -0.430402,
+                    offset: [0.905589, 0.909402],
+                    color: 0.66,
+                    sinusoidal: 0.6,
+                    swirl: 0.4,
                     ..Default::default()
                 },
-                FlameTransform { // polar mapping
+                FlameTransform {
+                    // polar mapping
                     weight: 0.25,
-                    a: 0.960492, b: 0.215383, c: -0.466555, d: -0.727377,
-                    offset: [-0.126074, 0.253509], color: 1.0,
+                    a: 0.960492,
+                    b: 0.215383,
+                    c: -0.466555,
+                    d: -0.727377,
+                    offset: [-0.126074, 0.253509],
+                    color: 1.0,
                     polar: 1.0,
                     ..Default::default()
                 },
@@ -537,16 +712,15 @@ impl FlameGenome {
         fs::create_dir_all(dir).map_err(|e| format!("create dir: {e}"))?;
         let filename = format!("{}.json", self.name);
         let path = dir.join(filename);
-        let json =
-            serde_json::to_string_pretty(self).map_err(|e| format!("serialize: {e}"))?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("serialize: {e}"))?;
         fs::write(&path, json).map_err(|e| format!("write: {e}"))?;
         Ok(path)
     }
 
     pub fn load(path: &Path) -> Result<Self, String> {
-        let json =
-            fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        let mut genome: Self = serde_json::from_str(&json).map_err(|e| format!("parse {}: {e}", path.display()))?;
+        let json = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let mut genome: Self =
+            serde_json::from_str(&json).map_err(|e| format!("parse {}: {e}", path.display()))?;
         genome.fixup_legacy_transforms();
         Ok(genome)
     }
@@ -586,27 +760,123 @@ impl FlameGenome {
         let r_len = r2.sqrt().max(1e-6);
         let theta = ay.atan2(ax);
 
-        if xf.linear > 0.0 { vx += ax * xf.linear; vy += ay * xf.linear; }
-        if xf.sinusoidal > 0.0 { vx += ax.sin() * xf.sinusoidal; vy += ay.sin() * xf.sinusoidal; }
-        if xf.spherical > 0.0 { let s = xf.spherical / r2.max(0.01); vx += ax * s; vy += ay * s; }
-        if xf.swirl > 0.0 { let (sr, cr) = (r2.sin(), r2.cos()); vx += (ax * sr - ay * cr) * xf.swirl; vy += (ax * cr + ay * sr) * xf.swirl; }
-        if xf.horseshoe > 0.0 { let h = xf.horseshoe / r_len; vx += (ax - ay) * (ax + ay) * h; vy += 2.0 * ax * ay * h; }
-        if xf.handkerchief > 0.0 { vx += r_len * (theta + r_len).sin() * xf.handkerchief; vy += r_len * (theta - r_len).cos() * xf.handkerchief; }
-        if xf.julia > 0.0 { let sr = r_len.sqrt(); let t2 = theta / 2.0; vx += sr * t2.cos() * xf.julia; vy += sr * t2.sin() * xf.julia; }
-        if xf.polar > 0.0 { vx += (theta / std::f32::consts::PI) * xf.polar; vy += (r_len - 1.0) * xf.polar; }
-        if xf.disc > 0.0 { let d = theta / std::f32::consts::PI; let pr = std::f32::consts::PI * r_len; vx += d * pr.sin() * xf.disc; vy += d * pr.cos() * xf.disc; }
-        if xf.rings > 0.0 { let val = xf.variation_params.get("rings2_val").copied().unwrap_or(0.5); let c2 = val * val; let rr = ((r_len + c2) % (2.0 * c2).max(0.001)) - c2 + r_len * (1.0 - c2); vx += rr * theta.cos() * xf.rings; vy += rr * theta.sin() * xf.rings; }
-        if xf.bubble > 0.0 { let b = 4.0 / (r2 + 4.0); vx += ax * b * xf.bubble; vy += ay * b * xf.bubble; }
-        if xf.fisheye > 0.0 { let f = 2.0 / (r_len + 1.0); vx += f * ay * xf.fisheye; vy += f * ax * xf.fisheye; }
-        if xf.diamond > 0.0 { vx += theta.sin() * r_len.cos() * xf.diamond; vy += theta.cos() * r_len.sin() * xf.diamond; }
-        if xf.bent > 0.0 { let bx = if ax >= 0.0 { ax } else { 2.0 * ax }; let by = if ay >= 0.0 { ay } else { ay / 2.0 }; vx += bx * xf.bent; vy += by * xf.bent; }
-        if xf.eyefish > 0.0 { let e = 2.0 / (r_len + 1.0); vx += e * ax * xf.eyefish; vy += e * ay * xf.eyefish; }
-        if xf.cross > 0.0 { let c = 1.0 / (ax * ax - ay * ay).abs().max(0.01); vx += ax * c * xf.cross; vy += ay * c * xf.cross; }
-        if xf.cosine > 0.0 { vx += ax.cos() * ay.cosh() * xf.cosine; vy -= ax.sin() * ay.sinh() * xf.cosine; }
-        if xf.blob > 0.0 { let low = xf.variation_params.get("blob_low").copied().unwrap_or(0.2); let high = xf.variation_params.get("blob_high").copied().unwrap_or(1.0); let waves = xf.variation_params.get("blob_waves").copied().unwrap_or(5.0); let br = r_len * (low + (high - low) * 0.5 * ((waves * theta).sin() + 1.0)); vx += br * theta.cos() * xf.blob; vy += br * theta.sin() * xf.blob; }
-        if xf.fan > 0.0 { let t2 = std::f32::consts::PI * 0.04; let t_half = t2 / 2.0; let f = if (theta + 0.2) % t2 > t_half { theta - t_half } else { theta + t_half }; vx += r_len * f.cos() * xf.fan; vy += r_len * f.sin() * xf.fan; }
-        let others = xf.spiral + xf.exponential + xf.waves + xf.popcorn + xf.tangent + xf.noise + xf.curl;
-        if others > 0.0 { vx += ax * others; vy += ay * others; }
+        if xf.linear > 0.0 {
+            vx += ax * xf.linear;
+            vy += ay * xf.linear;
+        }
+        if xf.sinusoidal > 0.0 {
+            vx += ax.sin() * xf.sinusoidal;
+            vy += ay.sin() * xf.sinusoidal;
+        }
+        if xf.spherical > 0.0 {
+            let s = xf.spherical / r2.max(0.01);
+            vx += ax * s;
+            vy += ay * s;
+        }
+        if xf.swirl > 0.0 {
+            let (sr, cr) = (r2.sin(), r2.cos());
+            vx += (ax * sr - ay * cr) * xf.swirl;
+            vy += (ax * cr + ay * sr) * xf.swirl;
+        }
+        if xf.horseshoe > 0.0 {
+            let h = xf.horseshoe / r_len;
+            vx += (ax - ay) * (ax + ay) * h;
+            vy += 2.0 * ax * ay * h;
+        }
+        if xf.handkerchief > 0.0 {
+            vx += r_len * (theta + r_len).sin() * xf.handkerchief;
+            vy += r_len * (theta - r_len).cos() * xf.handkerchief;
+        }
+        if xf.julia > 0.0 {
+            let sr = r_len.sqrt();
+            let t2 = theta / 2.0;
+            vx += sr * t2.cos() * xf.julia;
+            vy += sr * t2.sin() * xf.julia;
+        }
+        if xf.polar > 0.0 {
+            vx += (theta / std::f32::consts::PI) * xf.polar;
+            vy += (r_len - 1.0) * xf.polar;
+        }
+        if xf.disc > 0.0 {
+            let d = theta / std::f32::consts::PI;
+            let pr = std::f32::consts::PI * r_len;
+            vx += d * pr.sin() * xf.disc;
+            vy += d * pr.cos() * xf.disc;
+        }
+        if xf.rings > 0.0 {
+            let val = xf
+                .variation_params
+                .get("rings2_val")
+                .copied()
+                .unwrap_or(0.5);
+            let c2 = val * val;
+            let rr = ((r_len + c2) % (2.0 * c2).max(0.001)) - c2 + r_len * (1.0 - c2);
+            vx += rr * theta.cos() * xf.rings;
+            vy += rr * theta.sin() * xf.rings;
+        }
+        if xf.bubble > 0.0 {
+            let b = 4.0 / (r2 + 4.0);
+            vx += ax * b * xf.bubble;
+            vy += ay * b * xf.bubble;
+        }
+        if xf.fisheye > 0.0 {
+            let f = 2.0 / (r_len + 1.0);
+            vx += f * ay * xf.fisheye;
+            vy += f * ax * xf.fisheye;
+        }
+        if xf.diamond > 0.0 {
+            vx += theta.sin() * r_len.cos() * xf.diamond;
+            vy += theta.cos() * r_len.sin() * xf.diamond;
+        }
+        if xf.bent > 0.0 {
+            let bx = if ax >= 0.0 { ax } else { 2.0 * ax };
+            let by = if ay >= 0.0 { ay } else { ay / 2.0 };
+            vx += bx * xf.bent;
+            vy += by * xf.bent;
+        }
+        if xf.eyefish > 0.0 {
+            let e = 2.0 / (r_len + 1.0);
+            vx += e * ax * xf.eyefish;
+            vy += e * ay * xf.eyefish;
+        }
+        if xf.cross > 0.0 {
+            let c = 1.0 / (ax * ax - ay * ay).abs().max(0.01);
+            vx += ax * c * xf.cross;
+            vy += ay * c * xf.cross;
+        }
+        if xf.cosine > 0.0 {
+            vx += ax.cos() * ay.cosh() * xf.cosine;
+            vy -= ax.sin() * ay.sinh() * xf.cosine;
+        }
+        if xf.blob > 0.0 {
+            let low = xf.variation_params.get("blob_low").copied().unwrap_or(0.2);
+            let high = xf.variation_params.get("blob_high").copied().unwrap_or(1.0);
+            let waves = xf
+                .variation_params
+                .get("blob_waves")
+                .copied()
+                .unwrap_or(5.0);
+            let br = r_len * (low + (high - low) * 0.5 * ((waves * theta).sin() + 1.0));
+            vx += br * theta.cos() * xf.blob;
+            vy += br * theta.sin() * xf.blob;
+        }
+        if xf.fan > 0.0 {
+            let t2 = std::f32::consts::PI * 0.04;
+            let t_half = t2 / 2.0;
+            let f = if (theta + 0.2) % t2 > t_half {
+                theta - t_half
+            } else {
+                theta + t_half
+            };
+            vx += r_len * f.cos() * xf.fan;
+            vy += r_len * f.sin() * xf.fan;
+        }
+        let others =
+            xf.spiral + xf.exponential + xf.waves + xf.popcorn + xf.tangent + xf.noise + xf.curl;
+        if others > 0.0 {
+            vx += ax * others;
+            vy += ay * others;
+        }
 
         (vx.clamp(-100.0, 100.0), vy.clamp(-100.0, 100.0))
     }
@@ -629,7 +899,10 @@ impl FlameGenome {
             let mut tidx = 0;
             for (j, xf) in self.transforms.iter().enumerate() {
                 cumsum += xf.weight;
-                if r < cumsum { tidx = j; break; }
+                if r < cumsum {
+                    tidx = j;
+                    break;
+                }
             }
             p = Self::apply_xform_cpu(p, &self.transforms[tidx]);
             if i >= 100 {
@@ -675,14 +948,13 @@ impl FlameGenome {
         _profile: &Option<FavoriteProfile>,
         taste: &mut Option<&mut crate::taste::TasteEngine>,
     ) -> Self {
-        use rand::prelude::SliceRandom;
         use rand::Rng;
+        use rand::prelude::SliceRandom;
         let mut rng = rand::rng();
 
         // Child transform count: average of parents ±1, clamped to 3..=6
         let avg_xf = (parent_a.transforms.len() + parent_b.transforms.len()) / 2;
-        let child_count = (avg_xf as i32 + rng.random_range(-1..=1))
-            .clamp(3, 6) as usize;
+        let child_count = (avg_xf as i32 + rng.random_range(-1..=1)).clamp(3, 6) as usize;
 
         // Build transform slots
         let mut transforms = Vec::with_capacity(child_count);
@@ -736,11 +1008,11 @@ impl FlameGenome {
 
         // Group Community: transforms from community genome
         for &slot in group_community {
-            if let Some(g) = community {
-                if !g.transforms.is_empty() {
-                    let src_idx = rng.random_range(0..g.transforms.len());
-                    transforms[slot] = g.transforms[src_idx].clone();
-                }
+            if let Some(g) = community
+                && !g.transforms.is_empty()
+            {
+                let src_idx = rng.random_range(0..g.transforms.len());
+                transforms[slot] = g.transforms[src_idx].clone();
             }
             // If no community genome, keeps the random transform
         }
@@ -752,7 +1024,9 @@ impl FlameGenome {
             xf.clear_variations();
             let var_idx = audio_biased_variation_pick(&mut rng, audio);
             xf.set_variation(var_idx, 1.0);
-            if var_idx != 0 { xf.linear = 0.0; }
+            if var_idx != 0 {
+                xf.linear = 0.0;
+            }
             transforms[slot] = xf;
         }
 
@@ -818,8 +1092,11 @@ impl FlameGenome {
 
         eprintln!(
             "[breed] {} × {} → {} (gen {}), {} transforms",
-            parent_a.name, parent_b.name, child.name,
-            child.generation, child.transforms.len()
+            parent_a.name,
+            parent_b.name,
+            child.name,
+            child.generation,
+            child.transforms.len()
         );
 
         child
@@ -837,7 +1114,8 @@ impl FlameGenome {
     ) -> Self {
         let retries = cfg.max_mutation_retries.max(1);
         for attempt in 0..retries {
-            let bred = FlameGenome::breed(parent_a, parent_b, community, audio, cfg, profile, taste);
+            let bred =
+                FlameGenome::breed(parent_a, parent_b, community, audio, cfg, profile, taste);
             let child = bred.mutate_inner(audio, cfg, profile);
             let extent = child.estimate_attractor_extent();
             if extent > cfg.min_attractor_extent {
@@ -849,7 +1127,11 @@ impl FlameGenome {
                 return result;
             }
             if attempt < retries - 1 {
-                eprintln!("[mutate] attempt {} rejected (extent={:.3}), retrying", attempt + 1, extent);
+                eprintln!(
+                    "[mutate] attempt {} rejected (extent={:.3}), retrying",
+                    attempt + 1,
+                    extent
+                );
             }
         }
         eprintln!("[mutate] all attempts degenerate, keeping parent A");
@@ -859,13 +1141,18 @@ impl FlameGenome {
         result
     }
 
-    fn mutate_inner(&self, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>) -> Self {
+    fn mutate_inner(
+        &self,
+        audio: &AudioFeatures,
+        cfg: &crate::weights::RuntimeConfig,
+        profile: &Option<FavoriteProfile>,
+    ) -> Self {
         let mut child = self.clone();
         let mut rng = rand::rng();
 
         // Single mutation per evolve — preserves the backbone, changes one thing at a time
         match rng.random_range(0..8) {
-            0 | 1 => child.mutate_perturb(&mut rng, audio, cfg, profile),  // most common
+            0 | 1 => child.mutate_perturb(&mut rng, audio, cfg, profile), // most common
             2 => child.mutate_swap_variations(&mut rng),
             3 => child.mutate_rotate_colors(&mut rng),
             4 => child.mutate_shuffle_transforms(&mut rng),
@@ -877,11 +1164,11 @@ impl FlameGenome {
         // Add/remove transforms — biased toward 3-5 (Electric Sheep sweet spot)
         let n = child.transforms.len();
         let (add_chance, remove_chance) = if n < 3 {
-            (0.25, 0.0)   // too few — always try to add
+            (0.25, 0.0) // too few — always try to add
         } else if n <= 5 {
-            (0.05, 0.05)  // sweet spot — rare changes
+            (0.05, 0.05) // sweet spot — rare changes
         } else {
-            (0.02, 0.20)  // too many — aggressively prune
+            (0.02, 0.20) // too many — aggressively prune
         };
         let roll: f32 = rng.random();
         if roll < add_chance {
@@ -905,16 +1192,32 @@ impl FlameGenome {
     }
 
     /// Unified variation picker: fitness-biased when profile available, else audio-biased.
-    fn pick_variation(rng: &mut impl Rng, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>) -> usize {
-        if cfg.fitness_bias_strength > 0.0 && profile.is_some() && rng.random::<f32>() < cfg.fitness_bias_strength {
+    fn pick_variation(
+        rng: &mut impl Rng,
+        audio: &AudioFeatures,
+        cfg: &crate::weights::RuntimeConfig,
+        profile: &Option<FavoriteProfile>,
+    ) -> usize {
+        if cfg.fitness_bias_strength > 0.0
+            && profile.is_some()
+            && rng.random::<f32>() < cfg.fitness_bias_strength
+        {
             fitness_biased_variation_pick(rng, profile, cfg.fitness_bias_strength)
         } else {
             audio_biased_variation_pick(rng, audio)
         }
     }
 
-    fn mutate_perturb(&mut self, rng: &mut impl Rng, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>) {
-        if self.transforms.is_empty() { return; }
+    fn mutate_perturb(
+        &mut self,
+        rng: &mut impl Rng,
+        audio: &AudioFeatures,
+        cfg: &crate::weights::RuntimeConfig,
+        profile: &Option<FavoriteProfile>,
+    ) {
+        if self.transforms.is_empty() {
+            return;
+        }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
         match rng.random_range(0..8) {
@@ -929,9 +1232,12 @@ impl FlameGenome {
                 scale_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, factor);
                 // Clamp overall scale to keep things stable
                 let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
-                if det > 0.95 || det < 0.2 {
+                if !(0.2..=0.95).contains(&det) {
                     let fix = rng.random_range(0.4..0.85) / det.max(0.01);
-                    xf.a *= fix; xf.b *= fix; xf.c *= fix; xf.d *= fix;
+                    xf.a *= fix;
+                    xf.b *= fix;
+                    xf.c *= fix;
+                    xf.d *= fix;
                 }
             }
             2 => {
@@ -943,13 +1249,18 @@ impl FlameGenome {
                 // Anisotropic scale — stretch in one axis, compress in another
                 let sx = rng.random_range(0.5..1.5);
                 let sy = rng.random_range(0.5..1.5);
-                xf.a *= sx; xf.b *= sy;
-                xf.c *= sx; xf.d *= sy;
+                xf.a *= sx;
+                xf.b *= sy;
+                xf.c *= sx;
+                xf.d *= sy;
                 // Keep contractive
                 let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
                 if det > 0.95 {
                     let fix = rng.random_range(0.4..0.85) / det;
-                    xf.a *= fix; xf.b *= fix; xf.c *= fix; xf.d *= fix;
+                    xf.a *= fix;
+                    xf.b *= fix;
+                    xf.c *= fix;
+                    xf.d *= fix;
                 }
             }
             4 => {
@@ -1023,7 +1334,9 @@ impl FlameGenome {
     }
 
     fn mutate_swap_variations(&mut self, rng: &mut impl Rng) {
-        if self.transforms.is_empty() { return; }
+        if self.transforms.is_empty() {
+            return;
+        }
         let idx = rng.random_range(0..self.transforms.len());
         let xf = &mut self.transforms[idx];
         let a = rng.random_range(0..VARIATION_COUNT);
@@ -1051,11 +1364,18 @@ impl FlameGenome {
     }
 
     fn mutate_global_params(&mut self, rng: &mut impl Rng) {
-        self.global.flame_brightness = (self.global.flame_brightness + rng.random_range(-0.05..0.05)).clamp(0.05, 0.5);
+        self.global.flame_brightness =
+            (self.global.flame_brightness + rng.random_range(-0.05..0.05)).clamp(0.05, 0.5);
         self.global.zoom = (self.global.zoom + rng.random_range(-0.5..0.5)).clamp(1.5, 6.0);
     }
 
-    fn mutate_final_transform(&mut self, rng: &mut impl Rng, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>) {
+    fn mutate_final_transform(
+        &mut self,
+        rng: &mut impl Rng,
+        audio: &AudioFeatures,
+        cfg: &crate::weights::RuntimeConfig,
+        profile: &Option<FavoriteProfile>,
+    ) {
         match &mut self.final_transform {
             Some(fxf) => {
                 // Perturb existing final transform
@@ -1092,7 +1412,11 @@ impl FlameGenome {
     fn mutate_symmetry(&mut self, rng: &mut impl Rng, audio: &AudioFeatures) {
         // Nudge symmetry by ±1 instead of picking a random new value
         let current = self.symmetry.abs().max(1);
-        let delta = if rng.random_range(0.0..1.0) < 0.5 { 1 } else { -1 };
+        let delta = if rng.random_range(0.0..1.0) < 0.5 {
+            1
+        } else {
+            -1
+        };
         let new_val = (current + delta).clamp(1, 6);
 
         if audio.beat_accum > 0.5 && rng.random_range(0.0..1.0) < 0.3 {
@@ -1106,8 +1430,16 @@ impl FlameGenome {
         }
     }
 
-    fn mutate_add_transform(&mut self, rng: &mut impl Rng, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>) {
-        if self.transforms.is_empty() { return; }
+    fn mutate_add_transform(
+        &mut self,
+        rng: &mut impl Rng,
+        audio: &AudioFeatures,
+        cfg: &crate::weights::RuntimeConfig,
+        profile: &Option<FavoriteProfile>,
+    ) {
+        if self.transforms.is_empty() {
+            return;
+        }
         // 30% clone-and-diverge, 70% fresh specialist with contrasting geometry
         let new_xf = if rng.random::<f32>() < 0.3 {
             let source_idx = rng.random_range(0..self.transforms.len());
@@ -1123,21 +1455,25 @@ impl FlameGenome {
             xf.color = rng.random_range(0.0..1.0);
             // Give it a different variation than the source
             let new_vi = Self::pick_variation(rng, audio, cfg, profile);
-            for vi in 0..VARIATION_COUNT { xf.set_variation(vi, 0.0); }
+            for vi in 0..VARIATION_COUNT {
+                xf.set_variation(vi, 0.0);
+            }
             xf.set_variation(new_vi, 1.0);
             xf
         } else {
             // Fresh specialist — intentionally contrast with existing transforms
             // Pick a scale that's different from existing ones
-            let existing_scales: Vec<f32> = self.transforms.iter()
+            let existing_scales: Vec<f32> = self
+                .transforms
+                .iter()
                 .map(|t| (t.a * t.d - t.b * t.c).abs().sqrt())
                 .collect();
             let avg_scale = existing_scales.iter().sum::<f32>() / existing_scales.len() as f32;
             // If existing are large, make this one small (detail), and vice versa
             let s = if avg_scale > 0.6 {
-                rng.random_range(0.2..0.5)   // tight detail transform
+                rng.random_range(0.2..0.5) // tight detail transform
             } else {
-                rng.random_range(0.6..0.9)   // broad sweep transform
+                rng.random_range(0.6..0.9) // broad sweep transform
             };
             let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
             let mut xf = FlameTransform {
@@ -1190,9 +1526,13 @@ impl FlameGenome {
     }
 
     fn mutate_remove_transform(&mut self, _rng: &mut impl Rng) {
-        if self.transforms.len() <= 2 { return; } // keep at least 2
+        if self.transforms.len() <= 2 {
+            return;
+        } // keep at least 2
         // Remove the lowest-weight transform
-        if let Some((min_idx, _)) = self.transforms.iter()
+        if let Some((min_idx, _)) = self
+            .transforms
+            .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.weight.partial_cmp(&b.weight).unwrap())
         {
@@ -1243,7 +1583,9 @@ impl FlameGenome {
     /// Evenly distribute color indices across transforms.
     fn distribute_colors(&mut self) {
         let n = self.transforms.len();
-        if n == 0 { return; }
+        if n == 0 {
+            return;
+        }
         for (i, xf) in self.transforms.iter_mut().enumerate() {
             xf.color = i as f32 / n.max(1) as f32;
         }
@@ -1258,11 +1600,17 @@ fn rotate_affine(a: &mut f32, b: &mut f32, c: &mut f32, d: &mut f32, angle: f32)
     let nb = *b * cos_a - *d * s;
     let nc = *a * s + *c * cos_a;
     let nd = *b * s + *d * cos_a;
-    *a = na; *b = nb; *c = nc; *d = nd;
+    *a = na;
+    *b = nb;
+    *c = nc;
+    *d = nd;
 }
 
 fn scale_affine(a: &mut f32, b: &mut f32, c: &mut f32, d: &mut f32, factor: f32) {
-    *a *= factor; *b *= factor; *c *= factor; *d *= factor;
+    *a *= factor;
+    *b *= factor;
+    *c *= factor;
+    *d *= factor;
 }
 
 fn shear_affine(a: &mut f32, b: &mut f32, c: &mut f32, d: &mut f32, shear: f32) {
@@ -1274,7 +1622,13 @@ fn shear_affine(a: &mut f32, b: &mut f32, c: &mut f32, d: &mut f32, shear: f32) 
 
 const TAU: f32 = std::f32::consts::TAU;
 
-fn cosine_color(t: f32, offset: [f32; 3], amp: [f32; 3], freq: [f32; 3], phase: [f32; 3]) -> [f32; 3] {
+fn cosine_color(
+    t: f32,
+    offset: [f32; 3],
+    amp: [f32; 3],
+    freq: [f32; 3],
+    phase: [f32; 3],
+) -> [f32; 3] {
     [
         (offset[0] + amp[0] * (TAU * (freq[0] * t + phase[0])).cos()).clamp(0.0, 1.0),
         (offset[1] + amp[1] * (TAU * (freq[1] * t + phase[1])).cos()).clamp(0.0, 1.0),

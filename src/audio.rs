@@ -85,7 +85,12 @@ impl AudioAnalyzer {
         let highs = (bands[10] + bands[11] + bands[12] + bands[13]) / 4.0;
         let energy = bands.iter().sum::<f32>() / 16.0;
 
-        AnalysisResult { bass, mids, highs, energy }
+        AnalysisResult {
+            bass,
+            mids,
+            highs,
+            energy,
+        }
     }
 }
 
@@ -117,7 +122,10 @@ pub struct AudioCapture {
 impl AudioCapture {
     /// Construct from a cpal device selected by the device picker.
     pub fn from_device(device: cpal::Device, is_input: bool) -> Result<Self, String> {
-        let name = device.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "???".into());
+        let name = device
+            .description()
+            .map(|d| d.name().to_string())
+            .unwrap_or_else(|_| "???".into());
         let config = if is_input {
             device.default_input_config()
         } else {
@@ -146,20 +154,13 @@ impl AudioCapture {
     ) -> Result<Self, String> {
         let sample_rate = config.sample_rate();
         let stream_config = config.config();
-        let buffer: Arc<Mutex<Vec<f32>>> =
-            Arc::new(Mutex::new(Vec::with_capacity(BUFFER_SIZE)));
+        let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(BUFFER_SIZE)));
         let buf_clone = buffer.clone();
 
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => {
-                build_stream::<f32>(device, &stream_config, buf_clone)
-            }
-            cpal::SampleFormat::I16 => {
-                build_stream::<i16>(device, &stream_config, buf_clone)
-            }
-            cpal::SampleFormat::U16 => {
-                build_stream::<u16>(device, &stream_config, buf_clone)
-            }
+            cpal::SampleFormat::F32 => build_stream::<f32>(device, &stream_config, buf_clone),
+            cpal::SampleFormat::I16 => build_stream::<i16>(device, &stream_config, buf_clone),
+            cpal::SampleFormat::U16 => build_stream::<u16>(device, &stream_config, buf_clone),
             fmt => Err(format!("unsupported sample format: {fmt:?}")),
         }?;
 
@@ -466,8 +467,14 @@ mod tests {
         // Both should converge to ~1.0 independently
         let bass_out = bass_norm.update(0.1, 1.0 / 30.0);
         let mids_out = mids_norm.update(0.02, 1.0 / 30.0);
-        assert!((bass_out - 1.0).abs() < 0.1, "bass: expected ~1.0, got {bass_out}");
-        assert!((mids_out - 1.0).abs() < 0.1, "mids: expected ~1.0, got {mids_out}");
+        assert!(
+            (bass_out - 1.0).abs() < 0.1,
+            "bass: expected ~1.0, got {bass_out}"
+        );
+        assert!(
+            (mids_out - 1.0).abs() < 0.1,
+            "mids: expected ~1.0, got {mids_out}"
+        );
     }
 
     #[test]
@@ -627,13 +634,22 @@ mod tests {
 
             // Check all outputs are in 0-1
             for (i, &v) in norm_bass_vals.iter().enumerate() {
-                assert!(v >= 0.0 && v <= 1.01, "{filename} bass[{i}] out of range: {v}");
+                assert!(
+                    v >= 0.0 && v <= 1.01,
+                    "{filename} bass[{i}] out of range: {v}"
+                );
             }
             for (i, &v) in norm_mids_vals.iter().enumerate() {
-                assert!(v >= 0.0 && v <= 1.01, "{filename} mids[{i}] out of range: {v}");
+                assert!(
+                    v >= 0.0 && v <= 1.01,
+                    "{filename} mids[{i}] out of range: {v}"
+                );
             }
             for (i, &v) in norm_highs_vals.iter().enumerate() {
-                assert!(v >= 0.0 && v <= 1.01, "{filename} highs[{i}] out of range: {v}");
+                assert!(
+                    v >= 0.0 && v <= 1.01,
+                    "{filename} highs[{i}] out of range: {v}"
+                );
             }
 
             // Check p90 is in reasonable range (0.3-1.0) — skip first 20% as warmup
@@ -641,7 +657,9 @@ mod tests {
             let check_p90 = |vals: &[f32], name: &str| {
                 let mut sorted: Vec<f32> = vals[warmup..].to_vec();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-                if sorted.is_empty() { return; }
+                if sorted.is_empty() {
+                    return;
+                }
                 let p90 = sorted[(sorted.len() as f32 * 0.9) as usize];
                 assert!(
                     p90 > 0.3,
@@ -656,10 +674,7 @@ mod tests {
             sorted_highs.sort_by(|a, b| a.partial_cmp(b).unwrap());
             if !sorted_highs.is_empty() {
                 let p90 = sorted_highs[(sorted_highs.len() as f32 * 0.9) as usize];
-                assert!(
-                    p90 > 0.1,
-                    "{filename} highs p90 too low: {p90}"
-                );
+                assert!(p90 > 0.1, "{filename} highs p90 too low: {p90}");
             }
 
             eprintln!("[OK] {filename}: {} samples processed", raw_samples.len());

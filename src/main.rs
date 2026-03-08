@@ -1,6 +1,6 @@
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc};
+use std::sync::{Arc, mpsc};
 use std::time::Instant;
 use std::{fs, mem};
 
@@ -20,9 +20,9 @@ mod sck_audio;
 mod taste;
 mod votes;
 mod weights;
-use crate::genome::{FlameGenome, FavoriteProfile};
-use crate::votes::VoteLedger;
 use crate::audio::{AudioCapture, AudioFeatures};
+use crate::genome::{FavoriteProfile, FlameGenome};
+use crate::votes::VoteLedger;
 use crate::weights::Weights;
 
 // ── Uniforms ──
@@ -35,14 +35,14 @@ struct Uniforms {
     resolution: [f32; 2],
     mouse: [f32; 2],
     transform_count: u32,
-    has_final_xform: u32,  // low bit = has_final, upper 16 bits = iterations_per_thread
-    globals: [f32; 4],   // speed, zoom, trail, flame_brightness
+    has_final_xform: u32, // low bit = has_final, upper 16 bits = iterations_per_thread
+    globals: [f32; 4],    // speed, zoom, trail, flame_brightness
     kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
     extra: [f32; 4],      // color_shift, vibrancy, bloom_intensity, symmetry
     extra2: [f32; 4],     // noise_disp, curl_disp, tangent_clamp, color_blend
     extra3: [f32; 4],     // spin_speed_max, position_drift, warmup_iters, velocity_blur_max
-    extra4: [f32; 4],   // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
-    extra5: [f32; 4],   // dof_focal_distance, spectral_rendering, temporal_reprojection, _reserved
+    extra4: [f32; 4],     // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
+    extra5: [f32; 4], // dof_focal_distance, spectral_rendering, temporal_reprojection, _reserved
 }
 
 // ── File Watcher ──
@@ -55,20 +55,15 @@ struct FileWatcher {
 impl FileWatcher {
     fn new(paths: &[PathBuf]) -> Result<Self, String> {
         let (tx, rx) = mpsc::channel();
-        let mut watcher = notify::recommended_watcher(
-            move |res: Result<Event, notify::Error>| {
-                if let Ok(event) = res {
-                    if matches!(
-                        event.kind,
-                        EventKind::Modify(_) | EventKind::Create(_)
-                    ) {
-                        for path in &event.paths {
-                            let _ = tx.send(path.clone());
-                        }
-                    }
+        let mut watcher = notify::recommended_watcher(move |res: Result<Event, notify::Error>| {
+            if let Ok(event) = res
+                && matches!(event.kind, EventKind::Modify(_) | EventKind::Create(_))
+            {
+                for path in &event.paths {
+                    let _ = tx.send(path.clone());
                 }
-            },
-        )
+            }
+        })
         .map_err(|e| format!("watcher: {e}"))?;
 
         for path in paths {
@@ -150,26 +145,22 @@ impl Gpu {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
         let surface = instance.create_surface(window).unwrap();
-        let adapter = pollster::block_on(instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                ..Default::default()
-            },
-        ))
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            compatible_surface: Some(&surface),
+            ..Default::default()
+        }))
         .expect("no GPU adapter");
 
         let adapter_limits = adapter.limits();
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                required_limits: wgpu::Limits {
-                    max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
-                    max_buffer_size: adapter_limits.max_buffer_size,
-                    ..wgpu::Limits::default()
-                },
-                ..Default::default()
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            required_limits: wgpu::Limits {
+                max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
+                max_buffer_size: adapter_limits.max_buffer_size,
+                ..wgpu::Limits::default()
             },
-        ))
+            ..Default::default()
+        }))
         .expect("device creation failed");
 
         let caps = surface.get_capabilities(&adapter);
@@ -210,11 +201,7 @@ impl Gpu {
         });
 
         // Histogram buffer: 6 u32s per pixel (density + R + G + B + vx + vy)
-        let histogram_buffer = create_histogram_buffer(
-            &device,
-            config.width,
-            config.height,
-        );
+        let histogram_buffer = create_histogram_buffer(&device, config.width, config.height);
 
         // Initial transform buffer (6 transforms * 42 floats * 4 bytes)
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -241,83 +228,77 @@ impl Gpu {
         }
 
         // ── Render bind group layout (uniform + prev_frame + sampler + histogram read) ──
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("render"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT
-                            | wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("render"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT | wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float {
-                                filterable: true,
-                            },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(
-                            wgpu::SamplerBindingType::Filtering,
-                        ),
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 4,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 5,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 6,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         // ── Compute bind group layout (histogram rw + uniform + transforms) ──
         let compute_bind_group_layout =
@@ -383,12 +364,11 @@ impl Gpu {
                 ],
             });
 
-        let pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("render"),
-                bind_group_layouts: &[&bind_group_layout],
-                immediate_size: 0,
-            });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("render"),
+            bind_group_layouts: &[&bind_group_layout],
+            immediate_size: 0,
+        });
 
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -403,26 +383,14 @@ impl Gpu {
             create_crossfade_texture(&device, config.width, config.height, format);
 
         let shader_src = load_shader_source();
-        let pipeline = create_render_pipeline(
-            &device,
-            &pipeline_layout,
-            &shader_src,
-            format,
-        );
+        let pipeline = create_render_pipeline(&device, &pipeline_layout, &shader_src, format);
 
         let compute_src = load_compute_source();
-        let compute_pipeline = create_compute_pipeline(
-            &device,
-            &compute_pipeline_layout,
-            &compute_src,
-        );
+        let compute_pipeline =
+            create_compute_pipeline(&device, &compute_pipeline_layout, &compute_src);
 
         // ── Accumulation buffer (needed by render bind groups) ──
-        let accumulation_buffer = create_accumulation_buffer(
-            &device,
-            config.width,
-            config.height,
-        );
+        let accumulation_buffer = create_accumulation_buffer(&device, config.width, config.height);
 
         // Single u32 for atomicMax — tracks max density for per-image normalization
         let max_density_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -537,11 +505,8 @@ impl Gpu {
             });
 
         let accumulation_src = load_accumulation_source();
-        let accumulation_pipeline = create_accumulation_pipeline(
-            &device,
-            &accumulation_pipeline_layout,
-            &accumulation_src,
-        );
+        let accumulation_pipeline =
+            create_accumulation_pipeline(&device, &accumulation_pipeline_layout, &accumulation_src);
 
         let accumulation_bind_group = create_accumulation_bind_group(
             &device,
@@ -708,18 +673,8 @@ impl Gpu {
         self.config.height = h;
         self.surface.configure(&self.device, &self.config);
 
-        let (a_tex, a, b_tex, b) = create_frame_textures(
-            &self.device,
-            w,
-            h,
-            self.config.format,
-        );
-        let (cf_tex, cf_view) = create_crossfade_texture(
-            &self.device,
-            w,
-            h,
-            self.config.format,
-        );
+        let (a_tex, a, b_tex, b) = create_frame_textures(&self.device, w, h, self.config.format);
+        let (cf_tex, cf_view) = create_crossfade_texture(&self.device, w, h, self.config.format);
         self.frame_a_tex = a_tex;
         self.frame_a = a;
         self.frame_b_tex = b_tex;
@@ -735,20 +690,13 @@ impl Gpu {
     }
 
     fn reload_shader(&mut self, src: &str) {
-        self.pipeline = create_render_pipeline(
-            &self.device,
-            &self.pipeline_layout,
-            src,
-            self.config.format,
-        );
+        self.pipeline =
+            create_render_pipeline(&self.device, &self.pipeline_layout, src, self.config.format);
     }
 
     fn reload_compute_shader(&mut self, src: &str) {
-        self.compute_pipeline = create_compute_pipeline(
-            &self.device,
-            &self.compute_pipeline_layout,
-            src,
-        );
+        self.compute_pipeline =
+            create_compute_pipeline(&self.device, &self.compute_pipeline_layout, src);
     }
 
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
@@ -836,12 +784,10 @@ impl Gpu {
 
         // 2. Compute pass: run the chaos game
         {
-            let mut cpass = encoder.begin_compute_pass(
-                &wgpu::ComputePassDescriptor {
-                    label: Some("flame"),
-                    ..Default::default()
-                },
-            );
+            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("flame"),
+                ..Default::default()
+            });
             cpass.set_pipeline(&self.compute_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
             cpass.dispatch_workgroups(self.workgroups, 1, 1);
@@ -852,41 +798,35 @@ impl Gpu {
 
         // 2.5. Accumulation pass: blend histogram into persistent buffer
         {
-            let mut apass = encoder.begin_compute_pass(
-                &wgpu::ComputePassDescriptor {
-                    label: Some("accumulation"),
-                    ..Default::default()
-                },
-            );
+            let mut apass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("accumulation"),
+                ..Default::default()
+            });
             apass.set_pipeline(&self.accumulation_pipeline);
             apass.set_bind_group(0, &self.accumulation_bind_group, &[]);
-            let wg_x = (self.config.width + 15) / 16;
-            let wg_y = (self.config.height + 15) / 16;
+            let wg_x = self.config.width.div_ceil(16);
+            let wg_y = self.config.height.div_ceil(16);
             apass.dispatch_workgroups(wg_x, wg_y, 1);
         }
 
         // 2.75. Histogram equalization: bin densities + prefix sum CDF
         encoder.clear_buffer(&self.hist_bins_buffer, 0, None);
         {
-            let mut hpass = encoder.begin_compute_pass(
-                &wgpu::ComputePassDescriptor {
-                    label: Some("histogram_bin"),
-                    ..Default::default()
-                },
-            );
+            let mut hpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("histogram_bin"),
+                ..Default::default()
+            });
             hpass.set_pipeline(&self.histogram_cdf_bin_pipeline);
             hpass.set_bind_group(0, &self.histogram_cdf_bind_group, &[]);
-            let wg_x = (self.config.width + 15) / 16;
-            let wg_y = (self.config.height + 15) / 16;
+            let wg_x = self.config.width.div_ceil(16);
+            let wg_y = self.config.height.div_ceil(16);
             hpass.dispatch_workgroups(wg_x, wg_y, 1);
         }
         {
-            let mut hpass = encoder.begin_compute_pass(
-                &wgpu::ComputePassDescriptor {
-                    label: Some("histogram_cdf"),
-                    ..Default::default()
-                },
-            );
+            let mut hpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("histogram_cdf"),
+                ..Default::default()
+            });
             hpass.set_pipeline(&self.histogram_cdf_sum_pipeline);
             hpass.set_bind_group(0, &self.histogram_cdf_bind_group, &[]);
             hpass.dispatch_workgroups(1, 1, 1);
@@ -894,22 +834,19 @@ impl Gpu {
 
         // 3. Render to feedback texture
         {
-            let mut pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("feedback"),
-                    color_attachments: &[Some(
-                        wgpu::RenderPassColorAttachment {
-                            view: target_view,
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        },
-                    )],
-                    ..Default::default()
-                });
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("feedback"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: target_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
@@ -917,22 +854,19 @@ impl Gpu {
 
         // 4. Copy to screen
         {
-            let mut pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("blit"),
-                    color_attachments: &[Some(
-                        wgpu::RenderPassColorAttachment {
-                            view: &screen_view,
-                            resolve_target: None,
-                            depth_slice: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                                store: wgpu::StoreOp::Store,
-                            },
-                        },
-                    )],
-                    ..Default::default()
-                });
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("blit"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &screen_view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
@@ -942,8 +876,6 @@ impl Gpu {
         frame.present();
         self.ping = !self.ping;
     }
-
-
 }
 
 // ── Helper Functions ──
@@ -992,10 +924,10 @@ fn load_accumulation_source() -> String {
 }
 
 fn load_params() -> Vec<f32> {
-    if let Ok(json) = fs::read_to_string(params_path()) {
-        if let Ok(vals) = serde_json::from_str::<Vec<f32>>(&json) {
-            return vals;
-        }
+    if let Ok(json) = fs::read_to_string(params_path())
+        && let Ok(vals) = serde_json::from_str::<Vec<f32>>(&json)
+    {
+        return vals;
     }
     Vec::new()
 }
@@ -1012,11 +944,7 @@ fn load_weights() -> Weights {
     Weights::load(&weights_path()).unwrap_or_default()
 }
 
-fn create_histogram_buffer(
-    device: &wgpu::Device,
-    w: u32,
-    h: u32,
-) -> wgpu::Buffer {
+fn create_histogram_buffer(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Buffer {
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("histogram"),
@@ -1026,11 +954,7 @@ fn create_histogram_buffer(
     })
 }
 
-fn create_accumulation_buffer(
-    device: &wgpu::Device,
-    w: u32,
-    h: u32,
-) -> wgpu::Buffer {
+fn create_accumulation_buffer(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Buffer {
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("accumulation"),
@@ -1096,7 +1020,12 @@ fn create_frame_textures(
     w: u32,
     h: u32,
     format: wgpu::TextureFormat,
-) -> (wgpu::Texture, wgpu::TextureView, wgpu::Texture, wgpu::TextureView) {
+) -> (
+    wgpu::Texture,
+    wgpu::TextureView,
+    wgpu::Texture,
+    wgpu::TextureView,
+) {
     let desc = wgpu::TextureDescriptor {
         label: Some("frame"),
         size: wgpu::Extent3d {
@@ -1145,6 +1074,7 @@ fn create_crossfade_texture(
     (tex, view)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_render_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1224,6 +1154,7 @@ fn create_histogram_cdf_bind_group(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_compute_bind_group(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
@@ -1285,13 +1216,10 @@ fn create_palette_texture(device: &wgpu::Device) -> (wgpu::Texture, wgpu::Textur
     (texture, view)
 }
 
-fn upload_palette_texture(
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-    data: &[[f32; 4]],
-) {
+fn upload_palette_texture(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[[f32; 4]]) {
     // Convert f32 → f16 for Rgba16Float texture
-    let f16_data: Vec<u16> = data.iter()
+    let f16_data: Vec<u16> = data
+        .iter()
         .flat_map(|px| px.iter().map(|&v| half::f16::from_f32(v).to_bits()))
         .collect();
     queue.write_texture(
@@ -1394,16 +1322,16 @@ struct App {
     audio_samples: Vec<AudioFeatures>,
     mutation_accum: f32,
     last_mutation_time: f32,
-    flame_locked: bool, // true = imported flame, skip auto-evolve/mutate
+    flame_locked: bool,      // true = imported flame, skip auto-evolve/mutate
     morph_burst_frames: u32, // extra compute passes after mutation for faster fill
     random_walk: f32,
     // Ease-in-out genome morph
     morph_start_globals: [f32; 20],
     morph_start_xf: Vec<f32>,
-    morph_base_globals: [f32; 20],  // current interpolated genome base (no audio)
+    morph_base_globals: [f32; 20], // current interpolated genome base (no audio)
     morph_base_xf: Vec<f32>,       // current interpolated xf base (no audio)
-    morph_progress: f32,            // 0.0 → 1.0
-    morph_xf_rates: Vec<f32>,       // per-transform morph speed multiplier (0.5 - 2.0)
+    morph_progress: f32,           // 0.0 → 1.0
+    morph_xf_rates: Vec<f32>,      // per-transform morph speed multiplier (0.5 - 2.0)
     favorite_profile: Option<FavoriteProfile>,
     vote_ledger: VoteLedger,
     lineage_cache: crate::votes::LineageCache,
@@ -1471,8 +1399,10 @@ impl App {
             taste_engine: crate::taste::TasteEngine::new(),
             last_profile_scan: 0.0,
             perf_log: std::fs::OpenOptions::new()
-                .create(true).append(true)
-                .open("perf.log").ok(),
+                .create(true)
+                .append(true)
+                .open("perf.log")
+                .ok(),
             prev_zoom: 3.0,
         }
     }
@@ -1480,7 +1410,9 @@ impl App {
     /// Scan genomes/ directory for favorite profile (excludes seeds/).
     fn scan_favorite_profile() -> Option<FavoriteProfile> {
         let genomes_dir = project_dir().join("genomes");
-        if !genomes_dir.exists() { return None; }
+        if !genomes_dir.exists() {
+            return None;
+        }
         let profile = FavoriteProfile::from_directory(&genomes_dir);
         if profile.variation_freq.is_empty() {
             None
@@ -1498,11 +1430,11 @@ impl App {
         let mut good_genomes: Vec<FlameGenome> = Vec::new();
 
         // Positively voted genomes
-        for (_, entry) in &self.vote_ledger.entries {
-            if entry.score > 0 {
-                if let Ok(g) = FlameGenome::load(&std::path::PathBuf::from(&entry.file)) {
-                    good_genomes.push(g);
-                }
+        for entry in self.vote_ledger.entries.values() {
+            if entry.score > 0
+                && let Ok(g) = FlameGenome::load(&std::path::PathBuf::from(&entry.file))
+            {
+                good_genomes.push(g);
             }
         }
 
@@ -1510,11 +1442,13 @@ impl App {
         if let Ok(read) = std::fs::read_dir(&flames_dir) {
             for entry in read.filter_map(|e| e.ok()) {
                 let path = entry.path();
-                if path.extension().is_some_and(|ext| ext == "flam3" || ext == "flame") {
-                    if let Ok(g) = crate::flam3::load_random_flame(&flames_dir) {
-                        good_genomes.push(g);
-                        break; // just get a sample, not all
-                    }
+                if path
+                    .extension()
+                    .is_some_and(|ext| ext == "flam3" || ext == "flame")
+                    && let Ok(g) = crate::flam3::load_random_flame(&flames_dir)
+                {
+                    good_genomes.push(g);
+                    break; // just get a sample, not all
                 }
             }
         }
@@ -1523,8 +1457,14 @@ impl App {
         let recent_memory = self.weights._config.taste_recent_memory;
         self.taste_engine.rebuild(&refs, recent_memory);
 
-        if self.taste_engine.is_active(self.weights._config.taste_min_votes) {
-            eprintln!("[taste] model active with {} samples", self.taste_engine.sample_count());
+        if self
+            .taste_engine
+            .is_active(self.weights._config.taste_min_votes)
+        {
+            eprintln!(
+                "[taste] model active with {} samples",
+                self.taste_engine.sample_count()
+            );
         }
     }
 
@@ -1537,10 +1477,14 @@ impl App {
         let max_depth = self.weights._config.max_lineage_depth;
 
         // Parent A: prefer voted genome, fallback to random saved
-        let parent_a = self.vote_ledger.pick_voted(threshold)
+        let parent_a = self
+            .vote_ledger
+            .pick_voted(threshold)
             .and_then(|p| FlameGenome::load(&p).ok())
-            .or_else(|| VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
-                .and_then(|p| FlameGenome::load(&p).ok()))
+            .or_else(|| {
+                VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+                    .and_then(|p| FlameGenome::load(&p).ok())
+            })
             .unwrap_or_else(|| self.genome.clone());
 
         // Parent B: try multiple candidates, pick one with sufficient genetic distance
@@ -1548,16 +1492,22 @@ impl App {
         let mut parent_b: Option<FlameGenome> = None;
 
         for _ in 0..max_attempts {
-            let candidate = VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
-                .and_then(|p| FlameGenome::load(&p).ok())
-                .or_else(|| self.vote_ledger.pick_voted(threshold)
-                    .and_then(|p| FlameGenome::load(&p).ok()));
+            let candidate =
+                VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+                    .and_then(|p| FlameGenome::load(&p).ok())
+                    .or_else(|| {
+                        self.vote_ledger
+                            .pick_voted(threshold)
+                            .and_then(|p| FlameGenome::load(&p).ok())
+                    });
 
             if let Some(c) = candidate {
                 if c.name == parent_a.name {
                     continue; // skip self-breeding
                 }
-                let dist = self.lineage_cache.genetic_distance(&parent_a.name, &c.name, max_depth);
+                let dist = self
+                    .lineage_cache
+                    .genetic_distance(&parent_a.name, &c.name, max_depth);
                 if dist >= min_distance {
                     parent_b = Some(c);
                     break;
@@ -1581,18 +1531,27 @@ impl App {
             })
             .unwrap_or_else(|| {
                 let mut g = FlameGenome::default_genome();
-                g.name = format!("seed-{}", rand::Rng::random_range(&mut rand::rng(), 1000..9999u32));
+                g.name = format!(
+                    "seed-{}",
+                    rand::Rng::random_range(&mut rand::rng(), 1000..9999u32)
+                );
                 g
             });
 
         // Community genome: pick from imported flames or voted pool
         let community = {
             let flames_dir = project_dir().join("genomes").join("flames");
-            crate::flam3::load_random_flame(&flames_dir).ok()
-                .or_else(|| self.vote_ledger.pick_voted(threshold)
-                    .and_then(|p| FlameGenome::load(&p).ok()))
-                .or_else(|| VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
-                    .and_then(|p| FlameGenome::load(&p).ok()))
+            crate::flam3::load_random_flame(&flames_dir)
+                .ok()
+                .or_else(|| {
+                    self.vote_ledger
+                        .pick_voted(threshold)
+                        .and_then(|p| FlameGenome::load(&p).ok())
+                })
+                .or_else(|| {
+                    VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+                        .and_then(|p| FlameGenome::load(&p).ok())
+                })
         };
 
         (parent_a, parent_b, community)
@@ -1629,7 +1588,9 @@ impl App {
             let mut rng = rand::rng();
             let stagger_min = cfg.morph_stagger_min;
             let stagger_max = cfg.morph_stagger_max;
-            let num_slow = rng.random_range(1..=cfg.morph_stagger_count as usize).min(max_xf);
+            let num_slow = rng
+                .random_range(1..=cfg.morph_stagger_count as usize)
+                .min(max_xf);
             for _ in 0..num_slow {
                 let idx = rng.random_range(0..max_xf);
                 self.morph_xf_rates[idx] = base_speed * rng.random_range(stagger_min..=stagger_max);
@@ -1696,10 +1657,9 @@ impl App {
         if reload_params {
             let override_params = load_params();
             // Override globals from params.json (first 12 entries map to globals)
-            for i in 0..20.min(override_params.len()) {
-                self.globals[i] = override_params[i];
-                self.morph_base_globals[i] = override_params[i];
-            }
+            let n = 20.min(override_params.len());
+            self.globals[..n].copy_from_slice(&override_params[..n]);
+            self.morph_base_globals[..n].copy_from_slice(&override_params[..n]);
             eprintln!("[params] reloaded (overriding globals)");
         }
         if reload_weights {
@@ -1707,17 +1667,18 @@ impl App {
             if let Some(gpu) = &mut self.gpu {
                 gpu.workgroups = self.weights._config.samples_per_frame;
             }
-            eprintln!("[weights] reloaded (samples_per_frame={}, morph={}s, cooldown={}s)",
+            eprintln!(
+                "[weights] reloaded (samples_per_frame={}, morph={}s, cooldown={}s)",
                 self.weights._config.samples_per_frame,
                 self.weights._config.morph_duration,
-                self.weights._config.mutation_cooldown);
+                self.weights._config.mutation_cooldown
+            );
         }
-        if reload_features {
-            if let Ok(json) = fs::read_to_string(audio_features_path()) {
-                if let Ok(f) = serde_json::from_str::<AudioFeatures>(&json) {
-                    self.audio_features = f;
-                }
-            }
+        if reload_features
+            && let Ok(json) = fs::read_to_string(audio_features_path())
+            && let Ok(f) = serde_json::from_str::<AudioFeatures>(&json)
+        {
+            self.audio_features = f;
         }
         if reload_votes {
             self.vote_ledger = VoteLedger::load(&project_dir().join("genomes"));
@@ -1740,7 +1701,14 @@ impl ApplicationHandler for App {
         self.window = Some(window);
 
         // Watch all shader files + params
-        let paths = vec![shader_path(), compute_path(), params_path(), weights_path(), audio_features_path(), project_dir().join("genomes").join("votes.json")];
+        let paths = vec![
+            shader_path(),
+            compute_path(),
+            params_path(),
+            weights_path(),
+            audio_features_path(),
+            project_dir().join("genomes").join("votes.json"),
+        ];
         match FileWatcher::new(&paths) {
             Ok(w) => self.watcher = Some(w),
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
@@ -1748,24 +1716,24 @@ impl ApplicationHandler for App {
 
         // Try loading a random genome
         let genomes_dir = project_dir().join("genomes");
-        if genomes_dir.exists() {
-            if let Ok(g) = FlameGenome::load_random(&genomes_dir) {
-                eprintln!("[genome] loaded: {}", g.name);
-                self.genome = g;
-                // Snap (no morph) on initial load
-                let g_globals = self.genome.flatten_globals(&self.weights._config);
-                let g_xf = self.genome.flatten_transforms();
-                self.globals = g_globals;
-                self.xf_params = g_xf.clone();
-                self.morph_base_globals = g_globals;
-                self.morph_base_xf = g_xf.clone();
-                self.morph_start_globals = g_globals;
-                self.morph_start_xf = g_xf;
-                self.morph_progress = 1.0;
-                self.num_transforms = self.genome.total_buffer_transforms();
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.resize_transform_buffer(self.num_transforms);
-                }
+        if genomes_dir.exists()
+            && let Ok(g) = FlameGenome::load_random(&genomes_dir)
+        {
+            eprintln!("[genome] loaded: {}", g.name);
+            self.genome = g;
+            // Snap (no morph) on initial load
+            let g_globals = self.genome.flatten_globals(&self.weights._config);
+            let g_xf = self.genome.flatten_transforms();
+            self.globals = g_globals;
+            self.xf_params = g_xf.clone();
+            self.morph_base_globals = g_globals;
+            self.morph_base_xf = g_xf.clone();
+            self.morph_start_globals = g_globals;
+            self.morph_start_xf = g_xf;
+            self.morph_progress = 1.0;
+            self.num_transforms = self.genome.total_buffer_transforms();
+            if let Some(gpu) = &mut self.gpu {
+                gpu.resize_transform_buffer(self.num_transforms);
             }
         }
 
@@ -1823,11 +1791,26 @@ impl ApplicationHandler for App {
                     }
                     self.flame_locked = false; // unlock on manual mutate
                     let (pa, pb, community) = self.pick_breeding_parents();
-                    self.genome = FlameGenome::mutate(&pa, &pb, &community, &self.audio_features, &self.weights._config, &self.favorite_profile, &mut Some(&mut self.taste_engine));
-                    self.lineage_cache.register(&self.genome.name, &self.genome.parent_a, &self.genome.parent_b);
+                    self.genome = FlameGenome::mutate(
+                        &pa,
+                        &pb,
+                        &community,
+                        &self.audio_features,
+                        &self.weights._config,
+                        &self.favorite_profile,
+                        &mut Some(&mut self.taste_engine),
+                    );
+                    self.lineage_cache.register(
+                        &self.genome.name,
+                        &self.genome.parent_a,
+                        &self.genome.parent_b,
+                    );
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
-                    eprintln!("[evolve] → {} (gen {})", self.genome.name, self.genome.generation);
+                    eprintln!(
+                        "[evolve] → {} (gen {})",
+                        self.genome.name, self.genome.generation
+                    );
                 }
                 Key::Named(NamedKey::Backspace) => {
                     if let Some(prev) = self.genome_history.pop() {
@@ -1909,13 +1892,22 @@ impl ApplicationHandler for App {
                     }
                     "a" => {
                         self.audio_enabled = !self.audio_enabled;
-                        eprintln!("[audio] {}", if self.audio_enabled { "enabled" } else { "disabled" });
+                        eprintln!(
+                            "[audio] {}",
+                            if self.audio_enabled {
+                                "enabled"
+                            } else {
+                                "disabled"
+                            }
+                        );
                     }
                     "i" => {
                         self.audio_info = !self.audio_info;
                         if self.audio_info {
                             self.audio_samples.clear();
-                            eprintln!("[info] ON — recording audio features (press i again to save)");
+                            eprintln!(
+                                "[info] ON — recording audio features (press i again to save)"
+                            );
                         } else {
                             let count = self.audio_samples.len();
                             if count > 0 {
@@ -1944,7 +1936,10 @@ impl ApplicationHandler for App {
                 self.check_file_changes();
 
                 let now = Instant::now();
-                let dt = now.duration_since(self.last_frame_time).as_secs_f32().max(0.001);
+                let dt = now
+                    .duration_since(self.last_frame_time)
+                    .as_secs_f32()
+                    .max(0.001);
                 self.last_frame_time = now;
 
                 // Apply weight matrix (audio features from background thread, plus time)
@@ -1952,18 +1947,26 @@ impl ApplicationHandler for App {
                     let time = self.start.elapsed().as_secs_f32();
                     let time_since_mutation = time - self.last_mutation_time;
                     self.random_walk += crate::weights::value_noise_pub(time * 0.3) * dt * 0.5;
-                    let time_signals = crate::weights::TimeSignals::compute(time, time_since_mutation, self.random_walk);
+                    let time_signals = crate::weights::TimeSignals::compute(
+                        time,
+                        time_since_mutation,
+                        self.random_walk,
+                    );
 
                     // Advance morph progress
                     let morph_dur = self.weights._config.morph_duration;
                     // morph_progress can exceed 1.0 so slow transforms finish
-                    let min_rate = self.morph_xf_rates.iter().copied()
+                    let min_rate = self
+                        .morph_xf_rates
+                        .iter()
+                        .copied()
                         .min_by(|a, b| a.partial_cmp(b).unwrap())
                         .unwrap_or(1.0)
                         .max(0.1);
                     let morph_done_at = 1.0 / min_rate; // e.g. 2.5 for rate=0.4
                     if self.morph_progress < morph_done_at {
-                        self.morph_progress = (self.morph_progress + dt / morph_dur).min(morph_done_at);
+                        self.morph_progress =
+                            (self.morph_progress + dt / morph_dur).min(morph_done_at);
                     }
                     let t = smoothstep(self.morph_progress.min(1.0));
 
@@ -1971,9 +1974,12 @@ impl ApplicationHandler for App {
                     let genome_globals = self.genome.flatten_globals(&self.weights._config);
                     let genome_xf = self.genome.flatten_transforms();
 
-                    for i in 0..20 {
-                        self.morph_base_globals[i] = self.morph_start_globals[i]
-                            + (genome_globals[i] - self.morph_start_globals[i]) * t;
+                    for (base, (start, target)) in self
+                        .morph_base_globals
+                        .iter_mut()
+                        .zip(self.morph_start_globals.iter().zip(genome_globals.iter()))
+                    {
+                        *base = start + (target - start) * t;
                     }
                     let max_len = self.morph_start_xf.len().max(genome_xf.len());
                     self.morph_base_xf.resize(max_len, 0.0);
@@ -1998,10 +2004,15 @@ impl ApplicationHandler for App {
 
                     // Apply audio modulation on top of morphed base
                     let modulated_globals = self.weights.apply_globals(
-                        &self.morph_base_globals, &self.audio_features, &time_signals,
+                        &self.morph_base_globals,
+                        &self.audio_features,
+                        &time_signals,
                     );
                     let modulated_xf = self.weights.apply_transforms(
-                        &self.morph_base_xf, self.num_transforms, &self.audio_features, &time_signals,
+                        &self.morph_base_xf,
+                        self.num_transforms,
+                        &self.audio_features,
+                        &time_signals,
                     );
 
                     // Set final values directly (morph handles smoothing)
@@ -2009,12 +2020,15 @@ impl ApplicationHandler for App {
                     self.xf_params = modulated_xf;
 
                     // Apply variation CRISPR — scale/zero out variations from config
-                    self.weights._config.apply_variation_scales(
-                        &mut self.xf_params, self.num_transforms,
-                    );
+                    self.weights
+                        ._config
+                        .apply_variation_scales(&mut self.xf_params, self.num_transforms);
 
                     // Auto-evolve when ALL transforms finish morphing (disabled when flame_locked)
-                    let all_morphed = self.morph_xf_rates.iter().all(|r| self.morph_progress * r >= 1.0)
+                    let all_morphed = self
+                        .morph_xf_rates
+                        .iter()
+                        .all(|r| self.morph_progress * r >= 1.0)
                         || self.morph_xf_rates.is_empty();
                     if !self.flame_locked && all_morphed {
                         let time_since_last = time - self.last_mutation_time;
@@ -2028,16 +2042,25 @@ impl ApplicationHandler for App {
                             // Breed two parents to produce offspring
                             let (pa, pb, community) = self.pick_breeding_parents();
                             self.genome = FlameGenome::mutate(
-                                &pa, &pb, &community,
+                                &pa,
+                                &pb,
+                                &community,
                                 &self.audio_features,
                                 &self.weights._config,
                                 &self.favorite_profile,
                                 &mut Some(&mut self.taste_engine),
                             );
-                            self.lineage_cache.register(&self.genome.name, &self.genome.parent_a, &self.genome.parent_b);
+                            self.lineage_cache.register(
+                                &self.genome.name,
+                                &self.genome.parent_a,
+                                &self.genome.parent_b,
+                            );
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
-                            eprintln!("[auto-evolve] → {} (gen {})", self.genome.name, self.genome.generation);
+                            eprintln!(
+                                "[auto-evolve] → {} (gen {})",
+                                self.genome.name, self.genome.generation
+                            );
                         }
                     }
 
@@ -2072,19 +2095,49 @@ impl ApplicationHandler for App {
                 let uniforms = Uniforms {
                     time: self.start.elapsed().as_secs_f32(),
                     frame: self.frame,
-                    resolution: [
-                        gpu.config.width as f32,
-                        gpu.config.height as f32,
-                    ],
+                    resolution: [gpu.config.width as f32, gpu.config.height as f32],
                     mouse: self.mouse,
                     transform_count: self.genome.transform_count(),
-                    has_final_xform: (if self.genome.final_transform.is_some() { 1u32 } else { 0u32 })
-                        | (self.weights._config.iterations_per_thread.clamp(10, 2000) << 16),
-                    globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
-                    kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
-                    extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
-                    extra2: [self.globals[12], self.globals[13], self.globals[14], self.globals[15]],
-                    extra3: [self.globals[16], self.globals[17], self.globals[18], self.globals[19]],
+                    has_final_xform: (if self.genome.final_transform.is_some() {
+                        1u32
+                    } else {
+                        0u32
+                    }) | (self
+                        .weights
+                        ._config
+                        .iterations_per_thread
+                        .clamp(10, 2000)
+                        << 16),
+                    globals: [
+                        self.globals[0],
+                        self.globals[1],
+                        self.globals[2],
+                        self.globals[3],
+                    ],
+                    kifs: [
+                        self.globals[4],
+                        self.globals[5],
+                        self.globals[6],
+                        self.globals[7],
+                    ],
+                    extra: [
+                        self.globals[8],
+                        self.globals[9],
+                        self.globals[10],
+                        self.genome.symmetry as f32,
+                    ],
+                    extra2: [
+                        self.globals[12],
+                        self.globals[13],
+                        self.globals[14],
+                        self.globals[15],
+                    ],
+                    extra3: [
+                        self.globals[16],
+                        self.globals[17],
+                        self.globals[18],
+                        self.globals[19],
+                    ],
                     extra4: [
                         self.weights._config.jitter_amount,
                         self.weights._config.tonemap_mode as f32,
@@ -2093,21 +2146,26 @@ impl ApplicationHandler for App {
                     ],
                     extra5: [
                         self.weights._config.dof_focal_distance,
-                        if self.weights._config.spectral_rendering { 1.0 } else { 0.0 },
+                        if self.weights._config.spectral_rendering {
+                            1.0
+                        } else {
+                            0.0
+                        },
                         self.weights._config.temporal_reprojection,
                         self.prev_zoom,
                     ],
                 };
 
-                gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+                gpu.queue
+                    .write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
                 self.prev_zoom = self.globals[1]; // zoom is globals[1]
 
                 // Adaptive compute budget: target ~4 effective transforms worth of work.
                 // Scale both workgroups AND iterations to keep frame time manageable
                 // while preserving point density (fewer iterations = same points, less work).
-                let effective_xforms = self.genome.transform_count() as u32
-                    * (self.genome.symmetry.unsigned_abs().max(1));
+                let effective_xforms =
+                    self.genome.transform_count() * (self.genome.symmetry.unsigned_abs().max(1));
                 let budget_baseline = 4u32;
                 let base_wg = self.weights._config.samples_per_frame;
                 let base_iters = self.weights._config.iterations_per_thread;
@@ -2118,19 +2176,28 @@ impl ApplicationHandler for App {
                     gpu.workgroups = (base_wg as f32 * sqrt_ratio).max(256.0) as u32;
                     // Pack scaled iterations into has_final_xform upper bits
                     let scaled_iters = (base_iters as f32 * sqrt_ratio).max(40.0) as u32;
-                    let has_final = if self.genome.final_transform.is_some() { 1u32 } else { 0u32 };
+                    let has_final = if self.genome.final_transform.is_some() {
+                        1u32
+                    } else {
+                        0u32
+                    };
                     let uniforms_patched = Uniforms {
                         has_final_xform: has_final | (scaled_iters.clamp(10, 2000) << 16),
                         ..uniforms
                     };
-                    gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms_patched));
+                    gpu.queue.write_buffer(
+                        &gpu.uniform_buffer,
+                        0,
+                        bytemuck::bytes_of(&uniforms_patched),
+                    );
                 } else {
                     gpu.workgroups = base_wg;
                 };
 
                 let xf_write_len = self.num_transforms * 42;
                 let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
-                gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
+                gpu.queue
+                    .write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
 
                 // Write accumulation uniforms — faster decay during morph transition
                 let base_decay = self.weights._config.accumulation_decay;
@@ -2177,16 +2244,24 @@ impl ApplicationHandler for App {
                 // Log to perf.log: every slow frame (<30fps) + periodic baseline every 300 frames
                 let ms_per_frame = dt * 1000.0;
                 let is_slow = ms_per_frame > 33.0;
-                let is_periodic = self.frame % 300 == 0;
-                if is_slow || is_periodic {
-                    if let Some(ref mut log) = self.perf_log {
-                        let tag = if is_slow { "SLOW" } else { "ok" };
-                        let _ = writeln!(log, "[{}] f={} {:.1}ms/f {:.0}fps wg={} morph={:.2} burst={} decay={:.3} | {}",
-                            tag, self.frame, ms_per_frame, 1.0 / dt.max(0.001),
-                            gpu.workgroups,
-                            self.morph_progress, self.morph_burst_frames, decay,
-                            self.genome.perf_summary());
-                    }
+                let is_periodic = self.frame.is_multiple_of(300);
+                if (is_slow || is_periodic)
+                    && let Some(ref mut log) = self.perf_log
+                {
+                    let tag = if is_slow { "SLOW" } else { "ok" };
+                    let _ = writeln!(
+                        log,
+                        "[{}] f={} {:.1}ms/f {:.0}fps wg={} morph={:.2} burst={} decay={:.3} | {}",
+                        tag,
+                        self.frame,
+                        ms_per_frame,
+                        1.0 / dt.max(0.001),
+                        gpu.workgroups,
+                        self.morph_progress,
+                        self.morph_burst_frames,
+                        decay,
+                        self.genome.perf_summary()
+                    );
                 }
 
                 if let Some(w) = &self.window {
@@ -2205,15 +2280,13 @@ fn main() {
 
     // Interactive device picker before opening the window
     let capture = match device_picker::run() {
-        device_picker::Selection::SystemAudio => {
-            match AudioCapture::new_system_audio() {
-                Ok(cap) => Some(cap),
-                Err(e) => {
-                    eprintln!("[audio] SCK capture failed: {e} (visuals-only mode)");
-                    None
-                }
+        device_picker::Selection::SystemAudio => match AudioCapture::new_system_audio() {
+            Ok(cap) => Some(cap),
+            Err(e) => {
+                eprintln!("[audio] SCK capture failed: {e} (visuals-only mode)");
+                None
             }
-        }
+        },
         device_picker::Selection::CpalDevice(device, is_input) => {
             match AudioCapture::from_device(device, is_input) {
                 Ok(cap) => Some(cap),

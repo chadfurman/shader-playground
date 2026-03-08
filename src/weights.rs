@@ -21,15 +21,15 @@ fn hash_f32(n: i32) -> f32 {
 }
 
 pub struct TimeSignals {
-    pub time: f32,           // raw elapsed time, steady linear ramp
-    pub time_slow: f32,      // noise at 0.05 speed, ~20s wander
-    pub time_med: f32,       // noise at 0.2 speed, ~5s wander
-    pub time_fast: f32,      // noise at 0.8 speed, ~1.25s wander
-    pub time_noise: f32,     // noise at 0.3 speed, organic wandering
-    pub time_drift: f32,     // noise at 0.02 speed, ~50s glacial drift
-    pub time_flutter: f32,   // noise at 1.5 speed, quick flicker
-    pub time_walk: f32,      // random walk — accumulated noise, never reverses
-    pub time_envelope: f32,  // time since last mutation, capped at 1.0
+    pub time: f32,          // raw elapsed time, steady linear ramp
+    pub time_slow: f32,     // noise at 0.05 speed, ~20s wander
+    pub time_med: f32,      // noise at 0.2 speed, ~5s wander
+    pub time_fast: f32,     // noise at 0.8 speed, ~1.25s wander
+    pub time_noise: f32,    // noise at 0.3 speed, organic wandering
+    pub time_drift: f32,    // noise at 0.02 speed, ~50s glacial drift
+    pub time_flutter: f32,  // noise at 1.5 speed, quick flicker
+    pub time_walk: f32,     // random walk — accumulated noise, never reverses
+    pub time_envelope: f32, // time since last mutation, capped at 1.0
 }
 
 impl TimeSignals {
@@ -53,20 +53,54 @@ pub fn value_noise_pub(t: f32) -> f32 {
     value_noise(t)
 }
 
-const AUDIO_SIGNAL_COUNT: f32 = 6.0;  // bass, mids, highs, energy, beat, beat_accum
-const TIME_SIGNAL_COUNT: f32 = 9.0;   // time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
+const AUDIO_SIGNAL_COUNT: f32 = 6.0; // bass, mids, highs, energy, beat, beat_accum
+const TIME_SIGNAL_COUNT: f32 = 9.0; // time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
 const PARAMS_PER_XF: usize = 42;
 
 /// Per-transform field names in order (matching genome flatten layout).
 const XF_FIELDS: [&str; PARAMS_PER_XF] = [
-    "weight", "a", "b", "c", "d", "offset_x", "offset_y", "color",
-    "linear", "sinusoidal", "spherical", "swirl", "horseshoe", "handkerchief",
-    "julia", "polar", "disc", "rings", "bubble", "fisheye",
-    "exponential", "spiral", "diamond", "bent", "waves", "popcorn",
-    "fan", "eyefish", "cross", "tangent", "cosine", "blob",
-    "noise", "curl",
-    "rings2_val", "blob_low", "blob_high", "blob_waves",
-    "julian_power", "julian_dist", "ngon_sides", "ngon_corners",
+    "weight",
+    "a",
+    "b",
+    "c",
+    "d",
+    "offset_x",
+    "offset_y",
+    "color",
+    "linear",
+    "sinusoidal",
+    "spherical",
+    "swirl",
+    "horseshoe",
+    "handkerchief",
+    "julia",
+    "polar",
+    "disc",
+    "rings",
+    "bubble",
+    "fisheye",
+    "exponential",
+    "spiral",
+    "diamond",
+    "bent",
+    "waves",
+    "popcorn",
+    "fan",
+    "eyefish",
+    "cross",
+    "tangent",
+    "cosine",
+    "blob",
+    "noise",
+    "curl",
+    "rings2_val",
+    "blob_low",
+    "blob_high",
+    "blob_waves",
+    "julian_power",
+    "julian_dist",
+    "ngon_sides",
+    "ngon_corners",
 ];
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -187,54 +221,150 @@ pub struct RuntimeConfig {
     pub taste_recent_memory: usize,
 }
 
-fn default_morph_duration() -> f32 { 8.0 }
-fn default_mutation_cooldown() -> f32 { 3.0 }
-fn default_workgroups() -> u32 { 512 }
-fn default_magnitude_min() -> f32 { 1.0 }
-fn default_magnitude_max() -> f32 { 5.0 }
-fn default_randomness_range() -> f32 { 1.0 }
-fn default_vibrancy() -> f32 { 0.7 }
-fn default_bloom_intensity() -> f32 { 0.05 }
-fn default_noise_displacement() -> f32 { 0.08 }
-fn default_curl_displacement() -> f32 { 0.05 }
-fn default_tangent_clamp() -> f32 { 4.0 }
-fn default_color_blend() -> f32 { 0.4 }  // lower = more color mixing between transforms
-fn default_spin_speed_max() -> f32 { 0.15 }
-fn default_position_drift() -> f32 { 0.08 }
-fn default_warmup_iters() -> f32 { 20.0 }
-fn default_gamma() -> f32 { 0.4545 }         // 1/2.2 — standard display gamma
-fn default_highlight_power() -> f32 { 2.0 }   // hot-spot glow intensity
-fn default_zoom_min() -> f32 { 1.0 }
-fn default_zoom_max() -> f32 { 5.0 }
-fn default_zoom_target() -> f32 { 3.0 }
-fn default_min_attractor_extent() -> f32 { 0.3 }
-fn default_max_mutation_retries() -> u32 { 5 }
-fn default_trail() -> f32 { 0.15 }                // temporal AA only — accumulation is primary persistence
-fn default_accumulation_decay() -> f32 { 0.9 }
-fn default_samples_per_frame() -> u32 { 256 }
-fn default_bloom_radius() -> f32 { 3.0 }
-fn default_seed_mutation_bias() -> f32 { 0.7 }
-fn default_fitness_bias_strength() -> f32 { 0.5 }
-fn default_drift_speed() -> f32 { 0.5 }
-fn default_velocity_blur_max() -> f32 { 24.0 }  // max directional blur length in pixels
-fn default_iterations_per_thread() -> u32 { 200 }  // chaos game iterations per GPU thread per frame
-fn default_morph_speed() -> f32 { 1.0 }            // global morph speed multiplier (affects all transforms)
-fn default_morph_stagger_count() -> u32 { 2 }      // max transforms to randomize (0 = all same speed)
-fn default_morph_stagger_min() -> f32 { 0.3 }      // slowest random morph rate
-fn default_morph_stagger_max() -> f32 { 0.6 }      // fastest random morph rate
-fn default_parent_current_bias() -> f32 { 0.30 }
-fn default_parent_voted_bias() -> f32 { 0.25 }
-fn default_parent_saved_bias() -> f32 { 0.25 }
-fn default_parent_random_bias() -> f32 { 0.20 }
-fn default_vote_blacklist_threshold() -> i32 { -2 }
-fn default_min_breeding_distance() -> u32 { 3 }
-fn default_max_lineage_depth() -> u32 { 8 }
-fn default_taste_min_votes() -> u32 { 10 }
-fn default_taste_strength() -> f32 { 0.5 }
-fn default_taste_exploration_rate() -> f32 { 0.1 }
-fn default_taste_diversity_penalty() -> f32 { 0.3 }
-fn default_taste_candidates() -> u32 { 20 }
-fn default_taste_recent_memory() -> usize { 5 }
+fn default_morph_duration() -> f32 {
+    8.0
+}
+fn default_mutation_cooldown() -> f32 {
+    3.0
+}
+fn default_workgroups() -> u32 {
+    512
+}
+fn default_magnitude_min() -> f32 {
+    1.0
+}
+fn default_magnitude_max() -> f32 {
+    5.0
+}
+fn default_randomness_range() -> f32 {
+    1.0
+}
+fn default_vibrancy() -> f32 {
+    0.7
+}
+fn default_bloom_intensity() -> f32 {
+    0.05
+}
+fn default_noise_displacement() -> f32 {
+    0.08
+}
+fn default_curl_displacement() -> f32 {
+    0.05
+}
+fn default_tangent_clamp() -> f32 {
+    4.0
+}
+fn default_color_blend() -> f32 {
+    0.4
+} // lower = more color mixing between transforms
+fn default_spin_speed_max() -> f32 {
+    0.15
+}
+fn default_position_drift() -> f32 {
+    0.08
+}
+fn default_warmup_iters() -> f32 {
+    20.0
+}
+fn default_gamma() -> f32 {
+    0.4545
+} // 1/2.2 — standard display gamma
+fn default_highlight_power() -> f32 {
+    2.0
+} // hot-spot glow intensity
+fn default_zoom_min() -> f32 {
+    1.0
+}
+fn default_zoom_max() -> f32 {
+    5.0
+}
+fn default_zoom_target() -> f32 {
+    3.0
+}
+fn default_min_attractor_extent() -> f32 {
+    0.3
+}
+fn default_max_mutation_retries() -> u32 {
+    5
+}
+fn default_trail() -> f32 {
+    0.15
+} // temporal AA only — accumulation is primary persistence
+fn default_accumulation_decay() -> f32 {
+    0.9
+}
+fn default_samples_per_frame() -> u32 {
+    256
+}
+fn default_bloom_radius() -> f32 {
+    3.0
+}
+fn default_seed_mutation_bias() -> f32 {
+    0.7
+}
+fn default_fitness_bias_strength() -> f32 {
+    0.5
+}
+fn default_drift_speed() -> f32 {
+    0.5
+}
+fn default_velocity_blur_max() -> f32 {
+    24.0
+} // max directional blur length in pixels
+fn default_iterations_per_thread() -> u32 {
+    200
+} // chaos game iterations per GPU thread per frame
+fn default_morph_speed() -> f32 {
+    1.0
+} // global morph speed multiplier (affects all transforms)
+fn default_morph_stagger_count() -> u32 {
+    2
+} // max transforms to randomize (0 = all same speed)
+fn default_morph_stagger_min() -> f32 {
+    0.3
+} // slowest random morph rate
+fn default_morph_stagger_max() -> f32 {
+    0.6
+} // fastest random morph rate
+fn default_parent_current_bias() -> f32 {
+    0.30
+}
+fn default_parent_voted_bias() -> f32 {
+    0.25
+}
+fn default_parent_saved_bias() -> f32 {
+    0.25
+}
+fn default_parent_random_bias() -> f32 {
+    0.20
+}
+fn default_vote_blacklist_threshold() -> i32 {
+    -2
+}
+fn default_min_breeding_distance() -> u32 {
+    3
+}
+fn default_max_lineage_depth() -> u32 {
+    8
+}
+fn default_taste_min_votes() -> u32 {
+    10
+}
+fn default_taste_strength() -> f32 {
+    0.5
+}
+fn default_taste_exploration_rate() -> f32 {
+    0.1
+}
+fn default_taste_diversity_penalty() -> f32 {
+    0.3
+}
+fn default_taste_candidates() -> u32 {
+    20
+}
+fn default_taste_recent_memory() -> usize {
+    5
+}
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 
@@ -242,10 +372,12 @@ impl RuntimeConfig {
     /// Apply variation_scales to a flattened transform buffer.
     /// Multiplies each variation weight by the corresponding scale (default 1.0).
     pub fn apply_variation_scales(&self, xf_buf: &mut [f32], num_transforms: usize) {
-        if self.variation_scales.is_empty() { return; }
+        if self.variation_scales.is_empty() {
+            return;
+        }
         for xf in 0..num_transforms {
-            for field_idx in VARIATION_START..PARAMS_PER_XF {
-                let name = XF_FIELDS[field_idx];
+            for (fi, &name) in XF_FIELDS[VARIATION_START..PARAMS_PER_XF].iter().enumerate() {
+                let field_idx = VARIATION_START + fi;
                 if let Some(&scale) = self.variation_scales.get(name) {
                     let buf_idx = xf * PARAMS_PER_XF + field_idx;
                     if buf_idx < xf_buf.len() {
@@ -295,8 +427,7 @@ pub struct Weights {
 
 impl Weights {
     pub fn load(path: &Path) -> Result<Self, String> {
-        let json =
-            fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let json = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
         serde_json::from_str(&json).map_err(|e| format!("parse {}: {e}", path.display()))
     }
 
@@ -319,9 +450,17 @@ impl Weights {
             (&self.time_fast, time_signals.time_fast, TIME_SIGNAL_COUNT),
             (&self.time_noise, time_signals.time_noise, TIME_SIGNAL_COUNT),
             (&self.time_drift, time_signals.time_drift, TIME_SIGNAL_COUNT),
-            (&self.time_flutter, time_signals.time_flutter, TIME_SIGNAL_COUNT),
+            (
+                &self.time_flutter,
+                time_signals.time_flutter,
+                TIME_SIGNAL_COUNT,
+            ),
             (&self.time_walk, time_signals.time_walk, TIME_SIGNAL_COUNT),
-            (&self.time_envelope, time_signals.time_envelope, TIME_SIGNAL_COUNT),
+            (
+                &self.time_envelope,
+                time_signals.time_envelope,
+                TIME_SIGNAL_COUNT,
+            ),
         ]
     }
 
@@ -334,10 +473,14 @@ impl Weights {
     ) -> [f32; 20] {
         let mut result = *base;
         let signals = self.signal_list(features, time_signals);
-        for (_signal_idx, (weights, signal_val, divisor)) in signals.iter().enumerate() {
+        for (weights, signal_val, divisor) in signals.iter() {
             for (name, &weight) in *weights {
-                if name == "mutation_rate" { continue; }
-                if name.starts_with("xf") { continue; } // transform params handled separately
+                if name == "mutation_rate" {
+                    continue;
+                }
+                if name.starts_with("xf") {
+                    continue;
+                } // transform params handled separately
                 if let Some(idx) = global_index(name) {
                     result[idx] += weight * signal_val / divisor;
                 }
@@ -356,9 +499,11 @@ impl Weights {
     ) -> Vec<f32> {
         let mut result = base.to_vec();
         let signals = self.signal_list(features, time_signals);
-        for (_signal_idx, (weights, signal_val, divisor)) in signals.iter().enumerate() {
+        for (weights, signal_val, divisor) in signals.iter() {
             for (name, &weight) in *weights {
-                if name == "mutation_rate" { continue; }
+                if name == "mutation_rate" {
+                    continue;
+                }
                 // xfN_ wildcard
                 if let Some(field) = name.strip_prefix("xfN_") {
                     if let Some(field_offset) = xf_field_index(field) {
@@ -366,26 +511,29 @@ impl Weights {
                             let idx = xf * PARAMS_PER_XF + field_offset;
                             if idx < result.len() {
                                 let r = transform_randomness(xf, self._config.randomness_range);
-                                let m = transform_magnitude(xf, self._config.magnitude_min, self._config.magnitude_max);
+                                let m = transform_magnitude(
+                                    xf,
+                                    self._config.magnitude_min,
+                                    self._config.magnitude_max,
+                                );
                                 result[idx] += weight * r * m * signal_val / divisor;
                             }
                         }
                     }
                 }
                 // Explicit xf0_, xf1_, etc. (no randomness — you targeted it specifically)
-                else if let Some((xf, field_offset)) = try_parse_xf(name) {
-                    if xf < num_transforms {
-                        let idx = xf * PARAMS_PER_XF + field_offset;
-                        if idx < result.len() {
-                            result[idx] += weight * signal_val / divisor;
-                        }
+                else if let Some((xf, field_offset)) = try_parse_xf(name)
+                    && xf < num_transforms
+                {
+                    let idx = xf * PARAMS_PER_XF + field_offset;
+                    if idx < result.len() {
+                        result[idx] += weight * signal_val / divisor;
                     }
                 }
             }
         }
         result
     }
-
 }
 
 /// Deterministic per-transform randomness seeded by transform index.

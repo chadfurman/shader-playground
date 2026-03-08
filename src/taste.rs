@@ -60,9 +60,11 @@ impl PaletteFeatures {
         // Saturation stats
         let avg_saturation = hsv.iter().map(|(_, s, _)| s).sum::<f32>() / hsv.len() as f32;
         let saturation_spread = {
-            let variance = hsv.iter()
+            let variance = hsv
+                .iter()
                 .map(|(_, s, _)| (s - avg_saturation).powi(2))
-                .sum::<f32>() / hsv.len() as f32;
+                .sum::<f32>()
+                / hsv.len() as f32;
             variance.sqrt()
         };
 
@@ -99,7 +101,8 @@ impl PaletteFeatures {
 
     /// Compute hue histogram overlap between two palettes (0 = no overlap, 1 = identical).
     pub fn hue_overlap(&self, other: &PaletteFeatures) -> f32 {
-        self.hue_histogram.iter()
+        self.hue_histogram
+            .iter()
             .zip(other.hue_histogram.iter())
             .map(|(a, b)| a.min(*b))
             .sum()
@@ -162,12 +165,11 @@ impl TasteModel {
     /// Score a palette's features against the model.
     /// Lower score = closer to "good" centroid = more tasteful.
     pub fn score(&self, features: &[f32]) -> f32 {
-        self.feature_means.iter()
+        self.feature_means
+            .iter()
             .zip(self.feature_stddevs.iter())
             .zip(features.iter())
-            .map(|((mean, stddev), val)| {
-                ((val - mean) / stddev).powi(2)
-            })
+            .map(|((mean, stddev), val)| ((val - mean) / stddev).powi(2))
             .sum()
     }
 }
@@ -193,11 +195,7 @@ impl TasteEngine {
 
     /// Rebuild the model from all voted/imported genomes.
     /// Call this on startup and whenever votes change.
-    pub fn rebuild(
-        &mut self,
-        good_genomes: &[&FlameGenome],
-        recent_memory: usize,
-    ) {
+    pub fn rebuild(&mut self, good_genomes: &[&FlameGenome], recent_memory: usize) {
         self.good_features.clear();
         for genome in good_genomes {
             if let Some(features) = PaletteFeatures::extract(genome) {
@@ -215,7 +213,8 @@ impl TasteEngine {
         if let Some(ref model) = self.model {
             eprintln!(
                 "[taste] model rebuilt: {} samples, {} features",
-                model.sample_count, model.feature_means.len()
+                model.sample_count,
+                model.feature_means.len()
             );
         }
     }
@@ -293,7 +292,9 @@ impl TasteEngine {
 
     /// Whether the model is active (has enough data to influence palettes).
     pub fn is_active(&self, min_votes: u32) -> bool {
-        self.model.as_ref().is_some_and(|m| m.sample_count >= min_votes)
+        self.model
+            .as_ref()
+            .is_some_and(|m| m.sample_count >= min_votes)
     }
 
     pub fn sample_count(&self) -> u32 {
@@ -325,9 +326,11 @@ fn palette_features(palette: &[[f32; 3]]) -> PaletteFeatures {
 
     let avg_saturation = hsv.iter().map(|(_, s, _)| s).sum::<f32>() / hsv.len() as f32;
     let saturation_spread = {
-        let variance = hsv.iter()
+        let variance = hsv
+            .iter()
             .map(|(_, s, _)| (s - avg_saturation).powi(2))
-            .sum::<f32>() / hsv.len() as f32;
+            .sum::<f32>()
+            / hsv.len() as f32;
         variance.sqrt()
     };
 
@@ -364,8 +367,8 @@ fn count_hue_clusters(histogram: &[f32; HUE_BINS]) -> f32 {
     // Check if the histogram wraps (last and first bins both non-zero)
     let wraps = histogram[0] > 0.01 && histogram[HUE_BINS - 1] > 0.01;
 
-    for i in 0..HUE_BINS {
-        if histogram[i] > 0.01 {
+    for bin in histogram {
+        if *bin > 0.01 {
             if !in_cluster {
                 clusters += 1;
                 in_cluster = true;

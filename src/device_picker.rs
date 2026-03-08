@@ -52,7 +52,10 @@ fn build_device_list() -> Vec<LiveDevice> {
     // Input devices
     if let Ok(inputs) = host.input_devices() {
         for d in inputs {
-            let name = d.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "???".into());
+            let name = d
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| "???".into());
             devices.push(LiveDevice {
                 name,
                 kind: "input",
@@ -68,7 +71,10 @@ fn build_device_list() -> Vec<LiveDevice> {
     // Output devices (loopback)
     if let Ok(outputs) = host.output_devices() {
         for d in outputs {
-            let name = d.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "???".into());
+            let name = d
+                .description()
+                .map(|d| d.name().to_string())
+                .unwrap_or_else(|_| "???".into());
             devices.push(LiveDevice {
                 name,
                 kind: "loopback",
@@ -89,7 +95,9 @@ fn start_level_captures(devices: &mut [LiveDevice]) {
         if dev.is_sck {
             continue;
         }
-        let Some(ref device) = dev.device else { continue };
+        let Some(ref device) = dev.device else {
+            continue;
+        };
         let config = if dev.is_input {
             device.default_input_config().ok()
         } else {

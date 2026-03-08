@@ -53,11 +53,14 @@ impl VoteLedger {
                     format!("{}/{}.json", genomes_dir.display(), genome.name)
                 }
             };
-            self.entries.insert(key.clone(), VoteEntry {
-                score: 0,
-                file: file_path,
-                last_seen: today(),
-            });
+            self.entries.insert(
+                key.clone(),
+                VoteEntry {
+                    score: 0,
+                    file: file_path,
+                    last_seen: today(),
+                },
+            );
         }
 
         let entry = self.entries.get_mut(&key).unwrap();
@@ -77,16 +80,12 @@ impl VoteLedger {
     /// Only includes genomes with positive scores (score > 0).
     /// Weight = score, so score 1 = weight 1, score 3 = weight 3.
     pub fn pick_voted(&self, _threshold: i32) -> Option<PathBuf> {
-        let eligible: Vec<_> = self.entries.iter()
-            .filter(|(_, e)| e.score > 0)
-            .collect();
+        let eligible: Vec<_> = self.entries.iter().filter(|(_, e)| e.score > 0).collect();
         if eligible.is_empty() {
             return None;
         }
 
-        let total_weight: f32 = eligible.iter()
-            .map(|(_, e)| e.score.max(1) as f32)
-            .sum();
+        let total_weight: f32 = eligible.iter().map(|(_, e)| e.score.max(1) as f32).sum();
         if total_weight <= 0.0 {
             return None;
         }
@@ -109,7 +108,11 @@ impl VoteLedger {
     /// Excludes any genome with a negative vote score.
     /// Pick a random genome from saved genomes + seeds (unweighted).
     /// Excludes any genome with a negative vote score.
-    pub fn pick_random_saved(genomes_dir: &Path, _threshold: i32, ledger: &VoteLedger) -> Option<PathBuf> {
+    pub fn pick_random_saved(
+        genomes_dir: &Path,
+        _threshold: i32,
+        ledger: &VoteLedger,
+    ) -> Option<PathBuf> {
         use rand::prelude::IndexedRandom;
 
         // Scan both genomes/ and genomes/seeds/ for diverse pool
@@ -120,13 +123,14 @@ impl VoteLedger {
                 for e in read.filter_map(|e| e.ok()) {
                     let path = e.path();
                     if !path.is_file()
-                        || !path.extension().is_some_and(|ext| ext == "json")
+                        || path.extension().is_none_or(|ext| ext != "json")
                         || path.file_name().is_some_and(|n| n == "votes.json")
                     {
                         continue;
                     }
                     // Exclude negatively-scored genomes
-                    let stem = path.file_stem()
+                    let stem = path
+                        .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("")
                         .to_string();
@@ -172,16 +176,13 @@ impl LineageCache {
                 for entry in read.filter_map(|e| e.ok()) {
                     let path = entry.path();
                     if !path.is_file()
-                        || !path.extension().is_some_and(|ext| ext == "json")
+                        || path.extension().is_none_or(|ext| ext != "json")
                         || path.file_name().is_some_and(|n| n == "votes.json")
                     {
                         continue;
                     }
                     if let Ok(genome) = FlameGenome::load(&path) {
-                        parents.insert(
-                            genome.name.clone(),
-                            (genome.parent_a, genome.parent_b),
-                        );
+                        parents.insert(genome.name.clone(), (genome.parent_a, genome.parent_b));
                     }
                 }
             }
@@ -191,7 +192,8 @@ impl LineageCache {
 
     /// Register a genome's lineage (call after breeding/saving a new genome).
     pub fn register(&mut self, name: &str, parent_a: &Option<String>, parent_b: &Option<String>) {
-        self.parents.insert(name.to_string(), (parent_a.clone(), parent_b.clone()));
+        self.parents
+            .insert(name.to_string(), (parent_a.clone(), parent_b.clone()));
     }
 
     /// Compute genetic distance between two genomes.

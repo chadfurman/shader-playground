@@ -1,0 +1,25 @@
+#!/bin/sh
+# Pre-commit hook: format, lint, test
+
+echo "[pre-commit] Running cargo fmt --check..."
+cargo fmt --check
+if [ $? -ne 0 ]; then
+    echo "[pre-commit] FAILED: cargo fmt. Run 'cargo fmt' to fix."
+    exit 1
+fi
+
+echo "[pre-commit] Running cargo clippy..."
+cargo clippy -- -D warnings
+if [ $? -ne 0 ]; then
+    echo "[pre-commit] FAILED: cargo clippy. Fix warnings above."
+    exit 1
+fi
+
+echo "[pre-commit] Running cargo test..."
+cargo test
+if [ $? -ne 0 ]; then
+    echo "[pre-commit] FAILED: tests. Fix failing tests above."
+    exit 1
+fi
+
+echo "[pre-commit] All checks passed."
