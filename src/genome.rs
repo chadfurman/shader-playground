@@ -245,6 +245,25 @@ impl FlameTransform {
             _ => {}
         }
     }
+
+    pub fn random_transform(rng: &mut impl Rng) -> Self {
+        let mut xf = Self::default();
+        xf.weight = rng.random::<f32>() * 0.5 + 0.1;
+        xf.a = rng.random::<f32>() * 2.0 - 1.0;
+        xf.b = rng.random::<f32>() * 2.0 - 1.0;
+        xf.c = rng.random::<f32>() * 2.0 - 1.0;
+        xf.d = rng.random::<f32>() * 2.0 - 1.0;
+        xf.offset = [
+            rng.random::<f32>() * 2.0 - 1.0,
+            rng.random::<f32>() * 2.0 - 1.0,
+        ];
+        xf.color = rng.random::<f32>();
+        // Set one random variation to 1.0
+        let var_idx = rng.random_range(0..VARIATION_COUNT);
+        xf.set_variation(var_idx, 1.0);
+        if var_idx != 0 { xf.linear = 0.0; }
+        xf
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -625,21 +644,86 @@ impl FlameGenome {
         zoom.clamp(cfg.zoom_min, cfg.zoom_max)
     }
 
-    pub fn mutate(&self, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>) -> Self {
-        // Seed-biased mutation: sometimes start from a random seed genome
+    /// Per-transform crossover: each transform independently picks its source
+    /// from 4 weighted pools: current, voted, saved, random.
+    pub fn crossover(
+        &self,
+        voted: &Option<FlameGenome>,
+        saved: &Option<FlameGenome>,
+        cfg: &crate::weights::RuntimeConfig,
+    ) -> Self {
         let mut rng = rand::rng();
-        let base = if rng.random::<f32>() < cfg.seed_mutation_bias {
-            let seeds_dir = crate::project_dir().join("genomes").join("seeds");
-            match FlameGenome::load_random(&seeds_dir) {
-                Ok(seed) => {
-                    eprintln!("[mutate] starting from seed: {}", seed.name);
-                    seed
-                }
-                Err(_) => self.clone(),
-            }
+        let mut child = self.clone();
+
+        // Normalize biases to sum to 1.0
+        let total = cfg.parent_current_bias + cfg.parent_voted_bias
+            + cfg.parent_saved_bias + cfg.parent_random_bias;
+        let (b_current, b_voted, b_saved) = if total > 0.0 {
+            (
+                cfg.parent_current_bias / total,
+                cfg.parent_voted_bias / total,
+                cfg.parent_saved_bias / total,
+            )
         } else {
-            self.clone()
+            (1.0, 0.0, 0.0)
         };
+
+        let n_current = self.transforms.len();
+        let n_voted = voted.as_ref().map_or(0, |g| g.transforms.len());
+        let n_saved = saved.as_ref().map_or(0, |g| g.transforms.len());
+        let max_xf = n_current.max(n_voted).max(n_saved).max(3);
+
+        // Resize child transforms
+        while child.transforms.len() < max_xf {
+            child.transforms.push(FlameTransform::random_transform(&mut rng));
+        }
+        child.transforms.truncate(max_xf);
+
+        for i in 0..child.transforms.len() {
+            let roll: f32 = rng.random();
+
+            if roll < b_current {
+                if i < self.transforms.len() {
+                    child.transforms[i] = self.transforms[i].clone();
+                }
+            } else if roll < b_current + b_voted {
+                if let Some(g) = voted {
+                    if i < g.transforms.len() {
+                        child.transforms[i] = g.transforms[i].clone();
+                    }
+                }
+            } else if roll < b_current + b_voted + b_saved {
+                if let Some(g) = saved {
+                    if i < g.transforms.len() {
+                        child.transforms[i] = g.transforms[i].clone();
+                    }
+                }
+            }
+            // else: keep the random transform (fresh random seed)
+        }
+
+        // Palette crossover — probabilistic based on source weights
+        if let Some(g) = voted {
+            if g.palette.is_some() && rng.random::<f32>() < b_voted {
+                child.palette = g.palette.clone();
+            }
+        }
+        if child.palette == self.palette {
+            if let Some(g) = saved {
+                if g.palette.is_some() && rng.random::<f32>() < b_saved {
+                    child.palette = g.palette.clone();
+                }
+            }
+        }
+
+        child.name = format!("crossover-{}", rng.random_range(1000..9999u32));
+        child
+    }
+
+    pub fn mutate(&self, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>, voted_parent: &Option<FlameGenome>, saved_parent: &Option<FlameGenome>) -> Self {
+        let mut rng = rand::rng();
+        // Per-transform crossover from multiple sources
+        let base = self.crossover(voted_parent, saved_parent, cfg);
 
         let retries = cfg.max_mutation_retries.max(1);
         for attempt in 0..retries {
