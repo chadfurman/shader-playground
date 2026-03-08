@@ -141,6 +141,9 @@ impl FlameBuilder {
             final_transform: self.final_transform,
             symmetry: self.symmetry,
             palette: self.palette,
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
         }
     }
 }

@@ -226,6 +226,12 @@ impl FlameTransform {
         }
     }
 
+    fn clear_variations(&mut self) {
+        for i in 0..VARIATION_COUNT {
+            self.set_variation(i, 0.0);
+        }
+    }
+
     fn set_variation(&mut self, idx: usize, val: f32) {
         match idx {
             0 => self.linear = val, 1 => self.sinusoidal = val, 2 => self.spherical = val,
@@ -290,6 +296,13 @@ pub struct FlameGenome {
     /// 256 RGB entries for the color palette, or None for cosine fallback.
     #[serde(default)]
     pub palette: Option<Vec<[f32; 3]>>,
+    /// Lineage tracking for breeding system
+    #[serde(default)]
+    pub parent_a: Option<String>,
+    #[serde(default)]
+    pub parent_b: Option<String>,
+    #[serde(default)]
+    pub generation: u32,
 }
 
 fn default_symmetry() -> i32 { 1 }
@@ -514,6 +527,9 @@ impl FlameGenome {
             final_transform: None,
             symmetry: 1,
             palette: Some(generate_random_palette()),
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
         }
     }
 
@@ -639,101 +655,188 @@ impl FlameGenome {
         zoom.clamp(cfg.zoom_min, cfg.zoom_max)
     }
 
-    /// Per-transform crossover: each transform independently picks its source
-    /// from 4 weighted pools: current, voted, saved, random.
-    pub fn crossover(
-        &self,
-        voted: &Option<FlameGenome>,
-        saved: &Option<FlameGenome>,
-        cfg: &crate::weights::RuntimeConfig,
+    /// Breed two parent genomes to produce a child.
+    /// Builds the child from scratch — no cloning from either parent.
+    ///
+    /// Transform sources:
+    ///   1 wildcard (fresh random)
+    ///   25% from Parent A
+    ///   25% from Parent B
+    ///   25% from community pool (voted/imported)
+    ///   25% random environment (audio-biased)
+    ///
+    /// Always generates a fresh palette (taste engine placeholder).
+    pub fn breed(
+        parent_a: &FlameGenome,
+        parent_b: &FlameGenome,
+        community: &Option<FlameGenome>,
+        audio: &AudioFeatures,
+        _cfg: &crate::weights::RuntimeConfig,
+        _profile: &Option<FavoriteProfile>,
     ) -> Self {
+        use rand::prelude::SliceRandom;
+        use rand::Rng;
         let mut rng = rand::rng();
-        let mut child = self.clone();
 
-        // Normalize biases to sum to 1.0
-        let total = cfg.parent_current_bias + cfg.parent_voted_bias
-            + cfg.parent_saved_bias + cfg.parent_random_bias;
-        let (b_current, b_voted, b_saved) = if total > 0.0 {
-            (
-                cfg.parent_current_bias / total,
-                cfg.parent_voted_bias / total,
-                cfg.parent_saved_bias / total,
-            )
+        // Child transform count: average of parents ±1, clamped to 3..=6
+        let avg_xf = (parent_a.transforms.len() + parent_b.transforms.len()) / 2;
+        let child_count = (avg_xf as i32 + rng.random_range(-1..=1))
+            .clamp(3, 6) as usize;
+
+        // Build transform slots
+        let mut transforms = Vec::with_capacity(child_count);
+
+        // Slot indices: shuffle and assign sources
+        let mut slots: Vec<usize> = (0..child_count).collect();
+        slots.shuffle(&mut rng);
+
+        // First slot is always wildcard
+        let _wildcard_slot = slots[0];
+
+        // Split remaining slots into 4 groups
+        let remaining = &slots[1..];
+        let group_size = remaining.len() / 4;
+        let leftover = remaining.len() % 4;
+
+        // Assign group boundaries (distribute leftover evenly)
+        let mut boundaries = vec![0usize];
+        for i in 0..4 {
+            let extra = if i < leftover { 1 } else { 0 };
+            boundaries.push(boundaries.last().unwrap() + group_size + extra);
+        }
+
+        let group_a = &remaining[boundaries[0]..boundaries[1]];
+        let group_b = &remaining[boundaries[1]..boundaries[2]];
+        let group_community = &remaining[boundaries[2]..boundaries[3]];
+        let group_env = &remaining[boundaries[3]..boundaries[4]];
+
+        // Fill all slots with placeholders first
+        for _ in 0..child_count {
+            transforms.push(FlameTransform::random_transform(&mut rng));
+        }
+
+        // Wildcard: already random from above
+
+        // Group A: transforms from Parent A
+        for &slot in group_a {
+            if !parent_a.transforms.is_empty() {
+                let src_idx = rng.random_range(0..parent_a.transforms.len());
+                transforms[slot] = parent_a.transforms[src_idx].clone();
+            }
+        }
+
+        // Group B: transforms from Parent B
+        for &slot in group_b {
+            if !parent_b.transforms.is_empty() {
+                let src_idx = rng.random_range(0..parent_b.transforms.len());
+                transforms[slot] = parent_b.transforms[src_idx].clone();
+            }
+        }
+
+        // Group Community: transforms from community genome
+        for &slot in group_community {
+            if let Some(g) = community {
+                if !g.transforms.is_empty() {
+                    let src_idx = rng.random_range(0..g.transforms.len());
+                    transforms[slot] = g.transforms[src_idx].clone();
+                }
+            }
+            // If no community genome, keeps the random transform
+        }
+
+        // Group Environment: audio-biased random transforms
+        for &slot in group_env {
+            let mut xf = FlameTransform::random_transform(&mut rng);
+            // Override variation with audio-biased pick
+            xf.clear_variations();
+            let var_idx = audio_biased_variation_pick(&mut rng, audio);
+            xf.set_variation(var_idx, 1.0);
+            if var_idx != 0 { xf.linear = 0.0; }
+            transforms[slot] = xf;
+        }
+
+        // Symmetry: random pick from either parent
+        let symmetry = if rng.random::<bool>() {
+            parent_a.symmetry
         } else {
-            (1.0, 0.0, 0.0)
+            parent_b.symmetry
         };
 
-        let n_current = self.transforms.len();
-        let n_voted = voted.as_ref().map_or(0, |g| g.transforms.len());
-        let n_saved = saved.as_ref().map_or(0, |g| g.transforms.len());
-        let max_xf = n_current.max(n_voted).max(n_saved).max(3);
+        // Global params: blend from both parents
+        let blend: f32 = rng.random();
+        let global = GlobalParams {
+            speed: parent_a.global.speed * blend + parent_b.global.speed * (1.0 - blend),
+            zoom: parent_a.global.zoom * blend + parent_b.global.zoom * (1.0 - blend),
+            trail: parent_a.global.trail * blend + parent_b.global.trail * (1.0 - blend),
+            flame_brightness: parent_a.global.flame_brightness * blend
+                + parent_b.global.flame_brightness * (1.0 - blend),
+        };
 
-        // Resize child transforms
-        while child.transforms.len() < max_xf {
-            child.transforms.push(FlameTransform::random_transform(&mut rng));
-        }
-        child.transforms.truncate(max_xf);
+        // Always fresh palette (taste engine placeholder)
+        let palette = Some(generate_random_palette());
 
-        for i in 0..child.transforms.len() {
-            let roll: f32 = rng.random();
+        let gen_a = parent_a.generation;
+        let gen_b = parent_b.generation;
 
-            if roll < b_current {
-                if i < self.transforms.len() {
-                    child.transforms[i] = self.transforms[i].clone();
-                }
-            } else if roll < b_current + b_voted {
-                if let Some(g) = voted {
-                    if i < g.transforms.len() {
-                        child.transforms[i] = g.transforms[i].clone();
-                    }
-                }
-            } else if roll < b_current + b_voted + b_saved {
-                if let Some(g) = saved {
-                    if i < g.transforms.len() {
-                        child.transforms[i] = g.transforms[i].clone();
-                    }
-                }
-            }
-            // else: keep the random transform (fresh random seed)
-        }
+        let mut child = FlameGenome {
+            name: format!("child-{}", rng.random_range(1000..9999u32)),
+            global,
+            kifs: parent_a.kifs.clone(),
+            transforms,
+            final_transform: if rng.random::<bool>() {
+                parent_a.final_transform.clone()
+            } else {
+                parent_b.final_transform.clone()
+            },
+            symmetry,
+            palette,
+            parent_a: Some(parent_a.name.clone()),
+            parent_b: Some(parent_b.name.clone()),
+            generation: gen_a.max(gen_b) + 1,
+        };
 
-        // Palette crossover — probabilistic based on source weights
-        if let Some(g) = voted {
-            if g.palette.is_some() && rng.random::<f32>() < b_voted {
-                child.palette = g.palette.clone();
-            }
-        }
-        if child.palette == self.palette {
-            if let Some(g) = saved {
-                if g.palette.is_some() && rng.random::<f32>() < b_saved {
-                    child.palette = g.palette.clone();
-                }
-            }
-        }
+        // Normalize like Electric Sheep does
+        child.normalize_variations();
+        child.normalize_weights();
+        child.distribute_colors();
 
-        child.name = format!("crossover-{}", rng.random_range(1000..9999u32));
+        eprintln!(
+            "[breed] {} × {} → {} (gen {}), {} transforms",
+            parent_a.name, parent_b.name, child.name,
+            child.generation, child.transforms.len()
+        );
+
         child
     }
 
-    pub fn mutate(&self, audio: &AudioFeatures, cfg: &crate::weights::RuntimeConfig, profile: &Option<FavoriteProfile>, voted_parent: &Option<FlameGenome>, saved_parent: &Option<FlameGenome>) -> Self {
-        // Per-transform crossover from multiple sources
-        let base = self.crossover(voted_parent, saved_parent, cfg);
-
+    /// Breed + mutate to produce offspring. Retries if attractor is degenerate.
+    pub fn mutate(
+        parent_a: &FlameGenome,
+        parent_b: &FlameGenome,
+        community: &Option<FlameGenome>,
+        audio: &AudioFeatures,
+        cfg: &crate::weights::RuntimeConfig,
+        profile: &Option<FavoriteProfile>,
+    ) -> Self {
         let retries = cfg.max_mutation_retries.max(1);
         for attempt in 0..retries {
-            let child = base.mutate_inner(audio, cfg, profile);
+            let bred = FlameGenome::breed(parent_a, parent_b, community, audio, cfg, profile);
+            let child = bred.mutate_inner(audio, cfg, profile);
             let extent = child.estimate_attractor_extent();
             if extent > cfg.min_attractor_extent {
                 let mut result = child;
+                result.parent_a = bred.parent_a;
+                result.parent_b = bred.parent_b;
+                result.generation = bred.generation;
                 result.global.zoom = result.auto_zoom(cfg);
                 return result;
             }
             if attempt < retries - 1 {
-                eprintln!("[mutate] attempt {} rejected (attractor extent={:.3}), retrying", attempt + 1, extent);
+                eprintln!("[mutate] attempt {} rejected (extent={:.3}), retrying", attempt + 1, extent);
             }
         }
-        eprintln!("[mutate] all attempts degenerate, keeping parent");
-        let mut result = self.clone();
+        eprintln!("[mutate] all attempts degenerate, keeping parent A");
+        let mut result = parent_a.clone();
         result.name = format!("mutant-{}", rand::rng().random_range(1000..9999u32));
         result.global.zoom = result.auto_zoom(cfg);
         result

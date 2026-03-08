@@ -1482,18 +1482,52 @@ impl App {
         }
     }
 
-    /// Pick voted and saved parent genomes for crossover mutation.
-    fn pick_crossover_parents(&self) -> (Option<FlameGenome>, Option<FlameGenome>) {
+    /// Pick two parents for breeding + a community genome.
+    /// Tries to pick genetically diverse parents.
+    fn pick_breeding_parents(&self) -> (FlameGenome, FlameGenome, Option<FlameGenome>) {
         let genomes_dir = project_dir().join("genomes");
         let threshold = self.weights._config.vote_blacklist_threshold;
 
-        let voted = self.vote_ledger.pick_voted(threshold)
-            .and_then(|p| FlameGenome::load(&p).ok());
+        // Parent A: prefer voted genome, fallback to random saved
+        let parent_a = self.vote_ledger.pick_voted(threshold)
+            .and_then(|p| FlameGenome::load(&p).ok())
+            .or_else(|| VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+                .and_then(|p| FlameGenome::load(&p).ok()))
+            .unwrap_or_else(|| self.genome.clone());
 
-        let saved = VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
-            .and_then(|p| FlameGenome::load(&p).ok());
+        // Parent B: prefer a different source than A for diversity
+        // Try random saved first, then voted, then imported flame
+        let parent_b = VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+            .and_then(|p| FlameGenome::load(&p).ok())
+            .filter(|g| g.name != parent_a.name) // avoid self-breeding
+            .or_else(|| {
+                // Try imported flame for maximum diversity
+                let flames_dir = project_dir().join("genomes").join("flames");
+                crate::flam3::load_random_flame(&flames_dir).ok()
+            })
+            .or_else(|| {
+                // Try seeds
+                let seeds_dir = project_dir().join("genomes").join("seeds");
+                FlameGenome::load_random(&seeds_dir).ok()
+            })
+            .unwrap_or_else(|| {
+                // Last resort: random seed genome
+                let mut g = FlameGenome::default_genome();
+                g.name = format!("seed-{}", rand::Rng::random_range(&mut rand::rng(), 1000..9999u32));
+                g
+            });
 
-        (voted, saved)
+        // Community genome: pick from imported flames or voted pool
+        let community = {
+            let flames_dir = project_dir().join("genomes").join("flames");
+            crate::flam3::load_random_flame(&flames_dir).ok()
+                .or_else(|| self.vote_ledger.pick_voted(threshold)
+                    .and_then(|p| FlameGenome::load(&p).ok()))
+                .or_else(|| VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
+                    .and_then(|p| FlameGenome::load(&p).ok()))
+        };
+
+        (parent_a, parent_b, community)
     }
 
     /// Begin morphing toward the current genome. Captures current base as start point.
@@ -1716,8 +1750,8 @@ impl ApplicationHandler for App {
                         self.genome_history.remove(0);
                     }
                     self.flame_locked = false; // unlock on manual mutate
-                    let (voted, saved) = self.pick_crossover_parents();
-                    self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile, &voted, &saved);
+                    let (pa, pb, community) = self.pick_breeding_parents();
+                    self.genome = FlameGenome::mutate(&pa, &pb, &community, &self.audio_features, &self.weights._config, &self.favorite_profile);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
                     eprintln!("[evolve] → {}", self.genome.name);
@@ -1916,28 +1950,13 @@ impl ApplicationHandler for App {
                                 self.genome_history.remove(0);
                             }
 
-                            // Screen time weighting: sometimes start from a voted genome
-                            // instead of current — probability = parent_voted_bias
-                            let threshold = self.weights._config.vote_blacklist_threshold;
-                            let base = if rand::random::<f32>() < self.weights._config.parent_voted_bias {
-                                self.vote_ledger.pick_voted(threshold)
-                                    .and_then(|p| FlameGenome::load(&p).ok())
-                                    .map(|picked| {
-                                        eprintln!("[screen-time] showing voted genome: {}", picked.name);
-                                        picked
-                                    })
-                                    .unwrap_or_else(|| self.genome.clone())
-                            } else {
-                                self.genome.clone()
-                            };
-
-                            let (voted, saved) = self.pick_crossover_parents();
-                            self.genome = base.mutate(
+                            // Breed two parents to produce offspring
+                            let (pa, pb, community) = self.pick_breeding_parents();
+                            self.genome = FlameGenome::mutate(
+                                &pa, &pb, &community,
                                 &self.audio_features,
                                 &self.weights._config,
                                 &self.favorite_profile,
-                                &voted,
-                                &saved,
                             );
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
