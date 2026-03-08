@@ -303,7 +303,7 @@ impl TasteEngine {
 }
 
 /// Extract palette features from a raw palette (no genome wrapper needed).
-fn palette_features(palette: &[[f32; 3]]) -> PaletteFeatures {
+pub(crate) fn palette_features(palette: &[[f32; 3]]) -> PaletteFeatures {
     // Convert to HSV
     let hsv: Vec<(f32, f32, f32)> = palette.iter().map(|rgb| rgb_to_hsv(*rgb)).collect();
 
@@ -361,7 +361,7 @@ fn palette_features_from_slice(palette: &[[f32; 3]]) -> Option<PaletteFeatures> 
 
 /// Count distinct hue clusters in the histogram.
 /// A cluster is a contiguous group of non-empty bins (wrapping around).
-fn count_hue_clusters(histogram: &[f32; HUE_BINS]) -> f32 {
+pub(crate) fn count_hue_clusters(histogram: &[f32; HUE_BINS]) -> f32 {
     let mut clusters = 0u32;
     let mut in_cluster = false;
     // Check if the histogram wraps (last and first bins both non-zero)
@@ -387,7 +387,7 @@ fn count_hue_clusters(histogram: &[f32; HUE_BINS]) -> f32 {
 }
 
 /// Convert RGB [0..1] to HSV (hue in degrees 0..360, s/v in 0..1).
-fn rgb_to_hsv(rgb: [f32; 3]) -> (f32, f32, f32) {
+pub(crate) fn rgb_to_hsv(rgb: [f32; 3]) -> (f32, f32, f32) {
     let r = rgb[0];
     let g = rgb[1];
     let b = rgb[2];
@@ -412,4 +412,246 @@ fn rgb_to_hsv(rgb: [f32; 3]) -> (f32, f32, f32) {
     let h = if h < 0.0 { h + 360.0 } else { h };
 
     (h, s, v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < 0.01
+    }
+
+    // --- RGB/HSV tests ---
+
+    #[test]
+    fn rgb_to_hsv_pure_red() {
+        let (h, s, v) = rgb_to_hsv([1.0, 0.0, 0.0]);
+        assert!(approx_eq(h, 0.0), "hue was {h}");
+        assert!(approx_eq(s, 1.0), "sat was {s}");
+        assert!(approx_eq(v, 1.0), "val was {v}");
+    }
+
+    #[test]
+    fn rgb_to_hsv_pure_green() {
+        let (h, _s, _v) = rgb_to_hsv([0.0, 1.0, 0.0]);
+        assert!(approx_eq(h, 120.0), "hue was {h}");
+    }
+
+    #[test]
+    fn rgb_to_hsv_pure_blue() {
+        let (h, _s, _v) = rgb_to_hsv([0.0, 0.0, 1.0]);
+        assert!(approx_eq(h, 240.0), "hue was {h}");
+    }
+
+    #[test]
+    fn rgb_to_hsv_white() {
+        let (_h, s, v) = rgb_to_hsv([1.0, 1.0, 1.0]);
+        assert!(approx_eq(s, 0.0), "sat was {s}");
+        assert!(approx_eq(v, 1.0), "val was {v}");
+    }
+
+    #[test]
+    fn rgb_to_hsv_black() {
+        let (_h, s, v) = rgb_to_hsv([0.0, 0.0, 0.0]);
+        assert!(approx_eq(s, 0.0), "sat was {s}");
+        assert!(approx_eq(v, 0.0), "val was {v}");
+    }
+
+    #[test]
+    fn rgb_to_hsv_gray() {
+        let (_h, s, v) = rgb_to_hsv([0.5, 0.5, 0.5]);
+        assert!(approx_eq(s, 0.0), "sat was {s}");
+        assert!(approx_eq(v, 0.5), "val was {v}");
+    }
+
+    // --- Hue cluster tests ---
+
+    #[test]
+    fn hue_clusters_single_bin() {
+        let mut histogram = [0.0f32; HUE_BINS];
+        histogram[3] = 1.0;
+        assert!(approx_eq(count_hue_clusters(&histogram), 1.0));
+    }
+
+    #[test]
+    fn hue_clusters_two_separated() {
+        let mut histogram = [0.0f32; HUE_BINS];
+        histogram[1] = 0.5;
+        histogram[7] = 0.5;
+        assert!(approx_eq(count_hue_clusters(&histogram), 2.0));
+    }
+
+    #[test]
+    fn hue_clusters_adjacent_is_one() {
+        let mut histogram = [0.0f32; HUE_BINS];
+        histogram[3] = 0.3;
+        histogram[4] = 0.4;
+        histogram[5] = 0.3;
+        assert!(approx_eq(count_hue_clusters(&histogram), 1.0));
+    }
+
+    #[test]
+    fn hue_clusters_wrapping() {
+        let mut histogram = [0.0f32; HUE_BINS];
+        histogram[0] = 0.5;
+        histogram[11] = 0.5;
+        assert!(approx_eq(count_hue_clusters(&histogram), 1.0));
+    }
+
+    #[test]
+    fn hue_clusters_empty() {
+        let histogram = [0.0f32; HUE_BINS];
+        assert!(approx_eq(count_hue_clusters(&histogram), 0.0));
+    }
+
+    // --- Palette feature tests ---
+
+    #[test]
+    fn palette_features_uniform_red() {
+        let palette: Vec<[f32; 3]> = vec![[1.0, 0.0, 0.0]; 256];
+        let features = palette_features(&palette);
+        assert!(
+            approx_eq(features.hue_histogram[0], 1.0),
+            "hue bin 0 was {}",
+            features.hue_histogram[0]
+        );
+        assert!(
+            approx_eq(features.avg_saturation, 1.0),
+            "sat was {}",
+            features.avg_saturation
+        );
+        assert!(
+            approx_eq(features.hue_cluster_count, 1.0),
+            "clusters was {}",
+            features.hue_cluster_count
+        );
+    }
+
+    #[test]
+    fn palette_features_all_gray() {
+        let palette: Vec<[f32; 3]> = vec![[0.5, 0.5, 0.5]; 256];
+        let features = palette_features(&palette);
+        for (i, &bin) in features.hue_histogram.iter().enumerate() {
+            assert!(approx_eq(bin, 0.0), "hue bin {i} was {bin}");
+        }
+        assert!(
+            approx_eq(features.avg_saturation, 0.0),
+            "sat was {}",
+            features.avg_saturation
+        );
+        assert!(
+            approx_eq(features.avg_brightness, 0.5),
+            "brightness was {}",
+            features.avg_brightness
+        );
+    }
+
+    #[test]
+    fn hue_overlap_identical() {
+        let palette: Vec<[f32; 3]> = vec![[1.0, 0.0, 0.0]; 256];
+        let features = palette_features(&palette);
+        let overlap = features.hue_overlap(&features);
+        assert!(approx_eq(overlap, 1.0), "overlap was {overlap}");
+    }
+
+    #[test]
+    fn hue_overlap_disjoint() {
+        let red_palette: Vec<[f32; 3]> = vec![[1.0, 0.0, 0.0]; 256];
+        let blue_palette: Vec<[f32; 3]> = vec![[0.0, 0.0, 1.0]; 256];
+        let red_features = palette_features(&red_palette);
+        let blue_features = palette_features(&blue_palette);
+        let overlap = red_features.hue_overlap(&blue_features);
+        assert!(approx_eq(overlap, 0.0), "overlap was {overlap}");
+    }
+
+    #[test]
+    fn feature_vec_length() {
+        let palette: Vec<[f32; 3]> = vec![[1.0, 0.0, 0.0]; 256];
+        let features = palette_features(&palette);
+        assert_eq!(features.to_vec().len(), PALETTE_FEATURE_COUNT);
+    }
+
+    // --- TasteModel tests ---
+
+    #[test]
+    fn taste_model_build_empty() {
+        let features: Vec<Vec<f32>> = vec![];
+        assert!(TasteModel::build(&features).is_none());
+    }
+
+    #[test]
+    fn taste_model_build_single_sample() {
+        let sample = vec![0.5, 0.3, 0.8];
+        let model = TasteModel::build(&[sample.clone()]).unwrap();
+        assert!(approx_eq(model.feature_means[0], 0.5));
+        assert!(approx_eq(model.feature_means[1], 0.3));
+        assert!(approx_eq(model.feature_means[2], 0.8));
+        // stddevs floored to 0.01
+        for s in &model.feature_stddevs {
+            assert!(approx_eq(*s, 0.01), "stddev was {s}");
+        }
+    }
+
+    #[test]
+    fn taste_model_build_two_samples() {
+        let a = vec![0.0, 1.0];
+        let b = vec![1.0, 0.0];
+        let model = TasteModel::build(&[a, b]).unwrap();
+        assert!(
+            approx_eq(model.feature_means[0], 0.5),
+            "mean0 was {}",
+            model.feature_means[0]
+        );
+        assert!(
+            approx_eq(model.feature_means[1], 0.5),
+            "mean1 was {}",
+            model.feature_means[1]
+        );
+        assert!(
+            approx_eq(model.feature_stddevs[0], 0.5),
+            "std0 was {}",
+            model.feature_stddevs[0]
+        );
+        assert!(
+            approx_eq(model.feature_stddevs[1], 0.5),
+            "std1 was {}",
+            model.feature_stddevs[1]
+        );
+    }
+
+    #[test]
+    fn taste_model_score_at_mean_is_zero() {
+        let sample = vec![0.5, 0.3, 0.8];
+        let model = TasteModel::build(&[sample.clone()]).unwrap();
+        let score = model.score(&sample);
+        assert!(approx_eq(score, 0.0), "score was {score}");
+    }
+
+    #[test]
+    fn taste_model_score_far_from_mean_is_high() {
+        let sample = vec![0.5, 0.5];
+        let model = TasteModel::build(&[sample]).unwrap();
+        let near = vec![0.51, 0.51];
+        let far = vec![1.0, 1.0];
+        let near_score = model.score(&near);
+        let far_score = model.score(&far);
+        assert!(
+            far_score > near_score,
+            "far={far_score} should be > near={near_score}"
+        );
+    }
+
+    #[test]
+    fn taste_engine_inactive_below_threshold() {
+        let engine = TasteEngine::new();
+        assert!(!engine.is_active(10));
+    }
+
+    #[test]
+    fn taste_engine_generate_palette_returns_256() {
+        let mut engine = TasteEngine::new();
+        let palette = engine.generate_palette(10, 1.0, 1.0, 0.0, 1, 10);
+        assert_eq!(palette.len(), 256, "palette len was {}", palette.len());
+    }
 }
