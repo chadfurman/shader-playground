@@ -24,8 +24,10 @@
       "warmup_iters":       "Iterations to skip before plotting (base 20)",
       "mutation_rate":      "Virtual — auto-evolve accumulator (triggers mutate at 1.0)",
       "xfN_weight":         "All transforms blend weight",
-      "xfN_angle":          "All transforms rotation angle",
-      "xfN_scale":          "All transforms scale factor",
+      "xfN_a":              "All transforms affine a coefficient",
+      "xfN_b":              "All transforms affine b coefficient",
+      "xfN_c":              "All transforms affine c coefficient",
+      "xfN_d":              "All transforms affine d coefficient",
       "xfN_offset_x":       "All transforms X translation",
       "xfN_offset_y":       "All transforms Y translation",
       "xfN_color":          "All transforms palette index",
@@ -74,7 +76,8 @@
       "warmup_iters":        "Iterations to skip before plotting points (default 20)",
       "accumulation_decay":  "Exponential decay per frame for accumulation buffer (default 0.995)",
       "samples_per_frame":   "GPU compute workgroups per frame (default 256)",
-      "bloom_radius":        "Bloom sample radius in pixels (default 3.0)"
+      "bloom_radius":        "Bloom sample radius in pixels (default 3.0)",
+      "fitness_bias_strength": "How much mutation favors variations from saved favorites (0=none, 1=full, default 0.5)"
     }
   },
   "_config": {
@@ -102,8 +105,10 @@
     "max_mutation_retries": 10,
     "trail": 0.15,
     "accumulation_decay": 0.995,
-    "samples_per_frame": 256,
+    "samples_per_frame": 4096,
     "bloom_radius": 3.0,
+    "fitness_bias_strength": 0.5,
+    "drift_speed": 0.5,
     "variation_scales": {
       "noise": 0.0
     }
@@ -151,7 +156,10 @@
   "time_noise": {
     "xfN_offset_x": 0.005,
     "xfN_offset_y": 0.005,
-    "xfN_angle": 0.005
+    "xfN_a": 0.003,
+    "xfN_b": 0.003,
+    "xfN_c": 0.003,
+    "xfN_d": 0.003
   },
   "time_drift": {},
   "time_flutter": {},

@@ -17,8 +17,14 @@ struct Uniforms {
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;
 @group(0) @binding(1) var<uniform> u: Uniforms;
 @group(0) @binding(2) var<storage, read> transforms: array<f32>;
+@group(0) @binding(3) var palette_tex: texture_2d<f32>;
+@group(0) @binding(4) var palette_sampler: sampler;
 
-fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 32u + field]; }
+fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 42u + field]; }
+
+fn xf_param(idx: u32, param_offset: u32) -> f32 {
+    return transforms[idx * 42u + 34u + param_offset];
+}
 
 const PI: f32 = 3.14159265;
 
@@ -69,42 +75,10 @@ fn vnoise(t: f32, seed: u32) -> f32 {
 
 const TAU: f32 = 6.28318530;
 
-// Multi-palette system — blends between several rich Iq cosine palettes
-// to produce the kind of deep, saturated color variety Electric Sheep is known for.
-fn palette_a(t: f32) -> vec3<f32> {
-    // Fiery: deep orange → gold → magenta → violet
-    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.5) * cos(TAU * (vec3(1.0, 0.7, 0.4) * t + vec3(0.00, 0.15, 0.20)));
-}
-fn palette_b(t: f32) -> vec3<f32> {
-    // Ocean: deep blue → cyan → teal → emerald
-    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.5) * cos(TAU * (vec3(0.8, 1.0, 1.0) * t + vec3(0.20, 0.00, 0.50)));
-}
-fn palette_c(t: f32) -> vec3<f32> {
-    // Neon: electric pink → hot orange → yellow → lime
-    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.4) * cos(TAU * (vec3(1.0, 1.0, 0.5) * t + vec3(0.80, 0.90, 0.30)));
-}
-fn palette_d(t: f32) -> vec3<f32> {
-    // Deep: indigo → purple → crimson → copper
-    return vec3(0.5, 0.5, 0.5) + vec3(0.5, 0.5, 0.5) * cos(TAU * (vec3(0.7, 0.8, 1.0) * t + vec3(0.55, 0.40, 0.00)));
-}
-
+// Palette lookup via 256x1 texture (uploaded from CPU)
 fn palette(t: f32) -> vec3<f32> {
-    // Cycle through palettes based on color index position
-    // This creates the rich multi-hue look of Electric Sheep
-    let phase = fract(t * 0.5); // slow palette rotation
-    let sector = t * 4.0;       // which palette region we're in
-    let blend = fract(sector);
-    let idx = u32(floor(sector)) % 4u;
-
-    var c1: vec3<f32>;
-    var c2: vec3<f32>;
-    switch(idx) {
-        case 0u: { c1 = palette_a(t); c2 = palette_b(t); }
-        case 1u: { c1 = palette_b(t); c2 = palette_c(t); }
-        case 2u: { c1 = palette_c(t); c2 = palette_d(t); }
-        default: { c1 = palette_d(t); c2 = palette_a(t); }
-    }
-    return mix(c1, c2, smoothstep(0.0, 1.0, blend));
+    let uv = vec2(fract(t), 0.5);
+    return textureSampleLevel(palette_tex, palette_sampler, uv, 0.0).rgb;
 }
 
 fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
@@ -159,11 +133,12 @@ fn V_disc(p: vec2<f32>) -> vec2<f32> {
     return f * vec2(sin(PI * r), cos(PI * r));
 }
 
-fn V_rings(p: vec2<f32>, c2: f32) -> vec2<f32> {
+fn V_rings(p: vec2<f32>, idx: u32) -> vec2<f32> {
     let r = length(p);
     let theta = atan2(p.y, p.x);
-    let k = c2 + 1e-6;
-    let rr = ((r + k) % (2.0 * k)) - k + r * (1.0 - k);
+    let val = xf_param(idx, 0u);  // rings2_val [34]
+    let val2 = val * val + 1e-6;
+    let rr = r + val2 - 2.0 * val2 * floor((r + val2) / (2.0 * val2)) + r * (1.0 - val2);
     return rr * vec2(cos(theta), sin(theta));
 }
 
@@ -248,11 +223,14 @@ fn V_cosine(p: vec2<f32>) -> vec2<f32> {
     );
 }
 
-fn V_blob(p: vec2<f32>) -> vec2<f32> {
+fn V_blob(p: vec2<f32>, idx: u32) -> vec2<f32> {
     let r = length(p);
     let theta = atan2(p.y, p.x);
-    let blobr = r * (0.5 + 0.5 * sin(3.0 * theta));
-    return blobr * vec2(cos(theta), sin(theta));
+    let low = xf_param(idx, 1u);    // blob_low [35]
+    let high = xf_param(idx, 2u);   // blob_high [36]
+    let waves = xf_param(idx, 3u);  // blob_waves [37]
+    let rr = r * (low + (high - low) * 0.5 * (sin(waves * theta) + 1.0));
+    return rr * vec2(cos(theta), sin(theta));
 }
 
 fn V_noise(p: vec2<f32>, seed: u32) -> vec2<f32> {
@@ -274,16 +252,18 @@ fn V_curl(p: vec2<f32>, seed: u32) -> vec2<f32> {
 // ── IFS Transform (reads from storage buffer) ──
 
 fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<f32> {
-    let angle  = xf(idx, 1u);
-    let scale  = xf(idx, 2u);
-    let ox     = xf(idx, 3u);
-    let oy     = xf(idx, 4u);
-    let w_lin  = xf(idx, 6u);
-    let w_sin  = xf(idx, 7u);
-    let w_sph  = xf(idx, 8u);
-    let w_swi  = xf(idx, 9u);
-    let w_hor  = xf(idx, 10u);
-    let w_han  = xf(idx, 11u);
+    let af_a   = xf(idx, 1u);
+    let af_b   = xf(idx, 2u);
+    let af_c   = xf(idx, 3u);
+    let af_d   = xf(idx, 4u);
+    let ox     = xf(idx, 5u);
+    let oy     = xf(idx, 6u);
+    let w_lin  = xf(idx, 8u);
+    let w_sin  = xf(idx, 9u);
+    let w_sph  = xf(idx, 10u);
+    let w_swi  = xf(idx, 11u);
+    let w_hor  = xf(idx, 12u);
+    let w_han  = xf(idx, 13u);
 
     let drift = u.kifs.w; // drift_speed
 
@@ -297,8 +277,19 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     let ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * pos_drift;
     let oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * pos_drift;
 
-    let q = rot2(angle + angle_drift) * p * scale
-          + vec2(ox + ox_drift, oy + oy_drift);
+    // Apply spin drift as a rotation on top of the affine matrix
+    let spin_cos = cos(angle_drift);
+    let spin_sin = sin(angle_drift);
+    let a2 = af_a * spin_cos - af_c * spin_sin;
+    let b2 = af_b * spin_cos - af_d * spin_sin;
+    let c2 = af_a * spin_sin + af_c * spin_cos;
+    let d2 = af_b * spin_sin + af_d * spin_cos;
+
+    let q = vec2(a2 * p.x + b2 * p.y + ox + ox_drift,
+                 c2 * p.x + d2 * p.y + oy + oy_drift);
+
+    // Compute effective scale for variations that need it (rings, etc.)
+    let eff_scale = sqrt(abs(af_a * af_d - af_b * af_c));
 
     // Skip zero-weight variations to save compute
     var v = q * w_lin;
@@ -308,47 +299,50 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     if (w_hor > 0.0) { v += V_horseshoe(q)     * w_hor; }
     if (w_han > 0.0) { v += V_handkerchief(q)  * w_han; }
 
-    let w_jul  = xf(idx, 12u);
-    let w_pol  = xf(idx, 13u);
-    let w_dsc  = xf(idx, 14u);
-    let w_rng  = xf(idx, 15u);
-    let w_bub  = xf(idx, 16u);
-    let w_fsh  = xf(idx, 17u);
-    let w_exp  = xf(idx, 18u);
-    let w_spi  = xf(idx, 19u);
+    let w_jul  = xf(idx, 14u);
+    let w_pol  = xf(idx, 15u);
+    let w_dsc  = xf(idx, 16u);
+    let w_rng  = xf(idx, 17u);
+    let w_bub  = xf(idx, 18u);
+    let w_fsh  = xf(idx, 19u);
+    let w_exp  = xf(idx, 20u);
+    let w_spi  = xf(idx, 21u);
 
-    if (w_jul > 0.0) { v += V_julia(q, rng)           * w_jul; }
-    if (w_pol > 0.0) { v += V_polar(q)                * w_pol; }
-    if (w_dsc > 0.0) { v += V_disc(q)                 * w_dsc; }
-    if (w_rng > 0.0) { v += V_rings(q, scale * scale) * w_rng; }
-    if (w_bub > 0.0) { v += V_bubble(q)               * w_bub; }
-    if (w_fsh > 0.0) { v += V_fisheye(q)              * w_fsh; }
-    if (w_exp > 0.0) { v += V_exponential(q)          * w_exp; }
-    if (w_spi > 0.0) { v += V_spiral(q)               * w_spi; }
+    if (w_jul > 0.0) { v += V_julia(q, rng)                * w_jul; }
+    if (w_pol > 0.0) { v += V_polar(q)                     * w_pol; }
+    if (w_dsc > 0.0) { v += V_disc(q)                      * w_dsc; }
+    if (w_rng > 0.0) { v += V_rings(q, idx) * w_rng; }
+    if (w_bub > 0.0) { v += V_bubble(q)                    * w_bub; }
+    if (w_fsh > 0.0) { v += V_fisheye(q)                   * w_fsh; }
+    if (w_exp > 0.0) { v += V_exponential(q)               * w_exp; }
+    if (w_spi > 0.0) { v += V_spiral(q)                    * w_spi; }
 
-    let w_dia  = xf(idx, 20u);
-    let w_bnt  = xf(idx, 21u);
-    let w_wav  = xf(idx, 22u);
-    let w_pop  = xf(idx, 23u);
-    let w_fan  = xf(idx, 24u);
-    let w_eye  = xf(idx, 25u);
-    let w_crs  = xf(idx, 26u);
-    let w_tan  = xf(idx, 27u);
-    let w_cos  = xf(idx, 28u);
-    let w_blb  = xf(idx, 29u);
-    let w_noi  = xf(idx, 30u);
-    let w_crl  = xf(idx, 31u);
+    let w_dia  = xf(idx, 22u);
+    let w_bnt  = xf(idx, 23u);
+    let w_wav  = xf(idx, 24u);
+    let w_pop  = xf(idx, 25u);
+    let w_fan  = xf(idx, 26u);
+    let w_eye  = xf(idx, 27u);
+    let w_crs  = xf(idx, 28u);
+    let w_tan  = xf(idx, 29u);
+    let w_cos  = xf(idx, 30u);
+    let w_blb  = xf(idx, 31u);
+    let w_noi  = xf(idx, 32u);
+    let w_crl  = xf(idx, 33u);
+
+    // Compute effective angle for fan variation
+    let eff_angle = atan2(af_c, af_a);
 
     if (w_dia > 0.0) { v += V_diamond(q)                        * w_dia; }
     if (w_bnt > 0.0) { v += V_bent(q)                           * w_bnt; }
     if (w_wav > 0.0) { v += V_waves(q, ox * 0.5, oy * 0.5)     * w_wav; }
     if (w_pop > 0.0) { v += V_popcorn(q, ox * 0.3, oy * 0.3)   * w_pop; }
-    if (w_fan > 0.0) { v += V_fan(q, angle)                     * w_fan; }
+    if (w_fan > 0.0) { v += V_fan(q, eff_angle)                 * w_fan; }
     if (w_eye > 0.0) { v += V_eyefish(q)                        * w_eye; }
     if (w_crs > 0.0) { v += V_cross(q)                          * w_crs; }
     if (w_tan > 0.0) { v += V_tangent(q)                        * w_tan; }
     if (w_cos > 0.0) { v += V_cosine(q)                         * w_cos; }
-    if (w_blb > 0.0) { v += V_blob(q)                           * w_blb; }
+    if (w_blb > 0.0) { v += V_blob(q, idx)                       * w_blb; }
     if (w_noi > 0.0) { v += V_noise(q, seed)                    * w_noi; }
     if (w_crl > 0.0) { v += V_curl(q, seed)                     * w_crl; }
 
@@ -356,7 +350,7 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
 }
 
 fn xform_color(idx: u32) -> f32 {
-    return xf(idx, 5u);
+    return xf(idx, 7u);
 }
 
 @compute @workgroup_size(256)
@@ -381,7 +375,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     if (total_weight < 1e-6) { return; }
 
-    for (var i = 0u; i < 100u; i++) {
+    for (var i = 0u; i < 500u; i++) {
         // Weighted random transform selection
         let r = randf(&rng) * total_weight;
         var tidx = 0u;
@@ -406,7 +400,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (u.has_final_xform == 1u) {
             let final_idx = u.transform_count;  // final xform is right after regular xforms
             plot_p = apply_xform(plot_p, final_idx, t, &rng);
-            plot_color = plot_color * 0.5 + xf(final_idx, 5u) * 0.5;  // blend with final xform's color
+            plot_color = plot_color * 0.5 + xf(final_idx, 7u) * 0.5;  // blend with final xform's color
         }
 
         // Symmetry: plot rotated/mirrored copies

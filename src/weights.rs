@@ -55,16 +55,18 @@ pub fn value_noise_pub(t: f32) -> f32 {
 
 const AUDIO_SIGNAL_COUNT: f32 = 6.0;  // bass, mids, highs, energy, beat, beat_accum
 const TIME_SIGNAL_COUNT: f32 = 9.0;   // time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
-const PARAMS_PER_XF: usize = 32;
+const PARAMS_PER_XF: usize = 42;
 
 /// Per-transform field names in order (matching genome flatten layout).
 const XF_FIELDS: [&str; PARAMS_PER_XF] = [
-    "weight", "angle", "scale", "offset_x", "offset_y", "color",
+    "weight", "a", "b", "c", "d", "offset_x", "offset_y", "color",
     "linear", "sinusoidal", "spherical", "swirl", "horseshoe", "handkerchief",
     "julia", "polar", "disc", "rings", "bubble", "fisheye",
     "exponential", "spiral", "diamond", "bent", "waves", "popcorn",
     "fan", "eyefish", "cross", "tangent", "cosine", "blob",
     "noise", "curl",
+    "rings2_val", "blob_low", "blob_high", "blob_waves",
+    "julian_power", "julian_dist", "ngon_sides", "ngon_corners",
 ];
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -123,6 +125,10 @@ pub struct RuntimeConfig {
     pub bloom_radius: f32,
     #[serde(default = "default_seed_mutation_bias")]
     pub seed_mutation_bias: f32,
+    #[serde(default = "default_fitness_bias_strength")]
+    pub fitness_bias_strength: f32,
+    #[serde(default = "default_drift_speed")]
+    pub drift_speed: f32,
     #[serde(default)]
     pub variation_scales: HashMap<String, f32>,
 }
@@ -154,8 +160,10 @@ fn default_accumulation_decay() -> f32 { 0.995 }
 fn default_samples_per_frame() -> u32 { 256 }
 fn default_bloom_radius() -> f32 { 3.0 }
 fn default_seed_mutation_bias() -> f32 { 0.7 }
+fn default_fitness_bias_strength() -> f32 { 0.5 }
+fn default_drift_speed() -> f32 { 0.5 }
 
-const VARIATION_START: usize = 6; // first variation field index in each 32-float transform block
+const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 
 impl RuntimeConfig {
     /// Apply variation_scales to a flattened transform buffer.

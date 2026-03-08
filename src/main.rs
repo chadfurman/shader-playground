@@ -13,10 +13,11 @@ use winit::window::{Window, WindowAttributes};
 
 mod audio;
 mod device_picker;
+mod flam3;
 mod genome;
 mod sck_audio;
 mod weights;
-use crate::genome::FlameGenome;
+use crate::genome::{FlameGenome, FavoriteProfile};
 use crate::audio::{AudioCapture, AudioFeatures};
 use crate::weights::Weights;
 
@@ -115,6 +116,9 @@ struct Gpu {
     compute_pipeline_layout: wgpu::PipelineLayout,
     histogram_buffer: wgpu::Buffer,
     transform_buffer: wgpu::Buffer,
+    palette_texture: wgpu::Texture,
+    palette_view: wgpu::TextureView,
+    palette_sampler: wgpu::Sampler,
     workgroups: u32,
     // Accumulation pipeline
     accumulation_pipeline: wgpu::ComputePipeline,
@@ -178,13 +182,29 @@ impl Gpu {
             config.height,
         );
 
-        // Initial transform buffer (6 transforms * 32 floats * 4 bytes)
+        // Initial transform buffer (6 transforms * 42 floats * 4 bytes)
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
-            size: (6 * 32 * 4) as u64,
+            size: (6 * 42 * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
+        // ── Palette texture (256x1 Rgba32Float) ──
+        let (palette_texture, palette_view) = create_palette_texture(&device);
+        let palette_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("palette_sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        // Upload default cosine palette
+        {
+            let palette_data = crate::genome::generate_default_palette_rgba();
+            upload_palette_texture(&queue, &palette_texture, &palette_data);
+        }
 
         // ── Render bind group layout (uniform + prev_frame + sampler + histogram read) ──
         let bind_group_layout =
@@ -280,6 +300,22 @@ impl Gpu {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
             });
 
@@ -349,6 +385,8 @@ impl Gpu {
             &histogram_buffer,
             &uniform_buffer,
             &transform_buffer,
+            &palette_view,
+            &palette_sampler,
         );
 
         // 16 bytes: vec2f resolution + f32 decay + f32 pad
@@ -443,6 +481,9 @@ impl Gpu {
             compute_pipeline_layout,
             histogram_buffer,
             transform_buffer,
+            palette_texture,
+            palette_view,
+            palette_sampler,
             workgroups: 256, // default samples_per_frame
             accumulation_pipeline,
             accumulation_pipeline_layout,
@@ -505,7 +546,7 @@ impl Gpu {
     }
 
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
-        let size = (num_transforms.max(1) * 32 * 4) as u64;
+        let size = (num_transforms.max(1) * 42 * 4) as u64;
         self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
             size,
@@ -540,6 +581,8 @@ impl Gpu {
             &self.histogram_buffer,
             &self.uniform_buffer,
             &self.transform_buffer,
+            &self.palette_view,
+            &self.palette_sampler,
         );
         self.accumulation_bind_group = create_accumulation_bind_group(
             &self.device,
@@ -890,6 +933,8 @@ fn create_compute_bind_group(
     histogram: &wgpu::Buffer,
     uniform_buffer: &wgpu::Buffer,
     transform_buffer: &wgpu::Buffer,
+    palette_view: &wgpu::TextureView,
+    palette_sampler: &wgpu::Sampler,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("compute"),
@@ -907,8 +952,65 @@ fn create_compute_bind_group(
                 binding: 2,
                 resource: transform_buffer.as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(palette_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::Sampler(palette_sampler),
+            },
         ],
     })
+}
+
+fn create_palette_texture(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("palette"),
+        size: wgpu::Extent3d {
+            width: 256,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba16Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
+fn upload_palette_texture(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    data: &[[f32; 4]],
+) {
+    // Convert f32 → f16 for Rgba16Float texture
+    let f16_data: Vec<u16> = data.iter()
+        .flat_map(|px| px.iter().map(|&v| half::f16::from_f32(v).to_bits()))
+        .collect();
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        bytemuck::cast_slice(&f16_data),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256 * 8), // 256 pixels * 4 f16 * 2 bytes
+            rows_per_image: None,
+        },
+        wgpu::Extent3d {
+            width: 256,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
 }
 
 fn create_render_pipeline(
@@ -990,6 +1092,7 @@ struct App {
     audio_samples: Vec<AudioFeatures>,
     mutation_accum: f32,
     last_mutation_time: f32,
+    flame_locked: bool, // true = imported flame, skip auto-evolve/mutate
     random_walk: f32,
     // Ease-in-out genome morph
     morph_start_globals: [f32; 20],
@@ -997,6 +1100,8 @@ struct App {
     morph_base_globals: [f32; 20],  // current interpolated genome base (no audio)
     morph_base_xf: Vec<f32>,       // current interpolated xf base (no audio)
     morph_progress: f32,            // 0.0 → 1.0
+    favorite_profile: Option<FavoriteProfile>,
+    last_profile_scan: f32,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1008,19 +1113,20 @@ impl App {
     fn new() -> Self {
         // Try loading a curated seed genome; fall back to mutated default
         let weights = load_weights();
+        let favorite_profile = Self::scan_favorite_profile();
         let seeds_dir = project_dir().join("genomes").join("seeds");
         let genome = if seeds_dir.exists() {
             FlameGenome::load_random(&seeds_dir).unwrap_or_else(|_| {
                 let mut g = FlameGenome::default_genome();
                 for _ in 0..3 {
-                    g = g.mutate(&AudioFeatures::default(), &weights._config);
+                    g = g.mutate(&AudioFeatures::default(), &weights._config, &favorite_profile);
                 }
                 g
             })
         } else {
             let mut g = FlameGenome::default_genome();
             for _ in 0..3 {
-                g = g.mutate(&AudioFeatures::default(), &weights._config);
+                g = g.mutate(&AudioFeatures::default(), &weights._config, &favorite_profile);
             }
             g
         };
@@ -1048,6 +1154,7 @@ impl App {
             audio_samples: Vec::new(),
             mutation_accum: 0.0,
             last_mutation_time: 0.0,
+            flame_locked: false,
             random_walk: 0.0,
             // Start fully morphed (no transition at launch)
             morph_start_globals: initial_globals,
@@ -1055,6 +1162,20 @@ impl App {
             morph_base_globals: initial_globals,
             morph_base_xf: initial_xf,
             morph_progress: 1.0,
+            favorite_profile,
+            last_profile_scan: 0.0,
+        }
+    }
+
+    /// Scan genomes/ directory for favorite profile (excludes seeds/).
+    fn scan_favorite_profile() -> Option<FavoriteProfile> {
+        let genomes_dir = project_dir().join("genomes");
+        if !genomes_dir.exists() { return None; }
+        let profile = FavoriteProfile::from_directory(&genomes_dir);
+        if profile.variation_freq.is_empty() {
+            None
+        } else {
+            Some(profile)
         }
     }
 
@@ -1067,7 +1188,7 @@ impl App {
 
         // Ensure buffers can hold max of current and target transforms
         let target_xf = self.genome.flatten_transforms();
-        let max_xf = (self.xf_params.len().max(target_xf.len())) / 32;
+        let max_xf = (self.xf_params.len().max(target_xf.len())) / 42;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(gpu) = &mut self.gpu {
@@ -1075,7 +1196,7 @@ impl App {
             }
         }
         // Pad start vectors to match
-        self.morph_start_xf.resize(max_xf * 32, 0.0);
+        self.morph_start_xf.resize(max_xf * 42, 0.0);
 
         // Clear accumulation buffer — old genome's density pattern would ghost
         // and make the new genome appear dark until it builds up density
@@ -1086,6 +1207,10 @@ impl App {
                 0,
                 &vec![0u8; buf_size],
             );
+
+            // Upload palette for the new genome
+            let palette_data = crate::genome::palette_rgba_data(&self.genome);
+            upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
         }
     }
 
@@ -1201,6 +1326,12 @@ impl ApplicationHandler for App {
             }
         }
 
+        // Upload palette for the initial genome
+        if let Some(gpu) = &self.gpu {
+            let palette_data = crate::genome::palette_rgba_data(&self.genome);
+            upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
+        }
+
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
     }
 
@@ -1244,7 +1375,8 @@ impl ApplicationHandler for App {
                     if self.genome_history.len() > 10 {
                         self.genome_history.remove(0);
                     }
-                    self.genome = self.genome.mutate(&self.audio_features, &self.weights._config);
+                    self.flame_locked = false; // unlock on manual mutate
+                    self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile);
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
                     eprintln!("[evolve] → {}", self.genome.name);
@@ -1263,6 +1395,9 @@ impl ApplicationHandler for App {
                             Ok(p) => eprintln!("[save] {}", p.display()),
                             Err(e) => eprintln!("[save] error: {e}"),
                         }
+                        // Refresh favorite profile after saving
+                        self.favorite_profile = Self::scan_favorite_profile();
+                        self.last_profile_scan = self.start.elapsed().as_secs_f32();
                     }
                     "l" => {
                         let dir = project_dir().join("genomes");
@@ -1282,7 +1417,7 @@ impl ApplicationHandler for App {
                     "1" | "2" | "3" | "4" => {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
                         if idx < self.num_transforms {
-                            let base = idx * 32; // weight is first field
+                            let base = idx * 42; // weight is first field
                             if base < self.xf_params.len() {
                                 if self.xf_params[base] < 0.01 {
                                     self.xf_params[base] = 0.25;
@@ -1291,6 +1426,23 @@ impl ApplicationHandler for App {
                                 }
                                 eprintln!("[solo] transform {} = {}", idx, self.xf_params[base]);
                             }
+                        }
+                    }
+                    "f" => {
+                        let flames_dir = project_dir().join("genomes").join("flames");
+                        match crate::flam3::load_random_flame(&flames_dir) {
+                            Ok(g) => {
+                                self.genome_history.push(self.genome.clone());
+                                if self.genome_history.len() > 10 {
+                                    self.genome_history.remove(0);
+                                }
+                                self.genome = g;
+                                self.flame_locked = true;
+                                self.mutation_accum = 0.0;
+                                self.begin_morph();
+                                eprintln!("[flame] loaded (locked): {}", self.genome.name);
+                            }
+                            Err(e) => eprintln!("[flame] error: {e}"),
                         }
                     }
                     "a" => {
@@ -1383,22 +1535,29 @@ impl ApplicationHandler for App {
                         &mut self.xf_params, self.num_transforms,
                     );
 
-                    // Auto-evolve via mutation_rate
+                    // Auto-evolve via mutation_rate (disabled when flame_locked)
                     let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);
                     self.mutation_accum += mr * dt;
                     let time_since_last = time - self.last_mutation_time;
                     let cooldown = self.weights._config.mutation_cooldown;
-                    if self.mutation_accum >= 1.0 && time_since_last >= cooldown {
+                    if !self.flame_locked && self.mutation_accum >= 1.0 && time_since_last >= cooldown {
                         self.mutation_accum = 0.0;
 
                         self.genome_history.push(self.genome.clone());
                         if self.genome_history.len() > 10 {
                             self.genome_history.remove(0);
                         }
-                        self.genome = self.genome.mutate(&self.audio_features, &self.weights._config);
+                        self.genome = self.genome.mutate(&self.audio_features, &self.weights._config, &self.favorite_profile);
                         self.last_mutation_time = self.start.elapsed().as_secs_f32();
                         self.begin_morph();
                         eprintln!("[auto-evolve] → {}", self.genome.name);
+                    }
+
+                    // Periodic favorite profile refresh (every 30s)
+                    let profile_scan_interval = 30.0;
+                    if time - self.last_profile_scan >= profile_scan_interval {
+                        self.favorite_profile = Self::scan_favorite_profile();
+                        self.last_profile_scan = time;
                     }
 
                     // Info mode — collect samples + print
@@ -1440,7 +1599,7 @@ impl ApplicationHandler for App {
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
-                let xf_write_len = self.num_transforms * 32;
+                let xf_write_len = self.num_transforms * 42;
                 let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
                 gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
 
