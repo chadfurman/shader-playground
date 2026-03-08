@@ -170,8 +170,14 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let prev = textureSample(prev_frame, prev_sampler, tex_uv).rgb;
     col = max(col, prev * trail);  // max-blend, not additive — prevents brightness buildup
 
-    // ── Multi-radius bloom ──
+    // ── Density-aware bloom — soft glow on sparse points, crisp dense structure ──
     if (bloom_int > 0.001) {
+        // Bloom weight inversely proportional to density: sparse pixels get full bloom,
+        // dense pixels get almost none. Uses normalized density (relative to max).
+        let max_d = bitcast<f32>(max_density_buf[0]);
+        let norm_density = clamp(density / max(max_d, 1.0), 0.0, 1.0);
+        let sparsity = 1.0 - sqrt(norm_density);  // sqrt for gentler falloff
+
         let texel = 1.0 / u.resolution;
         var bloom_sum = vec3(0.0);
 
@@ -199,7 +205,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
             textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  r3) * texel).rgb
         ) * 0.25 * 0.2;
 
-        col += bloom_sum * bloom_int;
+        col += bloom_sum * bloom_int * sparsity;
     }
 
     // ── Soft clamp to prevent >1.0 without crushing dynamic range ──

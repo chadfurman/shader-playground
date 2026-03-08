@@ -147,8 +147,16 @@ impl Gpu {
         ))
         .expect("no GPU adapter");
 
+        let adapter_limits = adapter.limits();
         let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor::default(),
+            &wgpu::DeviceDescriptor {
+                required_limits: wgpu::Limits {
+                    max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
+                    max_buffer_size: adapter_limits.max_buffer_size,
+                    ..wgpu::Limits::default()
+                },
+                ..Default::default()
+            },
         ))
         .expect("device creation failed");
 
