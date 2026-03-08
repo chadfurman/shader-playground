@@ -501,7 +501,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let sp = sin(sym_angle);
             let sym_p = vec2(plot_p.x * cp - plot_p.y * sp, plot_p.x * sp + plot_p.y * cp);
 
-            let screen = (sym_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h));
+            // Sub-pixel jitter for free supersampling via accumulation averaging
+            let jitter_amount = u.extra4.x;
+            let jitter_seed = gid.x * 3u + u.frame * 17u + u32(si) * 7u;
+            var jitter_rng = jitter_seed * 747796405u + 2891336453u;
+            let jx = (f32(pcg(&jitter_rng)) / 4294967295.0 - 0.5) * jitter_amount;
+            let jy = (f32(pcg(&jitter_rng)) / 4294967295.0 - 0.5) * jitter_amount;
+
+            let screen = (sym_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
             let px_x = i32(screen.x);
             let px_y = i32(screen.y);
 
@@ -514,7 +521,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             // Bilateral mirror
             if (bilateral) {
                 let mir_p = vec2(-sym_p.x, sym_p.y);
-                let mscreen = (mir_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h));
+                let mscreen = (mir_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
                 let mpx_x = i32(mscreen.x);
                 let mpx_y = i32(mscreen.y);
                 if (mpx_x >= 0 && mpx_x < i32(w) && mpx_y >= 0 && mpx_y < i32(h)) {

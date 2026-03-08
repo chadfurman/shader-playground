@@ -29,6 +29,12 @@ struct Uniforms {
 @group(0) @binding(4) var crossfade_tex: texture_2d<f32>;
 @group(0) @binding(5) var<storage, read> max_density_buf: array<u32>;
 
+// ACES filmic tonemapping curve (Krzysztof Narkowicz fit)
+// These constants define the curve shape — they ARE the algorithm, not magic numbers.
+fn aces_tonemap(x: f32) -> f32 {
+    return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+
 // ── Vertex ──
 
 @vertex
@@ -121,7 +127,17 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let max_density_bits = max_density_buf[0];
     let max_density_val = bitcast<f32>(max_density_bits) / 1000.0;
     let max_log = log(1.0 + max_density_val * flame_bright);
-    let alpha = sqrt(log_density / max(max_log, 0.001));
+    // Select tonemapping curve
+    let tonemap_mode = u32(u.extra4.y);
+    var alpha: f32;
+    if (tonemap_mode == 1u) {
+        // ACES filmic — better highlight rolloff, deeper blacks
+        let normalized = log_density / max(max_log, 0.001);
+        alpha = aces_tonemap(normalized);
+    } else {
+        // Default sqrt-log curve with per-image normalization
+        alpha = sqrt(log_density / max(max_log, 0.001));
+    }
 
     // Recover average color (RGB and density both stored as fixed-point * 1000)
     let raw_color = select(
