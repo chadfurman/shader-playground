@@ -591,3 +591,91 @@ fn try_parse_xf(name: &str) -> Option<(usize, usize)> {
     let field_offset = xf_field_index(field)?;
     Some((xf, field_offset))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_sane_values() {
+        let cfg: RuntimeConfig = serde_json::from_str("{}").unwrap();
+        assert!(cfg.morph_duration > 0.0);
+        assert!(cfg.mutation_cooldown > 0.0);
+        assert!(cfg.workgroups > 0);
+        assert!(cfg.zoom_min > 0.0);
+        assert!(cfg.zoom_max > cfg.zoom_min);
+        assert!(cfg.max_mutation_retries > 0);
+        assert!(cfg.min_breeding_distance > 0);
+        assert!(cfg.max_lineage_depth > 0);
+        assert!(cfg.taste_min_votes > 0);
+        assert!(cfg.taste_candidates > 0);
+        assert!(cfg.taste_recent_memory > 0);
+    }
+
+    #[test]
+    fn config_serialization_roundtrip() {
+        let cfg: RuntimeConfig = serde_json::from_str("{}").unwrap();
+        let json = serde_json::to_string(&cfg).unwrap();
+        let cfg2: RuntimeConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(cfg.morph_duration, cfg2.morph_duration);
+        assert_eq!(cfg.workgroups, cfg2.workgroups);
+        assert_eq!(cfg.min_breeding_distance, cfg2.min_breeding_distance);
+        assert_eq!(cfg.taste_min_votes, cfg2.taste_min_votes);
+    }
+
+    #[test]
+    fn config_partial_json_uses_defaults() {
+        let json = r#"{"morph_duration": 5.0}"#;
+        let cfg: RuntimeConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.morph_duration, 5.0);
+        assert_eq!(cfg.workgroups, 512);
+        assert_eq!(cfg.min_breeding_distance, 3);
+        assert_eq!(cfg.taste_engine_enabled, false);
+    }
+
+    #[test]
+    fn config_empty_json_uses_all_defaults() {
+        let cfg: RuntimeConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(cfg.morph_duration, 8.0);
+        assert_eq!(cfg.gamma, 0.4545);
+        assert_eq!(cfg.vote_blacklist_threshold, -2);
+    }
+
+    #[test]
+    fn weights_empty_json_is_valid() {
+        let json = r#"{"_config": {}}"#;
+        let weights: Weights = serde_json::from_str(json).unwrap();
+        assert!(weights.bass.is_empty());
+        assert_eq!(weights._config.morph_duration, 8.0);
+    }
+
+    #[test]
+    fn global_index_known_params() {
+        assert_eq!(global_index("speed"), Some(0));
+        assert_eq!(global_index("zoom"), Some(1));
+        assert_eq!(global_index("gamma"), Some(11));
+        assert_eq!(global_index("nonexistent"), None);
+    }
+
+    #[test]
+    fn xf_field_index_known_fields() {
+        assert_eq!(xf_field_index("weight"), Some(0));
+        assert_eq!(xf_field_index("linear"), Some(8));
+        assert_eq!(xf_field_index("spherical"), Some(10));
+        assert_eq!(xf_field_index("fake_field"), None);
+    }
+
+    #[test]
+    fn try_parse_xf_valid() {
+        assert_eq!(try_parse_xf("xf0_weight"), Some((0, 0)));
+        assert_eq!(try_parse_xf("xf3_linear"), Some((3, 8)));
+        assert_eq!(try_parse_xf("xf10_spherical"), Some((10, 10)));
+    }
+
+    #[test]
+    fn try_parse_xf_invalid() {
+        assert_eq!(try_parse_xf("speed"), None);
+        assert_eq!(try_parse_xf("xfN_weight"), None);
+        assert_eq!(try_parse_xf("xf_weight"), None);
+    }
+}
