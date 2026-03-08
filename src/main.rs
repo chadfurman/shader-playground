@@ -1408,6 +1408,7 @@ struct App {
     morph_progress: f32,            // 0.0 → 1.0
     morph_xf_rates: Vec<f32>,       // per-transform morph speed multiplier (0.5 - 2.0)
     favorite_profile: Option<FavoriteProfile>,
+    vote_ledger: VoteLedger,
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
     prev_zoom: f32,
@@ -1423,6 +1424,7 @@ impl App {
         // Try loading a flame file first, then fall back to seeds, then default
         let weights = load_weights();
         let favorite_profile = Self::scan_favorite_profile();
+        let vote_ledger = VoteLedger::load(&project_dir().join("genomes"));
         let flames_dir = project_dir().join("genomes").join("flames");
         let seeds_dir = project_dir().join("genomes").join("seeds");
         let genome = crate::flam3::load_random_flame(&flames_dir)
@@ -1463,6 +1465,7 @@ impl App {
             morph_progress: 1.0,
             morph_xf_rates: Vec::new(),
             favorite_profile,
+            vote_ledger,
             last_profile_scan: 0.0,
             perf_log: std::fs::OpenOptions::new()
                 .create(true).append(true)
@@ -1706,6 +1709,18 @@ impl ApplicationHandler for App {
                         self.begin_morph();
                         eprintln!("[revert] back to previous");
                     }
+                }
+                Key::Named(NamedKey::ArrowUp) => {
+                    let dir = project_dir().join("genomes");
+                    let score = self.vote_ledger.vote(&self.genome, 1, &dir);
+                    self.favorite_profile = Self::scan_favorite_profile();
+                    eprintln!("[vote] {} → +1 (score: {})", self.genome.name, score);
+                }
+                Key::Named(NamedKey::ArrowDown) => {
+                    let dir = project_dir().join("genomes");
+                    let score = self.vote_ledger.vote(&self.genome, -1, &dir);
+                    self.favorite_profile = Self::scan_favorite_profile();
+                    eprintln!("[vote] {} → -1 (score: {})", self.genome.name, score);
                 }
                 Key::Character(ref c) => match c.as_str() {
                     "s" => {
