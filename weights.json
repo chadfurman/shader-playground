@@ -78,7 +78,11 @@
       "samples_per_frame":   "GPU compute workgroups per frame (default 256)",
       "bloom_radius":        "Bloom sample radius in pixels (default 3.0)",
       "fitness_bias_strength": "How much mutation favors variations from saved favorites (0=none, 1=full, default 0.5)",
-      "velocity_blur_max": "Max directional blur length in pixels — proportional to point velocity (default 24.0)"
+      "velocity_blur_max": "Max directional blur length in pixels — proportional to point velocity (default 24.0)",
+      "morph_speed": "Global morph speed multiplier — scales all transform morph rates (default 1.0)",
+      "morph_stagger_count": "Max transforms to randomize with slow morph rates (0=disable, default 2)",
+      "morph_stagger_min": "Slowest random morph rate multiplier (default 0.3)",
+      "morph_stagger_max": "Fastest random morph rate multiplier (default 0.6)"
     }
   },
   "_config": {
@@ -112,6 +116,10 @@
     "drift_speed": 0.5,
     "velocity_blur_max": 24.0,
     "iterations_per_thread": 200,
+    "morph_speed": 1.0,
+    "morph_stagger_count": 2,
+    "morph_stagger_min": 0.3,
+    "morph_stagger_max": 0.6,
     "variation_scales": {
       "noise": 0.0
     }

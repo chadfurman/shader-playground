@@ -133,6 +133,14 @@ pub struct RuntimeConfig {
     pub velocity_blur_max: f32,
     #[serde(default = "default_iterations_per_thread")]
     pub iterations_per_thread: u32,
+    #[serde(default = "default_morph_speed")]
+    pub morph_speed: f32,
+    #[serde(default = "default_morph_stagger_count")]
+    pub morph_stagger_count: u32,
+    #[serde(default = "default_morph_stagger_min")]
+    pub morph_stagger_min: f32,
+    #[serde(default = "default_morph_stagger_max")]
+    pub morph_stagger_max: f32,
     #[serde(default)]
     pub variation_scales: HashMap<String, f32>,
 }
@@ -168,6 +176,10 @@ fn default_fitness_bias_strength() -> f32 { 0.5 }
 fn default_drift_speed() -> f32 { 0.5 }
 fn default_velocity_blur_max() -> f32 { 24.0 }  // max directional blur length in pixels
 fn default_iterations_per_thread() -> u32 { 200 }  // chaos game iterations per GPU thread per frame
+fn default_morph_speed() -> f32 { 1.0 }            // global morph speed multiplier (affects all transforms)
+fn default_morph_stagger_count() -> u32 { 2 }      // max transforms to randomize (0 = all same speed)
+fn default_morph_stagger_min() -> f32 { 0.3 }      // slowest random morph rate
+fn default_morph_stagger_max() -> f32 { 0.6 }      // fastest random morph rate
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 

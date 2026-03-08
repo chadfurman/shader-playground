@@ -1132,6 +1132,7 @@ struct App {
     morph_base_globals: [f32; 20],  // current interpolated genome base (no audio)
     morph_base_xf: Vec<f32>,       // current interpolated xf base (no audio)
     morph_progress: f32,            // 0.0 → 1.0
+    morph_xf_rates: Vec<f32>,       // per-transform morph speed multiplier (0.5 - 2.0)
     favorite_profile: Option<FavoriteProfile>,
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
@@ -1185,6 +1186,7 @@ impl App {
             morph_base_globals: initial_globals,
             morph_base_xf: initial_xf,
             morph_progress: 1.0,
+            morph_xf_rates: Vec::new(),
             favorite_profile,
             last_profile_scan: 0.0,
             perf_log: std::fs::OpenOptions::new()
@@ -1223,6 +1225,25 @@ impl App {
         }
         // Pad start vectors to match
         self.morph_start_xf.resize(max_xf * 42, 0.0);
+
+        // Generate per-transform morph rates: some fast (2x), some slow (0.4x)
+        // This makes transforms arrive at different times for organic transitions.
+        // Per-transform morph rates: base speed from config, with optional stagger.
+        // morph_speed scales all transforms. morph_stagger_count=0 disables randomness.
+        let cfg = &self.weights._config;
+        let base_speed = cfg.morph_speed;
+        self.morph_xf_rates = vec![base_speed; max_xf];
+        if cfg.morph_stagger_count > 0 && max_xf > 0 {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            let stagger_min = cfg.morph_stagger_min;
+            let stagger_max = cfg.morph_stagger_max;
+            let num_slow = rng.random_range(1..=cfg.morph_stagger_count as usize).min(max_xf);
+            for _ in 0..num_slow {
+                let idx = rng.random_range(0..max_xf);
+                self.morph_xf_rates[idx] = base_speed * rng.random_range(stagger_min..=stagger_max);
+            }
+        }
 
         // Don't clear accumulation buffer — let old density fade naturally.
         // Front-load compute: run extra passes for the first ~60 frames so the
@@ -1516,10 +1537,16 @@ impl ApplicationHandler for App {
 
                     // Advance morph progress
                     let morph_dur = self.weights._config.morph_duration;
-                    if self.morph_progress < 1.0 {
-                        self.morph_progress = (self.morph_progress + dt / morph_dur).min(1.0);
+                    // morph_progress can exceed 1.0 so slow transforms finish
+                    let min_rate = self.morph_xf_rates.iter().copied()
+                        .min_by(|a, b| a.partial_cmp(b).unwrap())
+                        .unwrap_or(1.0)
+                        .max(0.1);
+                    let morph_done_at = 1.0 / min_rate; // e.g. 2.5 for rate=0.4
+                    if self.morph_progress < morph_done_at {
+                        self.morph_progress = (self.morph_progress + dt / morph_dur).min(morph_done_at);
                     }
-                    let t = smoothstep(self.morph_progress);
+                    let t = smoothstep(self.morph_progress.min(1.0));
 
                     // Interpolate genome base values (ease-in-out)
                     let genome_globals = self.genome.flatten_globals(&self.weights._config);
@@ -1535,9 +1562,19 @@ impl ApplicationHandler for App {
                     padded_start.resize(max_len, 0.0);
                     let mut padded_genome = genome_xf;
                     padded_genome.resize(max_len, 0.0);
-                    for i in 0..max_len {
-                        self.morph_base_xf[i] = padded_start[i]
-                            + (padded_genome[i] - padded_start[i]) * t;
+                    let num_xf = max_len / 42;
+                    for xi in 0..num_xf {
+                        // Each transform morphs at its own rate
+                        let rate = self.morph_xf_rates.get(xi).copied().unwrap_or(1.0);
+                        let xf_t = smoothstep((self.morph_progress * rate).min(1.0));
+                        let base = xi * 42;
+                        for j in 0..42 {
+                            let idx = base + j;
+                            if idx < max_len {
+                                self.morph_base_xf[idx] = padded_start[idx]
+                                    + (padded_genome[idx] - padded_start[idx]) * xf_t;
+                            }
+                        }
                     }
 
                     // Apply audio modulation on top of morphed base
@@ -1557,8 +1594,10 @@ impl ApplicationHandler for App {
                         &mut self.xf_params, self.num_transforms,
                     );
 
-                    // Auto-evolve when morph completes (disabled when flame_locked)
-                    if !self.flame_locked && self.morph_progress >= 1.0 {
+                    // Auto-evolve when ALL transforms finish morphing (disabled when flame_locked)
+                    let all_morphed = self.morph_xf_rates.iter().all(|r| self.morph_progress * r >= 1.0)
+                        || self.morph_xf_rates.is_empty();
+                    if !self.flame_locked && all_morphed {
                         let time_since_last = time - self.last_mutation_time;
                         let cooldown = self.weights._config.mutation_cooldown;
                         if time_since_last >= cooldown {

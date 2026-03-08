@@ -476,6 +476,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             plot_color = plot_color * 0.5 + xf(final_idx, 7u) * 0.5;  // blend with final xform's color
         }
 
+        // Per-point luminosity variation:
+        // - Iteration depth: early iterations brighter, later dimmer (creates gradient along trajectory)
+        // - Distance from origin: natural radial falloff
+        // - Transform weight: low-weight transforms contribute less brightness
+        let iter_lum = 1.0 - 0.5 * (f32(i) / f32(max_iters));  // 1.0 → 0.5 over iterations
+        let dist = length(plot_p);
+        let dist_lum = 1.0 / (1.0 + dist * 0.3);  // gentle radial falloff
+        let xf_weight = xf(tidx, 0u);  // transform blend weight
+        let lum = iter_lum * dist_lum * clamp(xf_weight * 3.0, 0.3, 1.0);
+
+        let base_col = palette(plot_color + u.extra.x) * lum;
+
         // Symmetry: plot rotated/mirrored copies
         let sym = i32(u.extra.w);
         let abs_sym = max(abs(sym), 1);
@@ -492,11 +504,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let px_y = i32(screen.y);
 
             if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
-                let col = palette(plot_color + u.extra.x);
-                // Sub-pixel offset for soft splatting
                 let frac_x = screen.x - f32(px_x);
                 let frac_y = screen.y - f32(px_y);
-                splat_point(px_x, px_y, frac_x, frac_y, col, vel, w, h);
+                splat_point(px_x, px_y, frac_x, frac_y, base_col, vel, w, h);
             }
 
             // Bilateral mirror
@@ -506,11 +516,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 let mpx_x = i32(mscreen.x);
                 let mpx_y = i32(mscreen.y);
                 if (mpx_x >= 0 && mpx_x < i32(w) && mpx_y >= 0 && mpx_y < i32(h)) {
-                    let mcol = palette(plot_color + u.extra.x);
                     let mfrac_x = mscreen.x - f32(mpx_x);
                     let mfrac_y = mscreen.y - f32(mpx_y);
                     let mvel = vec2(-vel.x, vel.y);
-                    splat_point(mpx_x, mpx_y, mfrac_x, mfrac_y, mcol, mvel, w, h);
+                    splat_point(mpx_x, mpx_y, mfrac_x, mfrac_y, base_col, mvel, w, h);
                 }
             }
         }

@@ -108,11 +108,12 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         }
     }
 
-    // ── Flam3 log-density tonemapping ──
+    // ── Log-density tonemapping with contrast preservation ──
     // Density is stored as fixed-point * 1000 (from bilinear splatting)
-    let density_hits = blur_density / 1000.0;  // convert back to approximate hit count
+    let density_hits = blur_density / 1000.0;
+    // Use sqrt of log to spread out the dynamic range instead of saturating
     let log_density = log(1.0 + density_hits * flame_bright);
-    let alpha = log_density / (log_density + 1.0);
+    let alpha = sqrt(log_density / (log_density + 2.0));
 
     // Recover average color (RGB and density both stored as fixed-point * 1000)
     let raw_color = select(
