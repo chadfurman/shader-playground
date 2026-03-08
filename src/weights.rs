@@ -157,6 +157,16 @@ pub struct RuntimeConfig {
     pub temporal_reprojection: f32,
     #[serde(default)]
     pub variation_scales: HashMap<String, f32>,
+    #[serde(default = "default_parent_current_bias")]
+    pub parent_current_bias: f32,
+    #[serde(default = "default_parent_voted_bias")]
+    pub parent_voted_bias: f32,
+    #[serde(default = "default_parent_saved_bias")]
+    pub parent_saved_bias: f32,
+    #[serde(default = "default_parent_random_bias")]
+    pub parent_random_bias: f32,
+    #[serde(default = "default_vote_blacklist_threshold")]
+    pub vote_blacklist_threshold: i32,
 }
 
 fn default_morph_duration() -> f32 { 8.0 }
@@ -194,6 +204,11 @@ fn default_morph_speed() -> f32 { 1.0 }            // global morph speed multipl
 fn default_morph_stagger_count() -> u32 { 2 }      // max transforms to randomize (0 = all same speed)
 fn default_morph_stagger_min() -> f32 { 0.3 }      // slowest random morph rate
 fn default_morph_stagger_max() -> f32 { 0.6 }      // fastest random morph rate
+fn default_parent_current_bias() -> f32 { 0.30 }
+fn default_parent_voted_bias() -> f32 { 0.25 }
+fn default_parent_saved_bias() -> f32 { 0.25 }
+fn default_parent_random_bias() -> f32 { 0.20 }
+fn default_vote_blacklist_threshold() -> i32 { -2 }
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 
