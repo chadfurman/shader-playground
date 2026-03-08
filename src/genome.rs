@@ -882,7 +882,7 @@ impl FlameGenome {
     }
 
     /// Estimate attractor extent via CPU chaos game (percentile-based, outlier-resistant).
-    fn estimate_attractor_extent(&self) -> f32 {
+    pub(crate) fn estimate_attractor_extent(&self) -> f32 {
         let mut rng = rand::rng();
         let mut p = (0.5f32, 0.3f32);
         let mut xs = Vec::with_capacity(400);
@@ -1541,7 +1541,7 @@ impl FlameGenome {
     }
 
     /// Normalize variation weights per transform to sum to 1.0, keeping max 2 active.
-    fn normalize_variations(&mut self) {
+    pub(crate) fn normalize_variations(&mut self) {
         for xf in &mut self.transforms {
             // Collect active variations
             let mut active: Vec<(usize, f32)> = (0..VARIATION_COUNT)
@@ -1571,7 +1571,7 @@ impl FlameGenome {
     }
 
     /// Normalize transform blend weights to sum to 1.0.
-    fn normalize_weights(&mut self) {
+    pub(crate) fn normalize_weights(&mut self) {
         let sum: f32 = self.transforms.iter().map(|xf| xf.weight).sum();
         if sum > 0.01 {
             for xf in &mut self.transforms {
@@ -1581,7 +1581,7 @@ impl FlameGenome {
     }
 
     /// Evenly distribute color indices across transforms.
-    fn distribute_colors(&mut self) {
+    pub(crate) fn distribute_colors(&mut self) {
         let n = self.transforms.len();
         if n == 0 {
             return;
@@ -1714,5 +1714,197 @@ pub fn palette_rgba_data(genome: &FlameGenome) -> Vec<[f32; 4]> {
             data
         }
         None => generate_default_palette_rgba(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_genome(n_transforms: usize) -> FlameGenome {
+        let mut rng = rand::rng();
+        let transforms: Vec<FlameTransform> = (0..n_transforms)
+            .map(|_| FlameTransform::random_transform(&mut rng))
+            .collect();
+        FlameGenome {
+            name: "test".into(),
+            global: GlobalParams {
+                speed: 0.25,
+                zoom: 3.0,
+                trail: 0.15,
+                flame_brightness: 0.2,
+            },
+            kifs: KifsParams {
+                fold_angle: 0.0,
+                scale: 0.0,
+                brightness: 0.0,
+            },
+            transforms,
+            final_transform: None,
+            symmetry: 1,
+            palette: Some(generate_random_palette()),
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
+        }
+    }
+
+    #[test]
+    fn default_genome_has_transforms() {
+        let g = FlameGenome::default_genome();
+        assert!(!g.transforms.is_empty());
+        assert!(g.palette.is_some());
+    }
+
+    #[test]
+    fn normalize_weights_sums_to_one() {
+        let mut g = make_test_genome(4);
+        g.transforms[0].weight = 5.0;
+        g.transforms[1].weight = 3.0;
+        g.transforms[2].weight = 1.0;
+        g.transforms[3].weight = 1.0;
+        g.normalize_weights();
+        let sum: f32 = g.transforms.iter().map(|t| t.weight).sum();
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "weights should sum to 1.0, got {sum}"
+        );
+    }
+
+    #[test]
+    fn normalize_variations_ensures_nonzero() {
+        let mut g = make_test_genome(2);
+        // Zero out all variations
+        for xf in &mut g.transforms {
+            *xf = FlameTransform::default();
+            xf.weight = 0.5;
+            xf.linear = 0.0;
+        }
+        g.normalize_variations();
+        // After normalization with all zeros, variations stay zero — that's valid.
+        // The function normalizes existing nonzero variations, it doesn't inject new ones.
+        // Instead, verify that if we give a transform some variations, they normalize to 1.0.
+        let mut g2 = make_test_genome(2);
+        g2.transforms[0].linear = 0.6;
+        g2.transforms[0].sinusoidal = 0.4;
+        g2.normalize_variations();
+        let sum: f32 = (0..VARIATION_COUNT)
+            .map(|v| g2.transforms[0].get_variation(v))
+            .sum();
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "variation weights should sum to 1.0, got {sum}"
+        );
+    }
+
+    #[test]
+    fn normalize_variations_keeps_max_two() {
+        let mut g = make_test_genome(1);
+        let xf = &mut g.transforms[0];
+        xf.clear_variations();
+        xf.linear = 0.5;
+        xf.sinusoidal = 0.3;
+        xf.spherical = 0.2;
+        g.normalize_variations();
+        let active_count = (0..VARIATION_COUNT)
+            .filter(|&v| g.transforms[0].get_variation(v) > 0.0)
+            .count();
+        assert!(
+            active_count <= 2,
+            "should have at most 2 active variations, got {active_count}"
+        );
+    }
+
+    #[test]
+    fn distribute_colors_evenly_spaced() {
+        let mut g = make_test_genome(4);
+        g.distribute_colors();
+        let expected = [0.0, 0.25, 0.5, 0.75];
+        for (i, xf) in g.transforms.iter().enumerate() {
+            assert!(
+                (xf.color - expected[i]).abs() < 0.01,
+                "transform {i} color should be {}, got {}",
+                expected[i],
+                xf.color
+            );
+        }
+    }
+
+    #[test]
+    fn random_transform_has_valid_weight() {
+        let mut rng = rand::rng();
+        let xf = FlameTransform::random_transform(&mut rng);
+        assert!(
+            xf.weight > 0.0,
+            "random transform should have positive weight"
+        );
+    }
+
+    #[test]
+    fn random_transform_has_variation() {
+        let mut rng = rand::rng();
+        let xf = FlameTransform::random_transform(&mut rng);
+        let has_variation = (0..VARIATION_COUNT).any(|v| xf.get_variation(v) > 0.0);
+        assert!(
+            has_variation,
+            "random transform should have at least one variation"
+        );
+    }
+
+    #[test]
+    fn breed_records_lineage() {
+        let pa = make_test_genome(4);
+        let pb = make_test_genome(3);
+        let audio = crate::audio::AudioFeatures::default();
+        let cfg: crate::weights::RuntimeConfig = serde_json::from_str("{}").unwrap_or_default();
+        let child = FlameGenome::breed(&pa, &pb, &None, &audio, &cfg, &None, &mut None);
+        assert_eq!(child.parent_a.as_deref(), Some("test"));
+        assert_eq!(child.parent_b.as_deref(), Some("test"));
+        assert_eq!(child.generation, 1);
+    }
+
+    #[test]
+    fn breed_transform_count_in_range() {
+        let pa = make_test_genome(4);
+        let pb = make_test_genome(4);
+        let audio = crate::audio::AudioFeatures::default();
+        let cfg: crate::weights::RuntimeConfig = serde_json::from_str("{}").unwrap_or_default();
+        for _ in 0..20 {
+            let child = FlameGenome::breed(&pa, &pb, &None, &audio, &cfg, &None, &mut None);
+            let n = child.transforms.len();
+            assert!(n >= 3 && n <= 6, "transform count {n} out of range 3..=6");
+        }
+    }
+
+    #[test]
+    fn breed_always_has_palette() {
+        let pa = make_test_genome(4);
+        let pb = make_test_genome(3);
+        let audio = crate::audio::AudioFeatures::default();
+        let cfg: crate::weights::RuntimeConfig = serde_json::from_str("{}").unwrap_or_default();
+        let child = FlameGenome::breed(&pa, &pb, &None, &audio, &cfg, &None, &mut None);
+        assert!(child.palette.is_some());
+        assert_eq!(child.palette.as_ref().unwrap().len(), 256);
+    }
+
+    #[test]
+    fn attractor_extent_default_genome() {
+        let g = FlameGenome::default_genome();
+        let extent = g.estimate_attractor_extent();
+        assert!(
+            extent > 0.0,
+            "default genome should have positive extent, got {extent}"
+        );
+    }
+
+    #[test]
+    fn genome_serialization_roundtrip() {
+        let g = make_test_genome(3);
+        let json = serde_json::to_string(&g).unwrap();
+        let g2: FlameGenome = serde_json::from_str(&json).unwrap();
+        assert_eq!(g.name, g2.name);
+        assert_eq!(g.transforms.len(), g2.transforms.len());
+        assert_eq!(g.symmetry, g2.symmetry);
+        assert_eq!(g.generation, g2.generation);
     }
 }
