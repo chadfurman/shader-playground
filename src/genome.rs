@@ -171,9 +171,9 @@ impl FlameGenome {
         g[0] = self.global.speed;
         g[1] = self.global.zoom;
         g[2] = cfg.trail;
-        // Scale flame_brightness for accumulation depth: with decay 0.995, density is
-        // ~200x higher than single-frame. Multiply by (1-decay) to normalize sensitivity.
-        g[3] = self.global.flame_brightness * (1.0 - cfg.accumulation_decay);
+        // Scale flame_brightness for accumulation depth: sqrt(1-decay) balances
+        // sensitivity for accumulated density values without crushing everything.
+        g[3] = self.global.flame_brightness * (1.0 - cfg.accumulation_decay).sqrt();
         g[4] = self.kifs.fold_angle;
         g[5] = self.kifs.scale;
         g[6] = self.kifs.brightness;

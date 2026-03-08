@@ -79,7 +79,7 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // Gamma is applied INSIDE the vibrancy calculation, not as a blanket final step
     let gamma_alpha = pow(max(alpha, 0.001), gamma);
     let ls = vibrancy * alpha + (1.0 - vibrancy) * gamma_alpha;
-    let flame = ls * raw_color + (1.0 - vibrancy) * gamma_alpha * vec3(1.0);
+    let flame = ls * raw_color;
 
     // Highlight power — boosts bright areas for that glowing hot-spot look
     let highlight_boost = pow(max(alpha, 0.0), highlight) * highlight * 0.3;
