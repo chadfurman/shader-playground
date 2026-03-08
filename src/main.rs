@@ -1408,6 +1408,7 @@ struct App {
     favorite_profile: Option<FavoriteProfile>,
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
+    prev_zoom: f32,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1464,6 +1465,7 @@ impl App {
             perf_log: std::fs::OpenOptions::new()
                 .create(true).append(true)
                 .open("perf.log").ok(),
+            prev_zoom: 3.0,
         }
     }
 
@@ -1938,11 +1940,13 @@ impl ApplicationHandler for App {
                         self.weights._config.dof_focal_distance,
                         if self.weights._config.spectral_rendering { 1.0 } else { 0.0 },
                         self.weights._config.temporal_reprojection,
-                        0.0,
+                        self.prev_zoom,
                     ],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+
+                self.prev_zoom = self.globals[1]; // zoom is globals[1]
 
                 // Adaptive compute budget: target ~4 effective transforms worth of work.
                 // Scale both workgroups AND iterations to keep frame time manageable

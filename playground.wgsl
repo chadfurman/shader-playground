@@ -240,9 +240,25 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let ls = vibrancy * alpha + (1.0 - vibrancy) * gamma_alpha;
     var col = (ls + edge_glow) * raw_color;
 
-    // ── Feedback trail — gentle temporal smoothing ──
-    let prev = textureSample(prev_frame, prev_sampler, tex_uv).rgb;
-    col = max(col, prev * trail);  // max-blend, not additive — prevents brightness buildup
+    // ── Feedback trail with temporal reprojection ──
+    let temporal_reproj = u.extra5.z;
+    let prev_zoom = u.extra5.w;
+    let cur_zoom = u.globals.y;
+
+    var prev_uv = tex_uv;
+    if (temporal_reproj > 0.001 && prev_zoom > 0.001) {
+        // Warp previous frame by zoom ratio to reduce ghosting during zoom transitions
+        // Derivation: screen = (world / zoom + 0.5) * resolution
+        // So for same world point: prev_uv = (uv - 0.5) * cur_zoom / prev_zoom + 0.5
+        let centered = tex_uv - vec2(0.5);
+        let zoom_ratio = cur_zoom / prev_zoom;
+        let reprojected = centered * zoom_ratio + vec2(0.5);
+        prev_uv = mix(tex_uv, reprojected, temporal_reproj);
+    }
+
+    prev_uv = clamp(prev_uv, vec2(0.001), vec2(0.999));
+    let prev = textureSample(prev_frame, prev_sampler, prev_uv).rgb;
+    col = max(col, prev * trail);
 
     // ── Density-aware bloom — soft glow on sparse points, crisp dense structure ──
     if (bloom_int > 0.001) {

@@ -406,6 +406,49 @@ fn splat_point(cx: i32, cy: i32, fx: f32, fy: f32, col: vec3<f32>, vel: vec2<f32
     }
 }
 
+// ── Spectral Color Rendering ──
+// CIE XYZ color matching functions (Wyman et al. 2013 Gaussian approximation)
+// These constants are the scientific standard — they define spectral response curves.
+fn cie_x(wavelength: f32) -> f32 {
+    let t1 = (wavelength - 442.0) * select(0.0624, 0.0374, wavelength < 442.0);
+    let t2 = (wavelength - 599.8) * select(0.0264, 0.0323, wavelength < 599.8);
+    let t3 = (wavelength - 501.1) * select(0.0490, 0.0382, wavelength < 501.1);
+    return 0.362 * exp(-0.5 * t1 * t1) + 1.056 * exp(-0.5 * t2 * t2) - 0.065 * exp(-0.5 * t3 * t3);
+}
+
+fn cie_y(wavelength: f32) -> f32 {
+    let t1 = (wavelength - 568.8) * select(0.0213, 0.0247, wavelength < 568.8);
+    let t2 = (wavelength - 530.9) * select(0.0613, 0.0322, wavelength < 530.9);
+    return 0.821 * exp(-0.5 * t1 * t1) + 0.286 * exp(-0.5 * t2 * t2);
+}
+
+fn cie_z(wavelength: f32) -> f32 {
+    let t1 = (wavelength - 437.0) * select(0.0845, 0.0278, wavelength < 437.0);
+    let t2 = (wavelength - 459.0) * select(0.0385, 0.0725, wavelength < 459.0);
+    return 1.217 * exp(-0.5 * t1 * t1) + 0.681 * exp(-0.5 * t2 * t2);
+}
+
+// Map palette index [0,1] to wavelength [380,780]nm
+fn palette_to_wavelength(t: f32) -> f32 {
+    return 380.0 + fract(t) * 400.0;
+}
+
+// CIE XYZ to linear sRGB (D65 illuminant, standard matrix)
+fn xyz_to_srgb(xyz: vec3<f32>) -> vec3<f32> {
+    return vec3(
+         3.2406 * xyz.x - 1.5372 * xyz.y - 0.4986 * xyz.z,
+        -0.9689 * xyz.x + 1.8758 * xyz.y + 0.0415 * xyz.z,
+         0.0557 * xyz.x - 0.2040 * xyz.y + 1.0570 * xyz.z
+    );
+}
+
+// Spectral palette: color index → visible spectrum via CIE XYZ
+fn palette_spectral(t: f32) -> vec3<f32> {
+    let wavelength = palette_to_wavelength(t);
+    let xyz = vec3(cie_x(wavelength), cie_y(wavelength), cie_z(wavelength));
+    return max(xyz_to_srgb(xyz), vec3(0.0));
+}
+
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let speed = u.globals.x;
@@ -490,7 +533,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let xf_weight = xf(tidx, 0u);  // transform blend weight
         let lum = iter_lum * dist_lum * clamp(xf_weight * 3.0, 0.3, 1.0);
 
-        let base_col = palette(plot_color + u.extra.x) * lum;
+        var base_col: vec3<f32>;
+        if (u.extra5.y > 0.5) {
+            base_col = palette_spectral(plot_color + u.extra.x) * lum;
+        } else {
+            base_col = palette(plot_color + u.extra.x) * lum;
+        }
 
         // Symmetry: plot rotated/mirrored copies
         let sym = i32(u.extra.w);
