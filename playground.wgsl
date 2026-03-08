@@ -116,40 +116,13 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     // ── KIFS background layer — disabled ──
     let bg = vec3(0.0);
 
-    // ── Flame foreground (density estimation via 3x3 gaussian blur of histogram) ──
-    // This spreads each sample over a small area, turning thin curves into
-    // soft glowing surfaces — the key to that Electric Sheep "cosmic" look.
+    // ── Flame foreground (direct histogram read — trail provides temporal smoothing) ──
     let h = u32(u.resolution.y);
-    var density = 0.0;
-    var acc_r = 0.0;
-    var acc_g = 0.0;
-    var acc_b = 0.0;
-    var gw_total = 0.0;
-    // 3x3 gaussian kernel (sigma ≈ 0.85)
-    let gk = array<f32, 9>(
-        0.0625, 0.125, 0.0625,
-        0.125,  0.25,  0.125,
-        0.0625, 0.125, 0.0625,
-    );
-    for (var ky = -1; ky <= 1; ky++) {
-        for (var kx = -1; kx <= 1; kx++) {
-            let sx = i32(px.x) + kx;
-            let sy = i32(px.y) + ky;
-            if (sx >= 0 && sx < i32(w) && sy >= 0 && sy < i32(h)) {
-                let si = (u32(sy) * w + u32(sx)) * 4u;
-                let gw = gk[(ky + 1) * 3 + (kx + 1)];
-                density += f32(histogram[si]) * gw;
-                acc_r += f32(histogram[si + 1u]) * gw;
-                acc_g += f32(histogram[si + 2u]) * gw;
-                acc_b += f32(histogram[si + 3u]) * gw;
-                gw_total += gw;
-            }
-        }
-    }
-    density /= gw_total;
-    acc_r /= gw_total;
-    acc_g /= gw_total;
-    acc_b /= gw_total;
+    let buf_idx = (px.y * w + px.x) * 4u;
+    let density = f32(histogram[buf_idx]);
+    let acc_r = f32(histogram[buf_idx + 1u]);
+    let acc_g = f32(histogram[buf_idx + 2u]);
+    let acc_b = f32(histogram[buf_idx + 3u]);
 
     // Recover average color from accumulated RGB
     let avg_color = select(
@@ -167,48 +140,28 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let vibrant_color = mix(vec3(lum), avg_color, pow(alpha, max(1.0 - vibrancy, 0.01)));
     let flame = vibrant_color * alpha;
 
-    // ── Crossfade + Combine ──
-    let crossfade = clamp(u.extra2.x, 0.0, 1.0);
-    let old_flame = textureSample(crossfade_tex, prev_sampler, tex_uv).rgb;
-
-    // New flame from histogram
+    // ── Combine ──
     var new_col = flame + bg;
 
-    // Feedback trail — only for the new flame
+    // Feedback trail — temporal accumulation smooths grain across frames
     let prev = textureSample(prev_frame, prev_sampler, tex_uv).rgb;
     new_col = new_col + prev * trail;
 
-    // Bloom on the new flame's feedback
+    // Bloom — cheap 5-tap cross
     let bloom_int = u.extra.z;
     if (bloom_int > 0.001) {
         let texel = 1.0 / u.resolution;
-        var bloom = vec3(0.0);
-        // 13-tap cross pattern
-        let offsets = array<vec2<f32>, 12>(
-            vec2(-3.0, 0.0), vec2(-2.0, 0.0), vec2(-1.0, 0.0),
-            vec2( 1.0, 0.0), vec2( 2.0, 0.0), vec2( 3.0, 0.0),
-            vec2(0.0, -3.0), vec2(0.0, -2.0), vec2(0.0, -1.0),
-            vec2(0.0,  1.0), vec2(0.0,  2.0), vec2(0.0,  3.0),
-        );
-        let weights = array<f32, 12>(
-            0.05, 0.1, 0.2,
-            0.2, 0.1, 0.05,
-            0.05, 0.1, 0.2,
-            0.2, 0.1, 0.05,
-        );
-        for (var bi = 0u; bi < 12u; bi++) {
-            bloom += textureSample(prev_frame, prev_sampler, tex_uv + offsets[bi] * texel * 4.0).rgb * weights[bi];
-        }
+        let bloom = (
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-2.0, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2( 2.0, 0.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -2.0) * texel).rgb +
+            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  2.0) * texel).rgb
+        ) * 0.25;
         new_col += bloom * bloom_int;
     }
 
-    // Blend: old snapshot dissolves out, new flame fades in
-    // Gently dim old_flame so it doesn't persist forever during slow dissolves
-    var col = mix(old_flame * (1.0 - trail * 0.3), new_col, crossfade);
-
     // Tonemap: soft clamp to prevent blowout
-    col = col / (col + vec3(1.0));  // Reinhard
-    // sRGB texture format handles gamma — no explicit pow needed
+    var col = new_col / (new_col + vec3(1.0));  // Reinhard
 
     return vec4(col, 1.0);
 }

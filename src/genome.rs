@@ -159,13 +159,14 @@ fn audio_biased_variation_pick(rng: &mut impl Rng, audio: &AudioFeatures) -> usi
 }
 
 impl FlameGenome {
-    /// Pack global params into a fixed [f32; 12] for the uniform buffer.
+    /// Pack global params into a fixed [f32; 16] for the uniform buffer.
     /// Layout:
     ///   [0] speed  [1] zoom  [2] trail  [3] flame_brightness
     ///   [4] kifs_fold  [5] kifs_scale  [6] kifs_brightness  [7] drift_speed
-    ///   [8] color_shift  [9..11] reserved
-    pub fn flatten_globals(&self) -> [f32; 12] {
-        let mut g = [0.0f32; 12];
+    ///   [8] color_shift  [9] vibrancy  [10] bloom_intensity  [11] (reserved)
+    ///   [12] noise_disp  [13] curl_disp  [14] tangent_clamp  [15] (reserved)
+    pub fn flatten_globals(&self) -> [f32; 16] {
+        let mut g = [0.0f32; 16];
         g[0] = self.global.speed;
         g[1] = self.global.zoom;
         g[2] = self.global.trail;
@@ -175,8 +176,11 @@ impl FlameGenome {
         g[6] = self.kifs.brightness;
         // g[7] = drift_speed (set by weights, default 0)
         // g[8] = color_shift (set by weights, default 0)
-        g[9] = 0.7;  // vibrancy base
-        g[10] = 0.05;  // bloom_intensity base (low — feeds back every frame)
+        g[9] = 0.7;   // vibrancy base
+        g[10] = 0.05;  // bloom_intensity base
+        g[12] = 0.08;  // noise_displacement base
+        g[13] = 0.05;  // curl_displacement base
+        g[14] = 4.0;   // tangent_clamp base
         g
     }
 

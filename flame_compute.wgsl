@@ -201,7 +201,8 @@ fn V_cross(p: vec2<f32>) -> vec2<f32> {
 }
 
 fn V_tangent(p: vec2<f32>) -> vec2<f32> {
-    return vec2(sin(p.x) / (cos(p.y) + 1e-6), tan(p.y));
+    let tc = u.extra2.z;  // tangent_clamp from weights
+    return clamp(vec2(sin(p.x) / (cos(p.y) + 1e-6), tan(p.y)), vec2(-tc), vec2(tc));
 }
 
 fn V_cosine(p: vec2<f32>) -> vec2<f32> {
@@ -221,7 +222,7 @@ fn V_blob(p: vec2<f32>) -> vec2<f32> {
 fn V_noise(p: vec2<f32>, seed: u32) -> vec2<f32> {
     let nx = vnoise(p.x * 3.0, seed + 500u);
     let ny = vnoise(p.y * 3.0, seed + 600u);
-    return p + vec2(nx, ny) * 0.3;
+    return p + vec2(nx, ny) * u.extra2.x;  // noise_displacement from weights
 }
 
 fn V_curl(p: vec2<f32>, seed: u32) -> vec2<f32> {
@@ -231,7 +232,7 @@ fn V_curl(p: vec2<f32>, seed: u32) -> vec2<f32> {
     let n01 = vnoise(p.x * 2.0, seed + 700u) + vnoise((p.y + eps) * 2.0, seed + 800u);
     let dx = (n10 - n00) / eps;
     let dy = (n01 - n00) / eps;
-    return p + vec2(dy, -dx) * 0.15;
+    return p + vec2(dy, -dx) * u.extra2.y;  // curl_displacement from weights
 }
 
 // ── IFS Transform (reads from storage buffer) ──

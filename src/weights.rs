@@ -68,7 +68,23 @@ const XF_FIELDS: [&str; PARAMS_PER_XF] = [
 ];
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct RuntimeConfig {
+    #[serde(default = "default_morph_duration")]
+    pub morph_duration: f32,
+    #[serde(default = "default_mutation_cooldown")]
+    pub mutation_cooldown: f32,
+    #[serde(default = "default_workgroups")]
+    pub workgroups: u32,
+}
+
+fn default_morph_duration() -> f32 { 8.0 }
+fn default_mutation_cooldown() -> f32 { 3.0 }
+fn default_workgroups() -> u32 { 512 }
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Weights {
+    #[serde(default)]
+    pub _config: RuntimeConfig,
     #[serde(default)]
     pub bass: HashMap<String, f32>,
     #[serde(default)]
@@ -136,10 +152,10 @@ impl Weights {
     /// Apply weights to global params only.
     pub fn apply_globals(
         &self,
-        base: &[f32; 12],
+        base: &[f32; 16],
         features: &crate::audio::AudioFeatures,
         time_signals: &TimeSignals,
-    ) -> [f32; 12] {
+    ) -> [f32; 16] {
         let mut result = *base;
         let signals = self.signal_list(features, time_signals);
         for (_signal_idx, (weights, signal_val, divisor)) in signals.iter().enumerate() {
@@ -242,6 +258,9 @@ fn global_index(name: &str) -> Option<usize> {
         "color_shift" => Some(8),
         "vibrancy" => Some(9),
         "bloom_intensity" => Some(10),
+        "noise_displacement" => Some(12),
+        "curl_displacement" => Some(13),
+        "tangent_clamp" => Some(14),
         _ => None,
     }
 }

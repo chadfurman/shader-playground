@@ -114,6 +114,7 @@ struct Gpu {
     compute_pipeline_layout: wgpu::PipelineLayout,
     histogram_buffer: wgpu::Buffer,
     transform_buffer: wgpu::Buffer,
+    workgroups: u32,
 }
 
 impl Gpu {
@@ -360,6 +361,7 @@ impl Gpu {
             compute_pipeline_layout,
             histogram_buffer,
             transform_buffer,
+            workgroups: 512,
         }
     }
 
@@ -483,7 +485,7 @@ impl Gpu {
             );
             cpass.set_pipeline(&self.compute_pipeline);
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
-            cpass.dispatch_workgroups(512, 1, 1); // 512 * 256 = 131K threads
+            cpass.dispatch_workgroups(self.workgroups, 1, 1);
         }
 
         // 3. Render to feedback texture
@@ -810,7 +812,7 @@ struct App {
     start: Instant,
     frame: u32,
     mouse: [f32; 2],
-    globals: [f32; 12],
+    globals: [f32; 16],
     xf_params: Vec<f32>,
     num_transforms: usize,
     last_frame_time: Instant,
@@ -826,15 +828,12 @@ struct App {
     last_mutation_time: f32,
     random_walk: f32,
     // Ease-in-out genome morph
-    morph_start_globals: [f32; 12],
+    morph_start_globals: [f32; 16],
     morph_start_xf: Vec<f32>,
-    morph_base_globals: [f32; 12],  // current interpolated genome base (no audio)
+    morph_base_globals: [f32; 16],  // current interpolated genome base (no audio)
     morph_base_xf: Vec<f32>,       // current interpolated xf base (no audio)
     morph_progress: f32,            // 0.0 → 1.0
 }
-
-const MUTATION_COOLDOWN: f32 = 3.0;
-const MORPH_DURATION: f32 = 8.0; // seconds for genome transition (ease-in-out)
 
 fn smoothstep(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
@@ -946,7 +945,7 @@ impl App {
         if reload_params {
             let override_params = load_params();
             // Override globals from params.json (first 12 entries map to globals)
-            for i in 0..12.min(override_params.len()) {
+            for i in 0..16.min(override_params.len()) {
                 self.globals[i] = override_params[i];
                 self.morph_base_globals[i] = override_params[i];
             }
@@ -954,7 +953,13 @@ impl App {
         }
         if reload_weights {
             self.weights = load_weights();
-            eprintln!("[weights] reloaded");
+            if let Some(gpu) = &mut self.gpu {
+                gpu.workgroups = self.weights._config.workgroups;
+            }
+            eprintln!("[weights] reloaded (workgroups={}, morph={}s, cooldown={}s)",
+                self.weights._config.workgroups,
+                self.weights._config.morph_duration,
+                self.weights._config.mutation_cooldown);
         }
         if reload_features {
             if let Ok(json) = fs::read_to_string(audio_features_path()) {
@@ -1148,8 +1153,9 @@ impl ApplicationHandler for App {
                     let time_signals = crate::weights::TimeSignals::compute(time, time_since_mutation, self.random_walk);
 
                     // Advance morph progress
+                    let morph_dur = self.weights._config.morph_duration;
                     if self.morph_progress < 1.0 {
-                        self.morph_progress = (self.morph_progress + dt / MORPH_DURATION).min(1.0);
+                        self.morph_progress = (self.morph_progress + dt / morph_dur).min(1.0);
                     }
                     let t = smoothstep(self.morph_progress);
 
@@ -1157,7 +1163,7 @@ impl ApplicationHandler for App {
                     let genome_globals = self.genome.flatten_globals();
                     let genome_xf = self.genome.flatten_transforms();
 
-                    for i in 0..12 {
+                    for i in 0..16 {
                         self.morph_base_globals[i] = self.morph_start_globals[i]
                             + (genome_globals[i] - self.morph_start_globals[i]) * t;
                     }
@@ -1188,7 +1194,8 @@ impl ApplicationHandler for App {
                     let mr = self.weights.mutation_rate(&self.audio_features, &time_signals);
                     self.mutation_accum += mr * dt;
                     let time_since_last = time - self.last_mutation_time;
-                    if self.mutation_accum >= 1.0 && time_since_last >= MUTATION_COOLDOWN {
+                    let cooldown = self.weights._config.mutation_cooldown;
+                    if self.mutation_accum >= 1.0 && time_since_last >= cooldown {
                         self.mutation_accum = 0.0;
 
                         self.genome_history.push(self.genome.clone());
@@ -1235,7 +1242,7 @@ impl ApplicationHandler for App {
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
                     extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
-                    extra2: [1.0, 0.0, 0.0, 0.0], // crossfade disabled — genome morph handles transitions
+                    extra2: [self.globals[12], self.globals[13], self.globals[14], self.globals[15]],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

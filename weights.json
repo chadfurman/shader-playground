@@ -1,82 +1,104 @@
 {
   "_doc": {
-    "_signals": "bass, mids, highs, energy, beat, beat_accum, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope — each maps param names to weights. Unspecified = 0.",
-    "_formula": "final[i] = genome_base[i] + (sum of weight * signal for all 15 signals) / 15",
-    "_wildcards": "xfN_ expands to all transforms with per-transform randomness (-1 to 1) and magnitude (1 to 5). xf0_, xf1_ etc. target specific transforms (no randomness/magnitude).",
-    "_time_signals": {
-      "time": "Raw elapsed seconds — steady linear ramp, never oscillates",
-      "time_slow": "Noise at 0.05 speed — ~20s wander, glacial",
-      "time_med": "Noise at 0.2 speed — ~5s wander",
-      "time_fast": "Noise at 0.8 speed — ~1.25s wander",
-      "time_noise": "Noise at 0.3 speed — organic wandering, never repeats",
-      "time_drift": "Noise at 0.02 speed — ~50s glacial drift",
-      "time_flutter": "Noise at 1.5 speed — quick flicker",
-      "time_walk": "Random walk — accumulated noise, always moving forward, never reverses",
-      "time_envelope": "0-1 ramp since last mutation (10s to reach 1.0) — settle then drift"
-    },
+    "_signals": "bass, mids, highs, energy, beat, beat_accum, beat_pulse, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope",
+    "_formula": "final[i] = genome_base[i] + sum(weight * signal / divisor). Audio signals ÷6, time signals ÷9.",
+    "_wildcards": "xfN_ expands to all transforms with per-transform randomness (-1 to 1) and magnitude (1 to 5). xf0_, xf1_ etc. target specific transforms.",
     "_params": {
-      "speed":            "Global animation speed",
-      "zoom":             "Camera zoom level",
-      "trail":            "Feedback trail decay (lower = longer trails)",
-      "flame_brightness": "Overall flame brightness",
-      "kifs_fold":        "KIFS folding angle",
-      "kifs_scale":       "KIFS scale factor",
-      "kifs_brightness":  "KIFS geometry brightness",
-      "drift_speed":      "Orbital drift speed multiplier",
-      "color_shift":      "Hue shift applied to flame palette",
-      "xfN_weight":       "All transforms blend weight",
-      "xfN_angle":        "All transforms rotation angle",
-      "xfN_scale":        "All transforms scale factor",
-      "xfN_offset_x":     "All transforms X translation",
-      "xfN_offset_y":     "All transforms Y translation",
-      "xfN_color":        "All transforms palette index",
-      "xfN_linear":       "All transforms linear variation",
-      "xfN_sinusoidal":   "All transforms sinusoidal variation",
-      "xfN_spherical":    "All transforms spherical variation",
-      "xfN_swirl":        "All transforms swirl variation",
-      "xfN_horseshoe":    "All transforms horseshoe variation",
-      "xfN_handkerchief": "All transforms handkerchief variation",
-      "mutation_rate":     "Virtual — auto-evolve accumulator (triggers mutate at 1.0)",
-      "vibrancy":          "Color saturation based on density",
-      "bloom_intensity":   "Bloom glow intensity"
+      "speed":              "Global animation speed (base ~0.25)",
+      "zoom":               "Camera zoom level (base ~3.0)",
+      "trail":              "Feedback trail decay — higher = more persistence (base ~0.34)",
+      "flame_brightness":   "Overall flame brightness (base ~0.4)",
+      "kifs_fold":          "KIFS folding angle",
+      "kifs_scale":         "KIFS scale factor",
+      "kifs_brightness":    "KIFS geometry brightness (0 = disabled)",
+      "drift_speed":        "Orbital drift speed multiplier",
+      "color_shift":        "Hue shift applied to flame palette",
+      "vibrancy":           "Color saturation based on density (base 0.7)",
+      "bloom_intensity":    "Bloom glow intensity (base 0.05, feeds back every frame)",
+      "noise_displacement": "How much the 'noise' variation scatters points (base 0.08)",
+      "curl_displacement":  "How much the 'curl' variation displaces points (base 0.05)",
+      "tangent_clamp":      "Clamp range for tangent variation to prevent explosions (base 4.0)",
+      "mutation_rate":      "Virtual — auto-evolve accumulator (triggers mutate at 1.0)",
+      "xfN_weight":         "All transforms blend weight",
+      "xfN_angle":          "All transforms rotation angle",
+      "xfN_scale":          "All transforms scale factor",
+      "xfN_offset_x":       "All transforms X translation",
+      "xfN_offset_y":       "All transforms Y translation",
+      "xfN_color":          "All transforms palette index",
+      "xfN_linear":         "All transforms linear variation weight",
+      "xfN_sinusoidal":     "All transforms sinusoidal variation weight",
+      "xfN_spherical":      "All transforms spherical variation weight",
+      "xfN_swirl":          "All transforms swirl variation weight",
+      "xfN_horseshoe":      "All transforms horseshoe variation weight",
+      "xfN_handkerchief":   "All transforms handkerchief variation weight",
+      "xfN_julia":          "All transforms julia variation weight",
+      "xfN_polar":          "All transforms polar variation weight",
+      "xfN_disc":           "All transforms disc variation weight",
+      "xfN_rings":          "All transforms rings variation weight",
+      "xfN_bubble":         "All transforms bubble variation weight",
+      "xfN_fisheye":        "All transforms fisheye variation weight",
+      "xfN_exponential":    "All transforms exponential variation weight",
+      "xfN_spiral":         "All transforms spiral variation weight",
+      "xfN_diamond":        "All transforms diamond variation weight",
+      "xfN_bent":           "All transforms bent variation weight",
+      "xfN_waves":          "All transforms waves variation weight",
+      "xfN_popcorn":        "All transforms popcorn variation weight",
+      "xfN_fan":            "All transforms fan variation weight",
+      "xfN_eyefish":        "All transforms eyefish variation weight",
+      "xfN_cross":          "All transforms cross variation weight",
+      "xfN_tangent":        "All transforms tangent variation weight",
+      "xfN_cosine":         "All transforms cosine variation weight",
+      "xfN_blob":           "All transforms blob variation weight",
+      "xfN_noise":          "All transforms noise variation weight",
+      "xfN_curl":           "All transforms curl variation weight"
+    },
+    "_config_doc": {
+      "morph_duration":   "Seconds for genome transition ease-in-out (default 8)",
+      "mutation_cooldown": "Min seconds between auto-evolve mutations (default 3)",
+      "workgroups":        "GPU compute workgroups — more = cleaner but slower (default 512)"
     }
   },
+  "_config": {
+    "morph_duration": 8.0,
+    "mutation_cooldown": 3.0,
+    "workgroups": 512
+  },
   "bass": {
-    "color_shift": -0.4,
-    "flame_brightness": 0.3,
-    "vibrancy": 0.15,
-    "xfN_spherical": 0.3,
-    "xfN_bubble": 0.25,
-    "xfN_blob": 0.2
+    "color_shift": -0.02,
+    "flame_brightness": 0.03,
+    "vibrancy": 0.02,
+    "xfN_spherical": 0.02,
+    "xfN_bubble": 0.02,
+    "xfN_blob": 0.02
   },
   "mids": {
-    "color_shift": 0.15,
-    "xfN_sinusoidal": 0.2,
-    "xfN_waves": 0.15,
-    "xfN_cosine": 0.15
+    "color_shift": 0.02,
+    "xfN_sinusoidal": 0.02,
+    "xfN_waves": 0.02,
+    "xfN_cosine": 0.02
   },
   "highs": {
-    "color_shift": 0.3,
-    "xfN_julia": 0.2,
-    "xfN_disc": 0.15,
-    "xfN_cross": 0.1
+    "color_shift": 0.02,
+    "xfN_julia": 0.02,
+    "xfN_disc": 0.02,
+    "xfN_cross": 0.02
   },
   "energy": {
-    "flame_brightness": 1.0,
-    "drift_speed": 2.0,
+    "flame_brightness": 0.1,
+    "drift_speed": 0.2,
     "mutation_rate": 0.1,
-    "bloom_intensity": 0.5
+    "bloom_intensity": 0.05
   },
   "beat_pulse": {
-    "bloom_intensity": 0.6
+    "bloom_intensity": 0.03
   },
   "beat": {
-    "color_shift": -0.5,
-    "trail": -0.3,
+    "color_shift": -0.02,
+    "trail": -0.02,
     "mutation_rate": 0.08
   },
   "beat_accum": {
-    "trail": 0.4,
+    "trail": 0.04,
     "mutation_rate": 0.5
   },
   "time": {},
