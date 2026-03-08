@@ -73,11 +73,6 @@ impl VoteLedger {
         score
     }
 
-    /// Is this genome blacklisted (score at or below threshold)?
-    pub fn is_blacklisted(&self, name: &str, threshold: i32) -> bool {
-        self.entries.get(name).is_some_and(|e| e.score <= threshold)
-    }
-
     /// Pick a genome from the vote-weighted pool.
     /// Only includes genomes with positive scores (score > 0).
     /// Weight = score, so score 1 = weight 1, score 3 = weight 3.
@@ -111,8 +106,8 @@ impl VoteLedger {
     }
 
     /// Pick a random genome from ALL saved genomes (unweighted).
-    /// Includes voted and unvoted, excludes blacklisted.
-    pub fn pick_random_saved(genomes_dir: &Path, threshold: i32, ledger: &VoteLedger) -> Option<PathBuf> {
+    /// Excludes any genome with a negative vote score.
+    pub fn pick_random_saved(genomes_dir: &Path, _threshold: i32, ledger: &VoteLedger) -> Option<PathBuf> {
         use rand::prelude::IndexedRandom;
         let entries: Vec<_> = fs::read_dir(genomes_dir)
             .ok()?
@@ -124,11 +119,12 @@ impl VoteLedger {
                     && path.file_name().is_some_and(|n| n != "votes.json")
             })
             .filter(|e| {
+                // Exclude any genome with negative score
                 let stem = e.path().file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("")
                     .to_string();
-                !ledger.is_blacklisted(&stem, threshold)
+                !ledger.entries.get(&stem).is_some_and(|v| v.score < 0)
             })
             .collect();
 
