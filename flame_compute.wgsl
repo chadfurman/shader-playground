@@ -6,7 +6,7 @@ struct Uniforms {
     resolution: vec2<f32>,
     mouse: vec2<f32>,
     transform_count: u32,
-    has_final_xform: u32,
+    has_final_xform: u32,  // low bit = has_final, upper 16 bits = iterations_per_thread
     globals: vec4<f32>,   // speed, zoom, trail, flame_brightness
     kifs: vec4<f32>,      // fold_angle, scale, brightness, drift_speed
     extra: vec4<f32>,     // color_shift, vibrancy, bloom_intensity, symmetry
@@ -259,26 +259,29 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     let af_d   = xf(idx, 4u);
     let ox     = xf(idx, 5u);
     let oy     = xf(idx, 6u);
-    let w_lin  = xf(idx, 8u);
-    let w_sin  = xf(idx, 9u);
-    let w_sph  = xf(idx, 10u);
-    let w_swi  = xf(idx, 11u);
-    let w_hor  = xf(idx, 12u);
-    let w_han  = xf(idx, 13u);
 
     let drift = u.kifs.w; // drift_speed
 
-    // Per-transform seeded drift — all multipliers from uniforms
+    // Per-transform seeded drift — only computed for the selected transform
     let seed = hash_u(idx * 31337u + 42u);
-    let drift_amt = 0.3 + hash_f(seed) * 0.7; // 0.3–1.0 per transform
-    let spin_max = u.extra3.x;  // spin_speed_max from weights
-    let pos_drift = u.extra3.y; // position_drift from weights
-    let spin_speed = (hash_f(seed + 300u) * 2.0 - 1.0) * spin_max;
-    let angle_drift = t * spin_speed * drift * drift_amt;
-    let ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * pos_drift;
-    let oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * pos_drift;
+    var ox_drift = 0.0;
+    var oy_drift = 0.0;
+    var angle_drift = 0.0;
 
-    // Apply spin drift as a rotation on top of the affine matrix
+    if (drift > 0.001) {
+        let drift_amt = 0.3 + hash_f(seed) * 0.7;
+        let spin_max = u.extra3.x;
+        let pos_drift = u.extra3.y;
+        let spin_speed = (hash_f(seed + 300u) * 2.0 - 1.0) * spin_max;
+        angle_drift = t * spin_speed * drift * drift_amt;
+        // Position drift uses vnoise — the expensive part, only when drift > 0
+        if (pos_drift > 0.001) {
+            ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * pos_drift;
+            oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * pos_drift;
+        }
+    }
+
+    // Apply spin drift as rotation on top of affine
     let spin_cos = cos(angle_drift);
     let spin_sin = sin(angle_drift);
     let a2 = af_a * spin_cos - af_c * spin_sin;
@@ -289,35 +292,40 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     let q = vec2(a2 * p.x + b2 * p.y + ox + ox_drift,
                  c2 * p.x + d2 * p.y + oy + oy_drift);
 
-    // Compute effective scale for variations that need it (rings, etc.)
-    let eff_scale = sqrt(abs(af_a * af_d - af_b * af_c));
-
-    // Skip zero-weight variations to save compute
+    // ── Tier 1: cheap variations (always check) ──
+    let w_lin  = xf(idx, 8u);
     var v = q * w_lin;
+
+    let w_sin  = xf(idx, 9u);
+    let w_sph  = xf(idx, 10u);
+    let w_swi  = xf(idx, 11u);
+    let w_hor  = xf(idx, 12u);
+    let w_han  = xf(idx, 13u);
+
     if (w_sin > 0.0) { v += V_sinusoidal(q)    * w_sin; }
     if (w_sph > 0.0) { v += V_spherical(q)     * w_sph; }
     if (w_swi > 0.0) { v += V_swirl(q)         * w_swi; }
     if (w_hor > 0.0) { v += V_horseshoe(q)     * w_hor; }
     if (w_han > 0.0) { v += V_handkerchief(q)  * w_han; }
 
+    // ── Tier 2: moderate cost (atan2-based) — only load if any are active ──
     let w_jul  = xf(idx, 14u);
     let w_pol  = xf(idx, 15u);
     let w_dsc  = xf(idx, 16u);
     let w_rng  = xf(idx, 17u);
     let w_bub  = xf(idx, 18u);
     let w_fsh  = xf(idx, 19u);
+
+    if (w_jul > 0.0) { v += V_julia(q, rng)    * w_jul; }
+    if (w_pol > 0.0) { v += V_polar(q)          * w_pol; }
+    if (w_dsc > 0.0) { v += V_disc(q)           * w_dsc; }
+    if (w_rng > 0.0) { v += V_rings(q, idx)     * w_rng; }
+    if (w_bub > 0.0) { v += V_bubble(q)         * w_bub; }
+    if (w_fsh > 0.0) { v += V_fisheye(q)        * w_fsh; }
+
+    // ── Tier 3: expensive or scatter-prone — guard with a quick sum check ──
     let w_exp  = xf(idx, 20u);
     let w_spi  = xf(idx, 21u);
-
-    if (w_jul > 0.0) { v += V_julia(q, rng)                * w_jul; }
-    if (w_pol > 0.0) { v += V_polar(q)                     * w_pol; }
-    if (w_dsc > 0.0) { v += V_disc(q)                      * w_dsc; }
-    if (w_rng > 0.0) { v += V_rings(q, idx) * w_rng; }
-    if (w_bub > 0.0) { v += V_bubble(q)                    * w_bub; }
-    if (w_fsh > 0.0) { v += V_fisheye(q)                   * w_fsh; }
-    if (w_exp > 0.0) { v += V_exponential(q)               * w_exp; }
-    if (w_spi > 0.0) { v += V_spiral(q)                    * w_spi; }
-
     let w_dia  = xf(idx, 22u);
     let w_bnt  = xf(idx, 23u);
     let w_wav  = xf(idx, 24u);
@@ -331,21 +339,25 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     let w_noi  = xf(idx, 32u);
     let w_crl  = xf(idx, 33u);
 
-    // Compute effective angle for fan variation
-    let eff_angle = atan2(af_c, af_a);
+    let tier3_sum = w_exp + w_spi + w_dia + w_bnt + w_wav + w_pop + w_fan
+                  + w_eye + w_crs + w_tan + w_cos + w_blb + w_noi + w_crl;
 
-    if (w_dia > 0.0) { v += V_diamond(q)                        * w_dia; }
-    if (w_bnt > 0.0) { v += V_bent(q)                           * w_bnt; }
-    if (w_wav > 0.0) { v += V_waves(q, ox * 0.5, oy * 0.5)     * w_wav; }
-    if (w_pop > 0.0) { v += V_popcorn(q, ox * 0.3, oy * 0.3)   * w_pop; }
-    if (w_fan > 0.0) { v += V_fan(q, eff_angle)                 * w_fan; }
-    if (w_eye > 0.0) { v += V_eyefish(q)                        * w_eye; }
-    if (w_crs > 0.0) { v += V_cross(q)                          * w_crs; }
-    if (w_tan > 0.0) { v += V_tangent(q)                        * w_tan; }
-    if (w_cos > 0.0) { v += V_cosine(q)                         * w_cos; }
-    if (w_blb > 0.0) { v += V_blob(q, idx)                       * w_blb; }
-    if (w_noi > 0.0) { v += V_noise(q, seed)                    * w_noi; }
-    if (w_crl > 0.0) { v += V_curl(q, seed)                     * w_crl; }
+    if (tier3_sum > 0.0) {
+        if (w_exp > 0.0) { v += V_exponential(q)                * w_exp; }
+        if (w_spi > 0.0) { v += V_spiral(q)                     * w_spi; }
+        if (w_dia > 0.0) { v += V_diamond(q)                    * w_dia; }
+        if (w_bnt > 0.0) { v += V_bent(q)                       * w_bnt; }
+        if (w_wav > 0.0) { v += V_waves(q, ox * 0.5, oy * 0.5) * w_wav; }
+        if (w_pop > 0.0) { v += V_popcorn(q, ox * 0.3, oy * 0.3) * w_pop; }
+        if (w_fan > 0.0) { v += V_fan(q, atan2(af_c, af_a))    * w_fan; }
+        if (w_eye > 0.0) { v += V_eyefish(q)                    * w_eye; }
+        if (w_crs > 0.0) { v += V_cross(q)                      * w_crs; }
+        if (w_tan > 0.0) { v += V_tangent(q)                    * w_tan; }
+        if (w_cos > 0.0) { v += V_cosine(q)                     * w_cos; }
+        if (w_blb > 0.0) { v += V_blob(q, idx)                  * w_blb; }
+        if (w_noi > 0.0) { v += V_noise(q, seed)                * w_noi; }
+        if (w_crl > 0.0) { v += V_curl(q, seed)                 * w_crl; }
+    }
 
     return v;
 }
@@ -354,17 +366,19 @@ fn xform_color(idx: u32) -> f32 {
     return xf(idx, 7u);
 }
 
-// Soft-splat a point using bilinear weighting to the 4 nearest pixels.
-// This turns each chaos-game hit into a smooth sub-pixel contribution,
-// filling gaps and producing curved-looking surfaces instead of stipple dots.
-fn splat_point(cx: i32, cy: i32, fx: f32, fy: f32, col: vec3<f32>, vel: vec2<f32>, w: u32, h: u32) {
-    // Bilinear weights: distribute the point's contribution across a 2x2 quad
-    // based on sub-pixel position (fx, fy are the fractional offsets 0-1)
-    let w00 = (1.0 - fx) * (1.0 - fy);
-    let w10 = fx * (1.0 - fy);
-    let w01 = (1.0 - fx) * fy;
-    let w11 = fx * fy;
+// Splat helper — writes density + color + velocity to one pixel
+fn splat_pixel(bi: u32, wt: f32, ic: u32, ig: u32, ib: u32, ivx: i32, ivy: i32) {
+    atomicAdd(&histogram[bi],      u32(wt * 1000.0));
+    atomicAdd(&histogram[bi + 1u], u32(f32(ic) * wt));
+    atomicAdd(&histogram[bi + 2u], u32(f32(ig) * wt));
+    atomicAdd(&histogram[bi + 3u], u32(f32(ib) * wt));
+    atomicAdd(&histogram[bi + 4u], u32(i32(f32(ivx) * wt)));
+    atomicAdd(&histogram[bi + 5u], u32(i32(f32(ivy) * wt)));
+}
 
+// Bilinear sub-pixel splat — distributes point across 2x2 quad.
+// Skips neighbor pixels when sub-pixel offset < 10% to save atomic ops.
+fn splat_point(cx: i32, cy: i32, fx: f32, fy: f32, col: vec3<f32>, vel: vec2<f32>, w: u32, h: u32) {
     let ic = u32(col.x * 1000.0);
     let ig = u32(col.y * 1000.0);
     let ib = u32(col.z * 1000.0);
@@ -372,51 +386,19 @@ fn splat_point(cx: i32, cy: i32, fx: f32, fy: f32, col: vec3<f32>, vel: vec2<f32
     let ivy = i32(vel.y * 10000.0);
 
     // Center pixel (always valid — caller checked bounds)
-    let idx00 = (u32(cy) * w + u32(cx)) * 6u;
-    let d00 = u32(w00 * 1000.0);
-    atomicAdd(&histogram[idx00], d00);
-    atomicAdd(&histogram[idx00 + 1u], u32(f32(ic) * w00));
-    atomicAdd(&histogram[idx00 + 2u], u32(f32(ig) * w00));
-    atomicAdd(&histogram[idx00 + 3u], u32(f32(ib) * w00));
-    atomicAdd(&histogram[idx00 + 4u], u32(i32(f32(ivx) * w00)));
-    atomicAdd(&histogram[idx00 + 5u], u32(i32(f32(ivy) * w00)));
+    splat_pixel((u32(cy) * w + u32(cx)) * 6u, (1.0 - fx) * (1.0 - fy), ic, ig, ib, ivx, ivy);
 
-    // Right neighbor
+    // Only splat neighbors when sub-pixel offset is significant
     let nx = cx + 1;
-    if (nx < i32(w)) {
-        let idx10 = (u32(cy) * w + u32(nx)) * 6u;
-        let d10 = u32(w10 * 1000.0);
-        atomicAdd(&histogram[idx10], d10);
-        atomicAdd(&histogram[idx10 + 1u], u32(f32(ic) * w10));
-        atomicAdd(&histogram[idx10 + 2u], u32(f32(ig) * w10));
-        atomicAdd(&histogram[idx10 + 3u], u32(f32(ib) * w10));
-        atomicAdd(&histogram[idx10 + 4u], u32(i32(f32(ivx) * w10)));
-        atomicAdd(&histogram[idx10 + 5u], u32(i32(f32(ivy) * w10)));
-    }
-
-    // Bottom neighbor
     let ny = cy + 1;
-    if (ny < i32(h)) {
-        let idx01 = (u32(ny) * w + u32(cx)) * 6u;
-        let d01 = u32(w01 * 1000.0);
-        atomicAdd(&histogram[idx01], d01);
-        atomicAdd(&histogram[idx01 + 1u], u32(f32(ic) * w01));
-        atomicAdd(&histogram[idx01 + 2u], u32(f32(ig) * w01));
-        atomicAdd(&histogram[idx01 + 3u], u32(f32(ib) * w01));
-        atomicAdd(&histogram[idx01 + 4u], u32(i32(f32(ivx) * w01)));
-        atomicAdd(&histogram[idx01 + 5u], u32(i32(f32(ivy) * w01)));
+    if (fx > 0.1 && nx < i32(w)) {
+        splat_pixel((u32(cy) * w + u32(nx)) * 6u, fx * (1.0 - fy), ic, ig, ib, ivx, ivy);
     }
-
-    // Bottom-right corner
-    if (nx < i32(w) && ny < i32(h)) {
-        let idx11 = (u32(ny) * w + u32(nx)) * 6u;
-        let d11 = u32(w11 * 1000.0);
-        atomicAdd(&histogram[idx11], d11);
-        atomicAdd(&histogram[idx11 + 1u], u32(f32(ic) * w11));
-        atomicAdd(&histogram[idx11 + 2u], u32(f32(ig) * w11));
-        atomicAdd(&histogram[idx11 + 3u], u32(f32(ib) * w11));
-        atomicAdd(&histogram[idx11 + 4u], u32(i32(f32(ivx) * w11)));
-        atomicAdd(&histogram[idx11 + 5u], u32(i32(f32(ivy) * w11)));
+    if (fy > 0.1 && ny < i32(h)) {
+        splat_pixel((u32(ny) * w + u32(cx)) * 6u, (1.0 - fx) * fy, ic, ig, ib, ivx, ivy);
+    }
+    if (fx > 0.1 && fy > 0.1 && nx < i32(w) && ny < i32(h)) {
+        splat_pixel((u32(ny) * w + u32(nx)) * 6u, fx * fy, ic, ig, ib, ivx, ivy);
     }
 }
 
@@ -456,9 +438,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     if (total_weight < 1e-6) { return; }
 
+    let max_iters = max(u.has_final_xform >> 16u, 10u);  // unpack iteration count
     var prev_p = p;
 
-    for (var i = 0u; i < 500u; i++) {
+    for (var i = 0u; i < max_iters; i++) {
         // Weighted random transform selection
         let r = randf(&rng) * total_weight;
         var tidx = 0u;
@@ -474,7 +457,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         prev_p = p;
         p = apply_xform(p, tidx, t, &rng);
         let cb = u.extra2.w;  // color_blend from weights
-        color_idx = color_idx * (1.0 - cb) + xform_color(tidx) * cb;
+        // Blend toward transform color, but add position-based variation
+        // so points at different positions get slightly different palette lookups
+        let pos_color_offset = (sin(p.x * 3.0) * cos(p.y * 3.0)) * 0.05;
+        color_idx = color_idx * (1.0 - cb) + (xform_color(tidx) + pos_color_offset) * cb;
 
         if (i < u32(u.extra3.z)) { continue; }
 
@@ -484,7 +470,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         // Final transform (if present)
         var plot_p = p;
         var plot_color = color_idx;
-        if (u.has_final_xform == 1u) {
+        if ((u.has_final_xform & 1u) == 1u) {
             let final_idx = u.transform_count;  // final xform is right after regular xforms
             plot_p = apply_xform(plot_p, final_idx, t, &rng);
             plot_color = plot_color * 0.5 + xf(final_idx, 7u) * 0.5;  // blend with final xform's color

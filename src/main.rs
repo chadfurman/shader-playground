@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
@@ -31,7 +32,7 @@ struct Uniforms {
     resolution: [f32; 2],
     mouse: [f32; 2],
     transform_count: u32,
-    has_final_xform: u32,
+    has_final_xform: u32,  // low bit = has_final, upper 16 bits = iterations_per_thread
     globals: [f32; 4],   // speed, zoom, trail, flame_brightness
     kifs: [f32; 4],       // fold_angle, scale, brightness, drift_speed
     extra: [f32; 4],      // color_shift, vibrancy, bloom_intensity, symmetry
@@ -1133,6 +1134,7 @@ struct App {
     morph_progress: f32,            // 0.0 → 1.0
     favorite_profile: Option<FavoriteProfile>,
     last_profile_scan: f32,
+    perf_log: Option<std::fs::File>,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1185,6 +1187,9 @@ impl App {
             morph_progress: 1.0,
             favorite_profile,
             last_profile_scan: 0.0,
+            perf_log: std::fs::OpenOptions::new()
+                .create(true).append(true)
+                .open("perf.log").ok(),
         }
     }
 
@@ -1605,7 +1610,8 @@ impl ApplicationHandler for App {
                     ],
                     mouse: self.mouse,
                     transform_count: self.genome.transform_count(),
-                    has_final_xform: if self.genome.final_transform.is_some() { 1 } else { 0 },
+                    has_final_xform: (if self.genome.final_transform.is_some() { 1u32 } else { 0u32 })
+                        | (self.weights._config.iterations_per_thread.clamp(10, 2000) << 16),
                     globals: [self.globals[0], self.globals[1], self.globals[2], self.globals[3]],
                     kifs: [self.globals[4], self.globals[5], self.globals[6], self.globals[7]],
                     extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
@@ -1614,6 +1620,32 @@ impl ApplicationHandler for App {
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+
+                // Adaptive compute budget: target ~4 effective transforms worth of work.
+                // Scale both workgroups AND iterations to keep frame time manageable
+                // while preserving point density (fewer iterations = same points, less work).
+                let effective_xforms = self.genome.transform_count() as u32
+                    * (self.genome.symmetry.unsigned_abs().max(1));
+                let budget_baseline = 4u32;
+                let base_wg = self.weights._config.samples_per_frame;
+                let base_iters = self.weights._config.iterations_per_thread;
+                if effective_xforms > budget_baseline {
+                    let ratio = budget_baseline as f32 / effective_xforms as f32;
+                    // Split the scaling: sqrt on each so neither goes too low
+                    let sqrt_ratio = ratio.sqrt();
+                    gpu.workgroups = (base_wg as f32 * sqrt_ratio).max(256.0) as u32;
+                    // Pack scaled iterations into has_final_xform upper bits
+                    let scaled_iters = (base_iters as f32 * sqrt_ratio).max(40.0) as u32;
+                    let has_final = if self.genome.final_transform.is_some() { 1u32 } else { 0u32 };
+                    let uniforms_patched = Uniforms {
+                        has_final_xform: has_final | (scaled_iters.clamp(10, 2000) << 16),
+                        ..uniforms
+                    };
+                    gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms_patched));
+                } else {
+                    gpu.workgroups = base_wg;
+                };
+
                 let xf_write_len = self.num_transforms * 42;
                 let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
                 gpu.queue.write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
@@ -1646,6 +1678,21 @@ impl ApplicationHandler for App {
 
                 gpu.render();
                 self.frame += 1;
+
+                // Log to perf.log: every slow frame (<30fps) + periodic baseline every 300 frames
+                let ms_per_frame = dt * 1000.0;
+                let is_slow = ms_per_frame > 33.0;
+                let is_periodic = self.frame % 300 == 0;
+                if is_slow || is_periodic {
+                    if let Some(ref mut log) = self.perf_log {
+                        let tag = if is_slow { "SLOW" } else { "ok" };
+                        let _ = writeln!(log, "[{}] f={} {:.1}ms/f {:.0}fps wg={} morph={:.2} burst={} decay={:.3} | {}",
+                            tag, self.frame, ms_per_frame, 1.0 / dt.max(0.001),
+                            gpu.workgroups,
+                            self.morph_progress, self.morph_burst_frames, decay,
+                            self.genome.perf_summary());
+                    }
+                }
 
                 if let Some(w) = &self.window {
                     w.request_redraw();

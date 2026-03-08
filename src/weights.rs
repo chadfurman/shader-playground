@@ -131,6 +131,8 @@ pub struct RuntimeConfig {
     pub drift_speed: f32,
     #[serde(default = "default_velocity_blur_max")]
     pub velocity_blur_max: f32,
+    #[serde(default = "default_iterations_per_thread")]
+    pub iterations_per_thread: u32,
     #[serde(default)]
     pub variation_scales: HashMap<String, f32>,
 }
@@ -146,7 +148,7 @@ fn default_bloom_intensity() -> f32 { 0.05 }
 fn default_noise_displacement() -> f32 { 0.08 }
 fn default_curl_displacement() -> f32 { 0.05 }
 fn default_tangent_clamp() -> f32 { 4.0 }
-fn default_color_blend() -> f32 { 0.7 }
+fn default_color_blend() -> f32 { 0.4 }  // lower = more color mixing between transforms
 fn default_spin_speed_max() -> f32 { 0.15 }
 fn default_position_drift() -> f32 { 0.08 }
 fn default_warmup_iters() -> f32 { 20.0 }
@@ -165,6 +167,7 @@ fn default_seed_mutation_bias() -> f32 { 0.7 }
 fn default_fitness_bias_strength() -> f32 { 0.5 }
 fn default_drift_speed() -> f32 { 0.5 }
 fn default_velocity_blur_max() -> f32 { 24.0 }  // max directional blur length in pixels
+fn default_iterations_per_thread() -> u32 { 200 }  // chaos game iterations per GPU thread per frame
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 

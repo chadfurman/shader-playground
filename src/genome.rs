@@ -314,6 +314,40 @@ fn audio_biased_variation_pick(rng: &mut impl Rng, audio: &AudioFeatures) -> usi
 }
 
 impl FlameGenome {
+    /// Performance summary for debug logging.
+    pub fn perf_summary(&self) -> String {
+        let n = self.transforms.len();
+        let sym = self.symmetry.abs().max(1);
+        let bilateral = if self.symmetry < 0 { "bilateral" } else { "rotational" };
+        let has_final = if self.final_transform.is_some() { "+final" } else { "" };
+
+        let variation_names: [&str; 26] = [
+            "linear", "sin", "sph", "swirl", "horse", "handk",
+            "julia", "polar", "disc", "rings", "bubble", "fish",
+            "exp", "spiral", "diamond", "bent", "waves", "popcorn",
+            "fan", "eyefish", "cross", "tangent", "cosine", "blob",
+            "noise", "curl",
+        ];
+
+        let mut xf_descs = Vec::new();
+        for (i, xf) in self.transforms.iter().enumerate() {
+            let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
+            let mut active_vars = Vec::new();
+            for vi in 0..26 {
+                let v = xf.get_variation(vi);
+                if v > 0.01 {
+                    active_vars.push(variation_names[vi]);
+                }
+            }
+            let vars_str = if active_vars.is_empty() { "none" } else { &active_vars.join("+") };
+            xf_descs.push(format!("xf{}({:.2}s{:.2}|{})", i, xf.weight, det, vars_str));
+        }
+
+        format!("{} | {}xf sym={}{} {} zoom={:.1} [{}]",
+            self.name, n, sym, bilateral, has_final, self.global.zoom,
+            xf_descs.join(" "))
+    }
+
     /// Pack global params into a fixed [f32; 20] for the uniform buffer.
     /// Layout:
     ///   [0] speed  [1] zoom  [2] trail  [3] flame_brightness
@@ -1056,21 +1090,37 @@ fn cosine_color(t: f32, offset: [f32; 3], amp: [f32; 3], freq: [f32; 3], phase: 
 pub fn generate_random_palette() -> Vec<[f32; 3]> {
     let mut rng = rand::rng();
 
-    // Random cosine palette params — low base (near black), high amplitude (vivid peaks)
+    // Pick a palette "mood" — not every palette should be neon
+    let mood: f32 = rng.random();
+    let (base_range, amp_range) = if mood < 0.3 {
+        // Dark/dramatic: low base, high contrast
+        (0.0..0.1, 0.5..1.0)
+    } else if mood < 0.6 {
+        // Rich/warm: moderate base, moderate amplitude
+        (0.1..0.35, 0.3..0.7)
+    } else if mood < 0.85 {
+        // Pastel/muted: higher base, lower amplitude
+        (0.25..0.5, 0.15..0.45)
+    } else {
+        // High contrast: mixed base, full range amplitude
+        (0.0..0.3, 0.4..0.9)
+    };
+
     let offset = [
-        rng.random_range(0.0..0.15),
-        rng.random_range(0.0..0.15),
-        rng.random_range(0.0..0.15),
+        rng.random_range(base_range.clone()),
+        rng.random_range(base_range.clone()),
+        rng.random_range(base_range),
     ];
     let amp = [
-        rng.random_range(0.5..1.0),
-        rng.random_range(0.3..0.9),
-        rng.random_range(0.3..0.9),
+        rng.random_range(amp_range.clone()),
+        rng.random_range(amp_range.clone()),
+        rng.random_range(amp_range),
     ];
+    // Wider frequency range: low = broad gradual sweeps, high = rapid color cycling
     let freq = [
-        rng.random_range(0.5..1.5),
-        rng.random_range(0.5..1.5),
-        rng.random_range(0.5..1.5),
+        rng.random_range(0.3..2.5),
+        rng.random_range(0.3..2.5),
+        rng.random_range(0.3..2.5),
     ];
     let phase = [
         rng.random_range(0.0..1.0),

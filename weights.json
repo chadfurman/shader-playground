@@ -93,7 +93,7 @@
     "noise_displacement": 0.0,
     "curl_displacement": 0.05,
     "tangent_clamp": 4.0,
-    "color_blend": 0.7,
+    "color_blend": 0.4,
     "spin_speed_max": 0.15,
     "position_drift": 0.08,
     "warmup_iters": 20.0,
@@ -105,12 +105,13 @@
     "min_attractor_extent": 0.5,
     "max_mutation_retries": 10,
     "trail": 0.15,
-    "accumulation_decay": 0.9,
-    "samples_per_frame": 4096,
+    "accumulation_decay": 0.94,
+    "samples_per_frame": 1024,
     "bloom_radius": 3.0,
     "fitness_bias_strength": 0.5,
     "drift_speed": 0.5,
     "velocity_blur_max": 24.0,
+    "iterations_per_thread": 200,
     "variation_scales": {
       "noise": 0.0
     }
