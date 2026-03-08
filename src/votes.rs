@@ -107,33 +107,42 @@ impl VoteLedger {
 
     /// Pick a random genome from ALL saved genomes (unweighted).
     /// Excludes any genome with a negative vote score.
+    /// Pick a random genome from saved genomes + seeds (unweighted).
+    /// Excludes any genome with a negative vote score.
     pub fn pick_random_saved(genomes_dir: &Path, _threshold: i32, ledger: &VoteLedger) -> Option<PathBuf> {
         use rand::prelude::IndexedRandom;
-        let entries: Vec<_> = fs::read_dir(genomes_dir)
-            .ok()?
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let path = e.path();
-                path.is_file()
-                    && path.extension().is_some_and(|ext| ext == "json")
-                    && path.file_name().is_some_and(|n| n != "votes.json")
-            })
-            .filter(|e| {
-                // Exclude any genome with negative score
-                let stem = e.path().file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string();
-                !ledger.entries.get(&stem).is_some_and(|v| v.score < 0)
-            })
-            .collect();
+
+        // Scan both genomes/ and genomes/seeds/ for diverse pool
+        let dirs = [genomes_dir.to_path_buf(), genomes_dir.join("seeds")];
+        let mut entries = Vec::new();
+        for dir in &dirs {
+            if let Ok(read) = fs::read_dir(dir) {
+                for e in read.filter_map(|e| e.ok()) {
+                    let path = e.path();
+                    if !path.is_file()
+                        || !path.extension().is_some_and(|ext| ext == "json")
+                        || path.file_name().is_some_and(|n| n == "votes.json")
+                    {
+                        continue;
+                    }
+                    // Exclude negatively-scored genomes
+                    let stem = path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if ledger.entries.get(&stem).is_some_and(|v| v.score < 0) {
+                        continue;
+                    }
+                    entries.push(path);
+                }
+            }
+        }
 
         if entries.is_empty() {
             return None;
         }
 
-        let entry = entries.choose(&mut rand::rng())?;
-        Some(entry.path())
+        entries.choose(&mut rand::rng()).cloned()
     }
 }
 
