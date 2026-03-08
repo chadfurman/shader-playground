@@ -38,6 +38,8 @@ struct Uniforms {
     extra: [f32; 4],      // color_shift, vibrancy, bloom_intensity, symmetry
     extra2: [f32; 4],     // noise_disp, curl_disp, tangent_clamp, color_blend
     extra3: [f32; 4],     // spin_speed_max, position_drift, warmup_iters, velocity_blur_max
+    extra4: [f32; 4],   // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
+    extra5: [f32; 4],   // dof_focal_distance, spectral_rendering, temporal_reprojection, _reserved
 }
 
 // ── File Watcher ──
@@ -1713,6 +1715,18 @@ impl ApplicationHandler for App {
                     extra: [self.globals[8], self.globals[9], self.globals[10], self.genome.symmetry as f32],
                     extra2: [self.globals[12], self.globals[13], self.globals[14], self.globals[15]],
                     extra3: [self.globals[16], self.globals[17], self.globals[18], self.globals[19]],
+                    extra4: [
+                        self.weights._config.jitter_amount,
+                        self.weights._config.tonemap_mode as f32,
+                        self.weights._config.histogram_equalization,
+                        self.weights._config.dof_strength,
+                    ],
+                    extra5: [
+                        self.weights._config.dof_focal_distance,
+                        if self.weights._config.spectral_rendering { 1.0 } else { 0.0 },
+                        self.weights._config.temporal_reprojection,
+                        0.0,
+                    ],
                 };
 
                 gpu.queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

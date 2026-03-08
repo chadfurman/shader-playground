@@ -82,7 +82,14 @@
       "morph_speed": "Global morph speed multiplier — scales all transform morph rates (default 1.0)",
       "morph_stagger_count": "Max transforms to randomize with slow morph rates (0=disable, default 2)",
       "morph_stagger_min": "Slowest random morph rate multiplier (default 0.3)",
-      "morph_stagger_max": "Fastest random morph rate multiplier (default 0.6)"
+      "morph_stagger_max": "Fastest random morph rate multiplier (default 0.6)",
+      "jitter_amount": "Sub-pixel jitter for free supersampling (0.0=off, 1.0=full pixel, default 0.0)",
+      "tonemap_mode": "Tonemapping curve (0=sqrt-log, 1=ACES filmic, default 0)",
+      "histogram_equalization": "Adaptive density equalization strength (0.0=off, 1.0=full, default 0.0)",
+      "dof_strength": "Depth of field blur strength (0.0=off, default 0.0)",
+      "dof_focal_distance": "Focal distance for DoF (0.0=auto center of mass, default 0.0)",
+      "spectral_rendering": "Use spectral wavelength color mixing instead of RGB (default false)",
+      "temporal_reprojection": "Motion-compensated frame blending during morphs (0.0=off, 1.0=full, default 0.0)"
     }
   },
   "_config": {
@@ -120,6 +127,13 @@
     "morph_stagger_count": 2,
     "morph_stagger_min": 0.3,
     "morph_stagger_max": 0.6,
+    "jitter_amount": 0.0,
+    "tonemap_mode": 0,
+    "histogram_equalization": 0.0,
+    "dof_strength": 0.0,
+    "dof_focal_distance": 0.0,
+    "spectral_rendering": false,
+    "temporal_reprojection": 0.0,
     "variation_scales": {
       "noise": 0.0
     }

@@ -142,6 +142,20 @@ pub struct RuntimeConfig {
     #[serde(default = "default_morph_stagger_max")]
     pub morph_stagger_max: f32,
     #[serde(default)]
+    pub jitter_amount: f32,
+    #[serde(default)]
+    pub tonemap_mode: u32,
+    #[serde(default)]
+    pub histogram_equalization: f32,
+    #[serde(default)]
+    pub dof_strength: f32,
+    #[serde(default)]
+    pub dof_focal_distance: f32,
+    #[serde(default)]
+    pub spectral_rendering: bool,
+    #[serde(default)]
+    pub temporal_reprojection: f32,
+    #[serde(default)]
     pub variation_scales: HashMap<String, f32>,
 }
 
