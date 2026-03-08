@@ -17,8 +17,10 @@ mod device_picker;
 mod flam3;
 mod genome;
 mod sck_audio;
+mod votes;
 mod weights;
 use crate::genome::{FlameGenome, FavoriteProfile};
+use crate::votes::VoteLedger;
 use crate::audio::{AudioCapture, AudioFeatures};
 use crate::weights::Weights;
 
