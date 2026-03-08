@@ -28,6 +28,7 @@ struct Uniforms {
 @group(0) @binding(3) var<storage, read> accumulation: array<f32>;
 @group(0) @binding(4) var crossfade_tex: texture_2d<f32>;
 @group(0) @binding(5) var<storage, read> max_density_buf: array<u32>;
+@group(0) @binding(6) var<storage, read> cdf: array<f32>;
 
 // ACES filmic tonemapping curve (Krzysztof Narkowicz fit)
 // These constants define the curve shape — they ARE the algorithm, not magic numbers.
@@ -184,6 +185,14 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     } else {
         // Default sqrt-log curve with per-image normalization
         alpha = sqrt(log_density / max(max_log, 0.001));
+    }
+
+    // ── Adaptive histogram equalization ──
+    let hist_eq = u.extra4.z;
+    if (hist_eq > 0.001) {
+        let bin = u32(clamp(alpha * 255.0, 0.0, 255.0));
+        let equalized = cdf[bin];
+        alpha = mix(alpha, equalized, hist_eq);
     }
 
     // Recover average color (RGB and density both stored as fixed-point * 1000)

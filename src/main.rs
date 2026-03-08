@@ -133,6 +133,15 @@ struct Gpu {
     max_density_buffer: wgpu::Buffer,
     // Persistent point state for chaos game continuity
     point_state_buffer: wgpu::Buffer,
+    // Histogram equalization
+    histogram_cdf_bin_pipeline: wgpu::ComputePipeline,
+    histogram_cdf_sum_pipeline: wgpu::ComputePipeline,
+    histogram_cdf_bind_group_layout: wgpu::BindGroupLayout,
+    histogram_cdf_bind_group: wgpu::BindGroup,
+    histogram_cdf_pipeline_layout: wgpu::PipelineLayout,
+    hist_bins_buffer: wgpu::Buffer,
+    cdf_buffer: wgpu::Buffer,
+    histogram_cdf_uniform_buffer: wgpu::Buffer,
 }
 
 impl Gpu {
@@ -296,6 +305,16 @@ impl Gpu {
                         },
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 6,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
                 ],
             });
 
@@ -412,6 +431,14 @@ impl Gpu {
             mapped_at_creation: false,
         });
 
+        // CDF buffer (256 floats) — needed by render bind group at binding 6
+        let cdf_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("cdf"),
+            size: 256 * 4,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        });
+
         let bind_group_a = create_render_bind_group(
             &device,
             &bind_group_layout,
@@ -421,6 +448,7 @@ impl Gpu {
             &accumulation_buffer,
             &crossfade_view,
             &max_density_buffer,
+            &cdf_buffer,
         );
         let bind_group_b = create_render_bind_group(
             &device,
@@ -431,6 +459,7 @@ impl Gpu {
             &accumulation_buffer,
             &crossfade_view,
             &max_density_buffer,
+            &cdf_buffer,
         );
 
         let compute_bind_group = create_compute_bind_group(
@@ -522,6 +551,108 @@ impl Gpu {
             &max_density_buffer,
         );
 
+        // ── Histogram CDF pipelines ──
+        let hist_bins_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("hist_bins"),
+            size: 256 * 4,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let histogram_cdf_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("histogram_cdf_uniforms"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let histogram_cdf_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("histogram_cdf"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+            });
+
+        let histogram_cdf_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("histogram_cdf"),
+                bind_group_layouts: &[&histogram_cdf_bind_group_layout],
+                immediate_size: 0,
+            });
+
+        let histogram_cdf_src = fs::read_to_string(project_dir().join("histogram_cdf.wgsl"))
+            .unwrap_or_else(|_| include_str!("../histogram_cdf.wgsl").to_string());
+        let histogram_cdf_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("histogram_cdf"),
+            source: wgpu::ShaderSource::Wgsl(histogram_cdf_src.into()),
+        });
+        let histogram_cdf_bin_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("histogram_cdf_bin"),
+                layout: Some(&histogram_cdf_pipeline_layout),
+                module: &histogram_cdf_module,
+                entry_point: Some("bin_densities"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+        let histogram_cdf_sum_pipeline =
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("histogram_cdf_sum"),
+                layout: Some(&histogram_cdf_pipeline_layout),
+                module: &histogram_cdf_module,
+                entry_point: Some("prefix_sum"),
+                compilation_options: Default::default(),
+                cache: None,
+            });
+
+        let histogram_cdf_bind_group = create_histogram_cdf_bind_group(
+            &device,
+            &histogram_cdf_bind_group_layout,
+            &accumulation_buffer,
+            &hist_bins_buffer,
+            &cdf_buffer,
+            &histogram_cdf_uniform_buffer,
+        );
+
         Self {
             surface,
             device,
@@ -559,6 +690,14 @@ impl Gpu {
             accumulation_uniform_buffer,
             max_density_buffer,
             point_state_buffer,
+            histogram_cdf_bin_pipeline,
+            histogram_cdf_sum_pipeline,
+            histogram_cdf_bind_group_layout,
+            histogram_cdf_bind_group,
+            histogram_cdf_pipeline_layout,
+            hist_bins_buffer,
+            cdf_buffer,
+            histogram_cdf_uniform_buffer,
         }
     }
 
@@ -634,6 +773,7 @@ impl Gpu {
             &self.accumulation_buffer,
             &self.crossfade_view,
             &self.max_density_buffer,
+            &self.cdf_buffer,
         );
         self.bind_group_b = create_render_bind_group(
             &self.device,
@@ -644,6 +784,7 @@ impl Gpu {
             &self.accumulation_buffer,
             &self.crossfade_view,
             &self.max_density_buffer,
+            &self.cdf_buffer,
         );
         self.compute_bind_group = create_compute_bind_group(
             &self.device,
@@ -662,6 +803,14 @@ impl Gpu {
             &self.accumulation_buffer,
             &self.accumulation_uniform_buffer,
             &self.max_density_buffer,
+        );
+        self.histogram_cdf_bind_group = create_histogram_cdf_bind_group(
+            &self.device,
+            &self.histogram_cdf_bind_group_layout,
+            &self.accumulation_buffer,
+            &self.hist_bins_buffer,
+            &self.cdf_buffer,
+            &self.histogram_cdf_uniform_buffer,
         );
     }
 
@@ -715,6 +864,33 @@ impl Gpu {
             let wg_x = (self.config.width + 15) / 16;
             let wg_y = (self.config.height + 15) / 16;
             apass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+
+        // 2.75. Histogram equalization: bin densities + prefix sum CDF
+        encoder.clear_buffer(&self.hist_bins_buffer, 0, None);
+        {
+            let mut hpass = encoder.begin_compute_pass(
+                &wgpu::ComputePassDescriptor {
+                    label: Some("histogram_bin"),
+                    ..Default::default()
+                },
+            );
+            hpass.set_pipeline(&self.histogram_cdf_bin_pipeline);
+            hpass.set_bind_group(0, &self.histogram_cdf_bind_group, &[]);
+            let wg_x = (self.config.width + 15) / 16;
+            let wg_y = (self.config.height + 15) / 16;
+            hpass.dispatch_workgroups(wg_x, wg_y, 1);
+        }
+        {
+            let mut hpass = encoder.begin_compute_pass(
+                &wgpu::ComputePassDescriptor {
+                    label: Some("histogram_cdf"),
+                    ..Default::default()
+                },
+            );
+            hpass.set_pipeline(&self.histogram_cdf_sum_pipeline);
+            hpass.set_bind_group(0, &self.histogram_cdf_bind_group, &[]);
+            hpass.dispatch_workgroups(1, 1, 1);
         }
 
         // 3. Render to feedback texture
@@ -979,6 +1155,7 @@ fn create_render_bind_group(
     accumulation: &wgpu::Buffer,
     crossfade_view: &wgpu::TextureView,
     max_density: &wgpu::Buffer,
+    cdf_buffer: &wgpu::Buffer,
 ) -> wgpu::BindGroup {
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("render"),
@@ -1007,6 +1184,42 @@ fn create_render_bind_group(
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: max_density.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: cdf_buffer.as_entire_binding(),
+            },
+        ],
+    })
+}
+
+fn create_histogram_cdf_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    accumulation: &wgpu::Buffer,
+    hist_bins: &wgpu::Buffer,
+    cdf: &wgpu::Buffer,
+    uniforms: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("histogram_cdf"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: accumulation.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: hist_bins.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: cdf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: uniforms.as_entire_binding(),
             },
         ],
     })
@@ -1779,6 +1992,19 @@ impl ApplicationHandler for App {
                     &gpu.accumulation_uniform_buffer,
                     0,
                     bytemuck::cast_slice(&accum_uniforms),
+                );
+
+                // Write histogram CDF uniforms
+                let hist_cdf_uniforms: [f32; 4] = [
+                    gpu.config.width as f32,
+                    gpu.config.height as f32,
+                    self.globals[3], // flame_brightness
+                    (gpu.config.width * gpu.config.height) as f32,
+                ];
+                gpu.queue.write_buffer(
+                    &gpu.histogram_cdf_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&hist_cdf_uniforms),
                 );
 
                 // Tick down morph burst (drives faster decay ramp)
