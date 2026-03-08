@@ -127,13 +127,13 @@
     "morph_stagger_count": 2,
     "morph_stagger_min": 0.3,
     "morph_stagger_max": 0.6,
-    "jitter_amount": 0.0,
-    "tonemap_mode": 0,
-    "histogram_equalization": 0.0,
-    "dof_strength": 0.0,
-    "dof_focal_distance": 0.0,
+    "jitter_amount": 0.5,
+    "tonemap_mode": 1,
+    "histogram_equalization": 0.3,
+    "dof_strength": 0.2,
+    "dof_focal_distance": 1.0,
     "spectral_rendering": false,
-    "temporal_reprojection": 0.0,
+    "temporal_reprojection": 0.5,
     "variation_scales": {
       "noise": 0.0
     }
