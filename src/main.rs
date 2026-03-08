@@ -1076,6 +1076,17 @@ impl App {
         }
         // Pad start vectors to match
         self.morph_start_xf.resize(max_xf * 32, 0.0);
+
+        // Clear accumulation buffer — old genome's density pattern would ghost
+        // and make the new genome appear dark until it builds up density
+        if let Some(gpu) = &self.gpu {
+            let buf_size = (gpu.config.width as usize) * (gpu.config.height as usize) * 16;
+            gpu.queue.write_buffer(
+                &gpu.accumulation_buffer,
+                0,
+                &vec![0u8; buf_size],
+            );
+        }
     }
 
     fn check_file_changes(&mut self) {
