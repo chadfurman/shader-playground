@@ -321,3 +321,91 @@ pub fn load_random_flame(dir: &Path) -> Result<FlameGenome, String> {
     let idx = rand::rng().random_range(0..flame.len());
     Ok(flame.into_iter().nth(idx).unwrap())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MINIMAL_FLAME: &str = r#"<flames>
+<flame name="test_flame" symmetry="2">
+    <xform weight="0.5" color="0.0" coefs="1 0 0 1 0 0" spherical="1.0"/>
+    <xform weight="0.5" color="0.5" coefs="0.5 0.5 -0.5 0.5 0.1 0.2" linear="0.6" sinusoidal="0.4"/>
+</flame>
+</flames>"#;
+
+    #[test]
+    fn parse_minimal_flame() {
+        let file = Flam3File::parse(MINIMAL_FLAME).unwrap();
+        assert_eq!(file.flames.len(), 1);
+        let flame = &file.flames[0];
+        assert_eq!(flame.name, "test_flame");
+        assert_eq!(flame.symmetry, 2);
+    }
+
+    #[test]
+    fn parse_transforms() {
+        let file = Flam3File::parse(MINIMAL_FLAME).unwrap();
+        let flame = &file.flames[0];
+        assert_eq!(flame.transforms.len(), 2);
+        assert_eq!(flame.transforms[0].spherical, 1.0);
+        assert_eq!(flame.transforms[0].weight, 0.5);
+        assert_eq!(flame.transforms[0].color, 0.0);
+        assert!((flame.transforms[1].linear - 0.6).abs() < 0.01);
+        assert!((flame.transforms[1].sinusoidal - 0.4).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_affine_coefs() {
+        let file = Flam3File::parse(MINIMAL_FLAME).unwrap();
+        let xf = &file.flames[0].transforms[0];
+        // coefs="1 0 0 1 0 0" → identity affine
+        // flam3 layout: a d b e c f (column-major)
+        // Mapped: xf.a = nums[0]=1, xf.d = nums[3]=1
+        assert!((xf.a - 1.0).abs() < 0.01);
+        assert!((xf.d - 1.0).abs() < 0.01);
+        assert!((xf.b - 0.0).abs() < 0.01);
+        assert!((xf.c - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_palette_hex() {
+        let xml = r#"<flames>
+<flame name="pal_test">
+    <xform weight="1.0" color="0.0" coefs="1 0 0 1 0 0" linear="1.0"/>
+    <palette count="256">
+FF0000FF000000FF00
+    </palette>
+</flame>
+</flames>"#;
+        let file = Flam3File::parse(xml).unwrap();
+        let flame = &file.flames[0];
+        assert!(flame.palette.is_some());
+        let palette = flame.palette.as_ref().unwrap();
+        assert!(!palette.is_empty());
+        // First color should be red (FF0000)
+        assert!(
+            (palette[0][0] - 1.0).abs() < 0.01,
+            "red channel should be 1.0, got {}",
+            palette[0][0]
+        );
+        assert!(
+            (palette[0][1] - 0.0).abs() < 0.01,
+            "green channel should be 0.0"
+        );
+    }
+
+    #[test]
+    fn parse_empty_xml() {
+        let file = Flam3File::parse("<flames></flames>").unwrap();
+        assert!(file.flames.is_empty());
+    }
+
+    #[test]
+    fn parse_lineage_defaults() {
+        let file = Flam3File::parse(MINIMAL_FLAME).unwrap();
+        let flame = &file.flames[0];
+        assert!(flame.parent_a.is_none());
+        assert!(flame.parent_b.is_none());
+        assert_eq!(flame.generation, 0);
+    }
+}
