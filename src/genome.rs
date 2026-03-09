@@ -983,9 +983,23 @@ impl FlameGenome {
         let group_community = &remaining[boundaries[2]..boundaries[3]];
         let group_env = &remaining[boundaries[3]..boundaries[4]];
 
-        // Fill all slots with placeholders first
+        // Fill all slots with placeholders first (taste-biased if available)
         for _ in 0..child_count {
-            transforms.push(FlameTransform::random_transform(&mut rng));
+            let xf = if cfg.taste_engine_enabled {
+                if let Some(te) = taste.as_ref() {
+                    te.generate_biased_transform(
+                        cfg.taste_min_votes,
+                        cfg.taste_strength,
+                        cfg.taste_exploration_rate,
+                        cfg.taste_candidates,
+                    )
+                } else {
+                    FlameTransform::random_transform(&mut rng)
+                }
+            } else {
+                FlameTransform::random_transform(&mut rng)
+            };
+            transforms.push(xf);
         }
 
         // Wildcard: already random from above

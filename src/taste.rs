@@ -416,6 +416,47 @@ impl TasteEngine {
         Some(model.score(&features))
     }
 
+    /// Generate a random transform biased by the taste model.
+    /// Falls back to pure random if model isn't ready.
+    pub fn generate_biased_transform(
+        &self,
+        min_votes: u32,
+        strength: f32,
+        exploration_rate: f32,
+        candidates: u32,
+    ) -> crate::genome::FlameTransform {
+        use rand::Rng;
+        let mut rng = rand::rng();
+
+        // Exploration: sometimes skip the model entirely
+        if rng.random::<f32>() < exploration_rate {
+            return crate::genome::FlameTransform::random_transform(&mut rng);
+        }
+
+        // If transform model isn't ready, use pure random
+        let model = match &self.transform_model {
+            Some(m) if m.sample_count >= min_votes => m,
+            _ => return crate::genome::FlameTransform::random_transform(&mut rng),
+        };
+
+        // Generate candidates and score them
+        let mut best_xf = crate::genome::FlameTransform::random_transform(&mut rng);
+        let mut best_score = f32::MAX;
+
+        for _ in 0..candidates {
+            let xf = crate::genome::FlameTransform::random_transform(&mut rng);
+            let features = TransformFeatures::extract(&xf);
+            let score = model.score(&features.to_vec()) * strength;
+
+            if score < best_score {
+                best_score = score;
+                best_xf = xf;
+            }
+        }
+
+        best_xf
+    }
+
     /// Generate a palette biased by the taste model.
     /// Falls back to random palette if model isn't ready.
     pub fn generate_palette(
@@ -1006,5 +1047,24 @@ mod tests {
             "score was {}",
             score.unwrap()
         );
+    }
+
+    #[test]
+    fn generate_biased_transform_returns_valid() {
+        let engine = TasteEngine::new();
+        // With no model, should fall back to random
+        let xf = engine.generate_biased_transform(10, 1.0, 0.0, 5);
+        assert!(xf.weight > 0.0, "weight was {}", xf.weight);
+        // Should have at least one variation
+        let has_var = (0..26).any(|i| xf.get_variation(i) > 0.0);
+        assert!(has_var, "should have at least one variation");
+    }
+
+    #[test]
+    fn generate_biased_transform_exploration_returns_valid() {
+        let engine = TasteEngine::new();
+        // exploration_rate = 1.0 → always skip model
+        let xf = engine.generate_biased_transform(10, 1.0, 1.0, 5);
+        assert!(xf.weight > 0.0);
     }
 }
