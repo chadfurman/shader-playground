@@ -1432,12 +1432,16 @@ impl App {
         // Collect good genomes: positively voted + imported flames
         let mut good_genomes: Vec<FlameGenome> = Vec::new();
 
-        // Positively voted genomes
-        for entry in self.vote_ledger.entries.values() {
-            if entry.score > 0
-                && let Ok(g) = FlameGenome::load(&std::path::PathBuf::from(&entry.file))
-            {
-                good_genomes.push(g);
+        // Load good genomes from voted/ directory
+        let voted_dir = genomes_dir.join("voted");
+        if let Ok(read) = std::fs::read_dir(&voted_dir) {
+            for entry in read.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.extension().is_some_and(|ext| ext == "json")
+                    && let Ok(g) = FlameGenome::load(&path)
+                {
+                    good_genomes.push(g);
+                }
             }
         }
 
