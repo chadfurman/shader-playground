@@ -1808,6 +1808,11 @@ impl ApplicationHandler for App {
                         &self.genome.parent_a,
                         &self.genome.parent_b,
                     );
+                    // Auto-save to history
+                    let history_dir = project_dir().join("genomes").join("history");
+                    if let Err(e) = self.genome.save(&history_dir) {
+                        eprintln!("[history] save error: {e}");
+                    }
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
                     eprintln!(
@@ -2058,6 +2063,11 @@ impl ApplicationHandler for App {
                                 &self.genome.parent_a,
                                 &self.genome.parent_b,
                             );
+                            // Auto-save to history
+                            let history_dir = project_dir().join("genomes").join("history");
+                            if let Err(e) = self.genome.save(&history_dir) {
+                                eprintln!("[history] save error: {e}");
+                            }
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
                             eprintln!(
