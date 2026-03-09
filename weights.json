@@ -105,7 +105,9 @@
       "taste_candidates": "Number of candidate palettes to generate and score (default 20)",
       "taste_recent_memory": "Number of recent palettes to remember for diversity nudge (default 5)",
       "archive_threshold_mb": "History directory size threshold in MB before archiving (default 100)",
-      "archive_on_startup": "Check and archive old history genomes on app start (default true)"
+      "archive_on_startup": "Check and archive old history genomes on app start (default true)",
+      "dist_lum_strength": "Radial luminosity falloff from origin — 0.0 disables, 0.3 was old default (default 0.0)",
+      "iter_lum_range": "Iteration depth luminosity range — 0.0 = uniform, 0.5 = early iters 2x brighter (default 0.5)"
     }
   },
   "_config": {
@@ -168,7 +170,9 @@
     "taste_candidates": 20,
     "taste_recent_memory": 5,
     "archive_threshold_mb": 100,
-    "archive_on_startup": true
+    "archive_on_startup": true,
+    "dist_lum_strength": 0.0,
+    "iter_lum_range": 0.5
   },
   "bass": {
     "color_shift": -0.01,

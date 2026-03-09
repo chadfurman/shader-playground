@@ -13,7 +13,8 @@ struct Uniforms {
     extra2: vec4<f32>,     // noise_disp, curl_disp, tangent_clamp, color_blend
     extra3: vec4<f32>,     // spin_speed_max, position_drift, warmup_iters, reserved
     extra4: vec4<f32>,   // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
-    extra5: vec4<f32>,   // dof_focal_distance, spectral_rendering, temporal_reprojection, reserved
+    extra5: vec4<f32>,   // dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
+    extra6: vec4<f32>,   // dist_lum_strength, iter_lum_range, reserved, reserved
 }
 
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;
@@ -524,12 +525,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
 
         // Per-point luminosity variation:
-        // - Iteration depth: early iterations brighter, later dimmer (creates gradient along trajectory)
-        // - Distance from origin: natural radial falloff
+        // - Iteration depth: early iterations brighter, later dimmer (configurable range)
+        // - Distance from origin: radial falloff (configurable strength, 0 = disabled)
         // - Transform weight: low-weight transforms contribute less brightness
-        let iter_lum = 1.0 - 0.5 * (f32(i) / f32(max_iters));  // 1.0 → 0.5 over iterations
+        let iter_lum_range = u.extra6.y;  // 0.0 = uniform, 0.5 = early 2x brighter
+        let iter_lum = 1.0 - iter_lum_range * (f32(i) / f32(max_iters));
+        let dist_lum_str = u.extra6.x;  // 0.0 = disabled, 0.3 = gentle falloff
         let dist = length(plot_p);
-        let dist_lum = 1.0 / (1.0 + dist * 0.3);  // gentle radial falloff
+        let dist_lum = 1.0 / (1.0 + dist * dist_lum_str);
         let xf_weight = xf(tidx, 0u);  // transform blend weight
         let lum = iter_lum * dist_lum * clamp(xf_weight * 3.0, 0.3, 1.0);
 

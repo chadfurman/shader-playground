@@ -35,3 +35,8 @@ Never suppress warnings with `#[allow(dead_code)]`. If code is unused, either ho
 - [8] color_shift [9] vibrancy [10] bloom_intensity [11] gamma
 - [12] noise_disp [13] curl_disp [14] tangent_clamp [15] color_blend
 - [16] spin_speed_max [17] position_drift [18] warmup_iters [19] highlight_power
+
+### Extra Uniform Vecs (passed directly from RuntimeConfig)
+- extra4: jitter_amount, tonemap_mode, histogram_equalization, dof_strength
+- extra5: dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
+- extra6: dist_lum_strength, iter_lum_range, _reserved, _reserved

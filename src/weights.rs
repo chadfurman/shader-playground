@@ -223,6 +223,10 @@ pub struct RuntimeConfig {
     pub archive_threshold_mb: u64,
     #[serde(default = "default_archive_on_startup")]
     pub archive_on_startup: bool,
+    #[serde(default)]
+    pub dist_lum_strength: f32,
+    #[serde(default = "default_iter_lum_range")]
+    pub iter_lum_range: f32,
 }
 
 fn default_morph_duration() -> f32 {
@@ -375,6 +379,9 @@ fn default_archive_threshold_mb() -> u64 {
 fn default_archive_on_startup() -> bool {
     true
 }
+fn default_iter_lum_range() -> f32 {
+    0.5
+} // 0.0 = uniform brightness, 0.5 = early iters 2x brighter than late
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 

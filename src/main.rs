@@ -42,7 +42,8 @@ struct Uniforms {
     extra2: [f32; 4],     // noise_disp, curl_disp, tangent_clamp, color_blend
     extra3: [f32; 4],     // spin_speed_max, position_drift, warmup_iters, velocity_blur_max
     extra4: [f32; 4],     // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
-    extra5: [f32; 4], // dof_focal_distance, spectral_rendering, temporal_reprojection, _reserved
+    extra5: [f32; 4], // dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
+    extra6: [f32; 4], // dist_lum_strength, iter_lum_range, _reserved, _reserved
 }
 
 // ── File Watcher ──
@@ -2239,6 +2240,12 @@ impl ApplicationHandler for App {
                         },
                         self.weights._config.temporal_reprojection,
                         self.prev_zoom,
+                    ],
+                    extra6: [
+                        self.weights._config.dist_lum_strength,
+                        self.weights._config.iter_lum_range,
+                        0.0,
+                        0.0,
                     ],
                 };
 
