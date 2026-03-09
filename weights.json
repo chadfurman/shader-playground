@@ -103,7 +103,9 @@
       "taste_exploration_rate": "Probability of ignoring taste model for random palette, 0-1 (default 0.1)",
       "taste_diversity_penalty": "Penalize palettes similar to recent ones, 0-1 (default 0.3)",
       "taste_candidates": "Number of candidate palettes to generate and score (default 20)",
-      "taste_recent_memory": "Number of recent palettes to remember for diversity nudge (default 5)"
+      "taste_recent_memory": "Number of recent palettes to remember for diversity nudge (default 5)",
+      "archive_threshold_mb": "History directory size threshold in MB before archiving (default 100)",
+      "archive_on_startup": "Check and archive old history genomes on app start (default true)"
     }
   },
   "_config": {
@@ -164,7 +166,9 @@
     "taste_exploration_rate": 0.1,
     "taste_diversity_penalty": 0.3,
     "taste_candidates": 20,
-    "taste_recent_memory": 5
+    "taste_recent_memory": 5,
+    "archive_threshold_mb": 100,
+    "archive_on_startup": true
   },
   "bass": {
     "color_shift": -0.01,

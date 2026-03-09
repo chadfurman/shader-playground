@@ -944,6 +944,66 @@ fn load_weights() -> Weights {
     Weights::load(&weights_path()).unwrap_or_default()
 }
 
+/// Archive old genomes from history/ when size exceeds threshold.
+/// Groups by generation, removes the older half.
+/// lineage.json preserves ancestry regardless.
+fn archive_history_if_needed(genomes_dir: &std::path::Path, threshold_mb: u64) {
+    let history_dir = genomes_dir.join("history");
+    if !history_dir.exists() {
+        return;
+    }
+
+    // Calculate total size
+    let mut total_bytes: u64 = 0;
+    let mut genomes: Vec<(std::path::PathBuf, u32)> = Vec::new();
+
+    if let Ok(read) = std::fs::read_dir(&history_dir) {
+        for entry in read.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "json")
+                && let Ok(meta) = path.metadata()
+            {
+                total_bytes += meta.len();
+                let generation = std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+                    .and_then(|v| v.get("generation")?.as_u64())
+                    .unwrap_or(0) as u32;
+                genomes.push((path, generation));
+            }
+        }
+    }
+
+    let threshold_bytes = threshold_mb * 1024 * 1024;
+    if total_bytes < threshold_bytes {
+        return;
+    }
+
+    eprintln!(
+        "[archive] history/ is {}MB (threshold {}MB), archiving old genomes...",
+        total_bytes / (1024 * 1024),
+        threshold_mb
+    );
+
+    // Find median generation
+    genomes.sort_by_key(|(_, generation)| *generation);
+    let median_idx = genomes.len() / 2;
+    let median_gen = genomes[median_idx].1;
+
+    // Delete genomes below median generation (lineage.json preserves ancestry)
+    let mut archived_count = 0u32;
+    for (path, generation) in &genomes {
+        if *generation < median_gen && std::fs::remove_file(path).is_ok() {
+            archived_count += 1;
+        }
+    }
+
+    eprintln!(
+        "[archive] removed {} genomes below generation {}",
+        archived_count, median_gen
+    );
+}
+
 fn create_histogram_buffer(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Buffer {
     let pixel_count = w.max(1) as u64 * h.max(1) as u64;
     device.create_buffer(&wgpu::BufferDescriptor {
@@ -1355,6 +1415,9 @@ impl App {
         // Ensure genome subdirectories exist
         let _ = std::fs::create_dir_all(genomes_root.join("voted"));
         let _ = std::fs::create_dir_all(genomes_root.join("history"));
+        if weights._config.archive_on_startup {
+            archive_history_if_needed(&genomes_root, weights._config.archive_threshold_mb);
+        }
         let vote_ledger = VoteLedger::load(&genomes_root);
         let lineage_cache = crate::votes::LineageCache::load(&genomes_root);
         let flames_dir = project_dir().join("genomes").join("flames");

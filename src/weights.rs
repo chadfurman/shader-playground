@@ -219,6 +219,10 @@ pub struct RuntimeConfig {
     pub taste_candidates: u32,
     #[serde(default = "default_taste_recent_memory")]
     pub taste_recent_memory: usize,
+    #[serde(default = "default_archive_threshold_mb")]
+    pub archive_threshold_mb: u64,
+    #[serde(default = "default_archive_on_startup")]
+    pub archive_on_startup: bool,
 }
 
 fn default_morph_duration() -> f32 {
@@ -364,6 +368,12 @@ fn default_taste_candidates() -> u32 {
 }
 fn default_taste_recent_memory() -> usize {
     5
+}
+fn default_archive_threshold_mb() -> u64 {
+    100
+}
+fn default_archive_on_startup() -> bool {
+    true
 }
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
@@ -677,5 +687,12 @@ mod tests {
         assert_eq!(try_parse_xf("speed"), None);
         assert_eq!(try_parse_xf("xfN_weight"), None);
         assert_eq!(try_parse_xf("xf_weight"), None);
+    }
+
+    #[test]
+    fn archive_config_defaults() {
+        let cfg: RuntimeConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(cfg.archive_threshold_mb, 100);
+        assert!(cfg.archive_on_startup);
     }
 }
