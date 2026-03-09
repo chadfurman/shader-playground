@@ -278,7 +278,7 @@ impl FlameTransform {
         self.scale = None;
     }
 
-    fn get_variation(&self, idx: usize) -> f32 {
+    pub fn get_variation(&self, idx: usize) -> f32 {
         match idx {
             0 => self.linear,
             1 => self.sinusoidal,
@@ -1090,14 +1090,44 @@ impl FlameGenome {
         child.normalize_weights();
         child.distribute_colors();
 
-        eprintln!(
-            "[breed] {} × {} → {} (gen {}), {} transforms",
-            parent_a.name,
-            parent_b.name,
-            child.name,
-            child.generation,
-            child.transforms.len()
-        );
+        // Log transform taste scores if model is available
+        if let Some(te) = taste.as_ref() {
+            let scores: Vec<f32> = child
+                .transforms
+                .iter()
+                .filter_map(|xf| te.score_transform(xf, cfg.taste_min_votes))
+                .collect();
+            if !scores.is_empty() {
+                let avg = scores.iter().sum::<f32>() / scores.len() as f32;
+                eprintln!(
+                    "[breed] {} × {} → {} (gen {}), {} transforms, avg xf taste={:.2}",
+                    parent_a.name,
+                    parent_b.name,
+                    child.name,
+                    child.generation,
+                    child.transforms.len(),
+                    avg
+                );
+            } else {
+                eprintln!(
+                    "[breed] {} × {} → {} (gen {}), {} transforms",
+                    parent_a.name,
+                    parent_b.name,
+                    child.name,
+                    child.generation,
+                    child.transforms.len()
+                );
+            }
+        } else {
+            eprintln!(
+                "[breed] {} × {} → {} (gen {}), {} transforms",
+                parent_a.name,
+                parent_b.name,
+                child.name,
+                child.generation,
+                child.transforms.len()
+            );
+        }
 
         child
     }

@@ -109,6 +109,89 @@ impl PaletteFeatures {
     }
 }
 
+/// Number of transform-level features.
+pub const TRANSFORM_FEATURE_COUNT: usize = 8;
+
+/// Features extracted from a single FlameTransform for taste modeling.
+#[derive(Clone, Debug)]
+pub struct TransformFeatures {
+    /// Index of the variation with the highest weight (0-25)
+    pub primary_variation_index: f32,
+    /// Weight of primary variation / total variation weight (0-1)
+    pub primary_dominance: f32,
+    /// Number of variations with weight > 0
+    pub active_variation_count: f32,
+    /// |ad - bc| — contraction/expansion measure
+    pub affine_determinant: f32,
+    /// |a-d| + |b+c| — asymmetry measure
+    pub affine_asymmetry: f32,
+    /// sqrt(offset_x^2 + offset_y^2)
+    pub offset_magnitude: f32,
+    /// Palette color index (0-1)
+    pub color_index: f32,
+    /// Transform selection weight
+    pub weight: f32,
+}
+
+impl TransformFeatures {
+    /// Extract features from a FlameTransform.
+    pub fn extract(xf: &crate::genome::FlameTransform) -> Self {
+        let mut max_var_idx = 0usize;
+        let mut max_var_weight = 0.0f32;
+        let mut total_var_weight = 0.0f32;
+        let mut active_count = 0u32;
+
+        for i in 0..26 {
+            let w = xf.get_variation(i);
+            if w > 0.0 {
+                active_count += 1;
+                total_var_weight += w;
+                if w > max_var_weight {
+                    max_var_weight = w;
+                    max_var_idx = i;
+                }
+            }
+        }
+
+        let primary_dominance = if total_var_weight > 0.0 {
+            max_var_weight / total_var_weight
+        } else {
+            0.0
+        };
+
+        let affine_determinant = (xf.a * xf.d - xf.b * xf.c).abs();
+        let affine_asymmetry = (xf.a - xf.d).abs() + (xf.b + xf.c).abs();
+        let offset_magnitude = (xf.offset[0].powi(2) + xf.offset[1].powi(2)).sqrt();
+
+        Self {
+            primary_variation_index: max_var_idx as f32,
+            primary_dominance,
+            active_variation_count: active_count as f32,
+            affine_determinant,
+            affine_asymmetry,
+            offset_magnitude,
+            color_index: xf.color,
+            weight: xf.weight,
+        }
+    }
+
+    /// Convert to flat f32 vector for the taste model.
+    pub fn to_vec(&self) -> Vec<f32> {
+        let v = vec![
+            self.primary_variation_index,
+            self.primary_dominance,
+            self.active_variation_count,
+            self.affine_determinant,
+            self.affine_asymmetry,
+            self.offset_magnitude,
+            self.color_index,
+            self.weight,
+        ];
+        debug_assert_eq!(v.len(), TRANSFORM_FEATURE_COUNT);
+        v
+    }
+}
+
 /// Gaussian centroid taste model.
 /// Learns what palette features correlate with upvoted genomes.
 #[derive(Clone, Debug)]
@@ -178,6 +261,8 @@ impl TasteModel {
 pub struct TasteEngine {
     /// Current model (None if not enough data)
     model: Option<TasteModel>,
+    /// Transform-level taste model (None if not enough data)
+    transform_model: Option<TasteModel>,
     /// Recent palette features for diversity nudge
     recent_palettes: VecDeque<PaletteFeatures>,
     /// All feature vectors from good genomes (for rebuilding model)
@@ -188,6 +273,7 @@ impl TasteEngine {
     pub fn new() -> Self {
         Self {
             model: None,
+            transform_model: None,
             recent_palettes: VecDeque::new(),
             good_features: Vec::new(),
         }
@@ -197,13 +283,19 @@ impl TasteEngine {
     /// Call this on startup and whenever votes change.
     pub fn rebuild(&mut self, good_genomes: &[&FlameGenome], recent_memory: usize) {
         self.good_features.clear();
+        let mut transform_features: Vec<Vec<f32>> = Vec::new();
+
         for genome in good_genomes {
             if let Some(features) = PaletteFeatures::extract(genome) {
                 self.good_features.push(features.to_vec());
             }
+            for xf in &genome.transforms {
+                transform_features.push(TransformFeatures::extract(xf).to_vec());
+            }
         }
 
         self.model = TasteModel::build(&self.good_features);
+        self.transform_model = TasteModel::build(&transform_features);
 
         // Trim recent palette memory
         while self.recent_palettes.len() > recent_memory {
@@ -217,6 +309,28 @@ impl TasteEngine {
                 model.feature_means.len()
             );
         }
+        if let Some(ref tm) = self.transform_model {
+            eprintln!(
+                "[taste] transform model rebuilt: {} samples, {} features",
+                tm.sample_count,
+                tm.feature_means.len()
+            );
+        }
+    }
+
+    /// Score a transform against the transform taste model.
+    /// Returns None if the model isn't ready.
+    pub fn score_transform(
+        &self,
+        xf: &crate::genome::FlameTransform,
+        min_votes: u32,
+    ) -> Option<f32> {
+        let model = self.transform_model.as_ref()?;
+        if model.sample_count < min_votes {
+            return None;
+        }
+        let features = TransformFeatures::extract(xf).to_vec();
+        Some(model.score(&features))
     }
 
     /// Generate a palette biased by the taste model.
@@ -653,5 +767,131 @@ mod tests {
         let mut engine = TasteEngine::new();
         let palette = engine.generate_palette(10, 1.0, 1.0, 0.0, 1, 10);
         assert_eq!(palette.len(), 256, "palette len was {}", palette.len());
+    }
+
+    // --- TransformFeatures tests ---
+
+    #[test]
+    fn transform_features_identity_affine() {
+        let mut xf = crate::genome::FlameTransform::default();
+        xf.weight = 0.5;
+        xf.a = 1.0;
+        xf.b = 0.0;
+        xf.c = 0.0;
+        xf.d = 1.0;
+        xf.offset = [0.0, 0.0];
+        xf.color = 0.3;
+        xf.linear = 1.0;
+        let f = TransformFeatures::extract(&xf);
+        assert!(
+            approx_eq(f.affine_determinant, 1.0),
+            "det was {}",
+            f.affine_determinant
+        );
+        assert!(
+            approx_eq(f.affine_asymmetry, 0.0),
+            "asym was {}",
+            f.affine_asymmetry
+        );
+        assert!(approx_eq(f.offset_magnitude, 0.0));
+        assert!(approx_eq(f.primary_dominance, 1.0));
+        assert!(approx_eq(f.active_variation_count, 1.0));
+        assert!(approx_eq(f.color_index, 0.3));
+        assert!(approx_eq(f.weight, 0.5));
+    }
+
+    #[test]
+    fn transform_features_two_variations() {
+        let mut xf = crate::genome::FlameTransform::default();
+        xf.weight = 1.0;
+        xf.a = 0.5;
+        xf.b = -0.5;
+        xf.c = 0.5;
+        xf.d = 0.5;
+        xf.offset = [0.3, 0.4];
+        xf.color = 0.0;
+        xf.spherical = 0.7;
+        xf.julia = 0.3;
+        let f = TransformFeatures::extract(&xf);
+        assert!(approx_eq(f.active_variation_count, 2.0));
+        assert!(
+            approx_eq(f.primary_dominance, 0.7),
+            "dom was {}",
+            f.primary_dominance
+        );
+        // primary_variation_index should be spherical (index 2)
+        assert!(
+            approx_eq(f.primary_variation_index, 2.0),
+            "idx was {}",
+            f.primary_variation_index
+        );
+        // offset magnitude: sqrt(0.09 + 0.16) = 0.5
+        assert!(
+            approx_eq(f.offset_magnitude, 0.5),
+            "offset was {}",
+            f.offset_magnitude
+        );
+        // determinant: |0.5*0.5 - (-0.5)*0.5| = |0.25 + 0.25| = 0.5
+        assert!(
+            approx_eq(f.affine_determinant, 0.5),
+            "det was {}",
+            f.affine_determinant
+        );
+    }
+
+    #[test]
+    fn transform_features_vec_length() {
+        let xf = crate::genome::FlameTransform::default();
+        let f = TransformFeatures::extract(&xf);
+        assert_eq!(f.to_vec().len(), TRANSFORM_FEATURE_COUNT);
+    }
+
+    #[test]
+    fn score_transform_returns_none_without_model() {
+        let engine = TasteEngine::new();
+        let xf = crate::genome::FlameTransform::default();
+        assert!(engine.score_transform(&xf, 1).is_none());
+    }
+
+    #[test]
+    fn score_transform_scores_after_rebuild() {
+        let mut engine = TasteEngine::new();
+        // Build a minimal genome with palette and transforms
+        let mut xf = crate::genome::FlameTransform::default();
+        xf.linear = 1.0;
+        xf.color = 0.5;
+        xf.weight = 1.0;
+        let genome = crate::genome::FlameGenome {
+            name: String::new(),
+            global: crate::genome::GlobalParams {
+                speed: 1.0,
+                zoom: 1.0,
+                trail: 0.9,
+                flame_brightness: 1.0,
+            },
+            kifs: crate::genome::KifsParams {
+                fold_angle: 0.0,
+                scale: 1.0,
+                brightness: 1.0,
+            },
+            transforms: vec![xf],
+            final_transform: None,
+            symmetry: 1,
+            palette: Some(vec![[1.0, 0.0, 0.0]; 256]),
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
+        };
+
+        engine.rebuild(&[&genome], 10);
+
+        let score = engine.score_transform(&genome.transforms[0], 1);
+        assert!(score.is_some(), "should have a score after rebuild");
+        // Scoring the same transform used to build the model should give ~0
+        assert!(
+            approx_eq(score.unwrap(), 0.0),
+            "score was {}",
+            score.unwrap()
+        );
     }
 }
