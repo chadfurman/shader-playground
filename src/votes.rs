@@ -44,13 +44,14 @@ impl VoteLedger {
     pub fn vote(&mut self, genome: &FlameGenome, delta: i32, genomes_dir: &Path) -> i32 {
         let key = genome.name.clone();
 
-        // Auto-save genome if no entry exists yet
+        // Auto-save genome to history if no entry exists yet
+        let history_dir = genomes_dir.join("history");
         if !self.entries.contains_key(&key) {
-            let file_path = match genome.save(genomes_dir) {
+            let file_path = match genome.save(&history_dir) {
                 Ok(p) => p.display().to_string(),
                 Err(e) => {
                     eprintln!("[vote] auto-save failed: {e}");
-                    format!("{}/{}.json", genomes_dir.display(), genome.name)
+                    format!("{}/{}.json", history_dir.display(), genome.name)
                 }
             };
             self.entries.insert(
@@ -67,6 +68,18 @@ impl VoteLedger {
         entry.score += delta;
         entry.last_seen = today();
         let score = entry.score;
+
+        // Copy to voted/ when score is positive
+        if score > 0 {
+            let voted_dir = genomes_dir.join("voted");
+            match genome.save(&voted_dir) {
+                Ok(p) => {
+                    // Update file path to point to voted copy
+                    entry.file = p.display().to_string();
+                }
+                Err(e) => eprintln!("[vote] voted-save failed: {e}"),
+            }
+        }
 
         // Persist immediately
         if let Err(e) = self.save(genomes_dir) {
