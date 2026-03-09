@@ -1,0 +1,6 @@
+{
+  "name": "shader-playground-docs",
+  "scripts": {
+    "serve": "npx docsify-cli serve ."
+  }
+}

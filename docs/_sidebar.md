@@ -1,0 +1,29 @@
+- [Home](/)
+- **Reference**
+  - [Overview](reference/README.md)
+  - [Vocabulary](reference/vocabulary.md)
+  - [Uniform Layout](reference/uniform-layout.md)
+  - [Config Fields](reference/weights-config.md)
+- **Rendering**
+  - [Overview](rendering/README.md)
+  - [Chaos Game](rendering/chaos-game.md)
+  - [Tonemapping](rendering/tonemapping.md)
+  - [Feedback & Trail](rendering/feedback-trail.md)
+  - [Post Effects](rendering/post-effects.md)
+  - [Luminosity](rendering/luminosity.md)
+- **Genetics**
+  - [Overview](genetics/README.md)
+  - [Genome Format](genetics/genome-format.md)
+  - [Breeding](genetics/breeding.md)
+  - [Mutation](genetics/mutation.md)
+  - [Persistence](genetics/persistence.md)
+- **Taste Engine**
+  - [Overview](taste-engine/README.md)
+  - [Palette Model](taste-engine/palette-model.md)
+  - [Transform Model](taste-engine/transform-model.md)
+- **Audio**
+  - [Overview](audio/README.md)
+  - [Signal Mapping](audio/signal-mapping.md)
+- **Config**
+  - [Overview](config/README.md)
+  - [Signal Weights](config/signal-weights.md)
