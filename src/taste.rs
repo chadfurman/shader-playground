@@ -192,6 +192,86 @@ impl TransformFeatures {
     }
 }
 
+/// Number of genome-level composition features.
+pub const COMPOSITION_FEATURE_COUNT: usize = 5;
+
+/// Genome-level structural features for the expanded taste model.
+#[derive(Clone, Debug)]
+pub struct CompositionFeatures {
+    /// Number of transforms
+    pub transform_count: f32,
+    /// Number of distinct active variation types across all transforms
+    pub variation_diversity: f32,
+    /// Mean affine determinant across transforms
+    pub mean_determinant: f32,
+    /// Stddev of affine determinants (how different are transforms?)
+    pub determinant_contrast: f32,
+    /// Stddev of color indices across transforms
+    pub color_spread: f32,
+}
+
+impl CompositionFeatures {
+    /// Extract composition features from a genome.
+    pub fn extract(genome: &crate::genome::FlameGenome) -> Self {
+        let n = genome.transforms.len();
+        if n == 0 {
+            return Self {
+                transform_count: 0.0,
+                variation_diversity: 0.0,
+                mean_determinant: 0.0,
+                determinant_contrast: 0.0,
+                color_spread: 0.0,
+            };
+        }
+
+        // Variation diversity: count unique active variation types
+        let mut active_types = std::collections::HashSet::new();
+        for xf in &genome.transforms {
+            for i in 0..26 {
+                if xf.get_variation(i) > 0.0 {
+                    active_types.insert(i);
+                }
+            }
+        }
+
+        // Affine determinants
+        let dets: Vec<f32> = genome
+            .transforms
+            .iter()
+            .map(|xf| (xf.a * xf.d - xf.b * xf.c).abs())
+            .collect();
+        let mean_det = dets.iter().sum::<f32>() / n as f32;
+        let det_variance = dets.iter().map(|d| (d - mean_det).powi(2)).sum::<f32>() / n as f32;
+
+        // Color spread
+        let colors: Vec<f32> = genome.transforms.iter().map(|xf| xf.color).collect();
+        let mean_color = colors.iter().sum::<f32>() / n as f32;
+        let color_variance =
+            colors.iter().map(|c| (c - mean_color).powi(2)).sum::<f32>() / n as f32;
+
+        Self {
+            transform_count: n as f32,
+            variation_diversity: active_types.len() as f32,
+            mean_determinant: mean_det,
+            determinant_contrast: det_variance.sqrt(),
+            color_spread: color_variance.sqrt(),
+        }
+    }
+
+    /// Convert to flat f32 vector.
+    pub fn to_vec(&self) -> Vec<f32> {
+        let v = vec![
+            self.transform_count,
+            self.variation_diversity,
+            self.mean_determinant,
+            self.determinant_contrast,
+            self.color_spread,
+        ];
+        debug_assert_eq!(v.len(), COMPOSITION_FEATURE_COUNT);
+        v
+    }
+}
+
 /// Gaussian centroid taste model.
 /// Learns what palette features correlate with upvoted genomes.
 #[derive(Clone, Debug)]
@@ -286,8 +366,11 @@ impl TasteEngine {
         let mut transform_features: Vec<Vec<f32>> = Vec::new();
 
         for genome in good_genomes {
-            if let Some(features) = PaletteFeatures::extract(genome) {
-                self.good_features.push(features.to_vec());
+            if let Some(palette_feats) = PaletteFeatures::extract(genome) {
+                let mut features_vec = palette_feats.to_vec();
+                let comp = CompositionFeatures::extract(genome);
+                features_vec.extend(comp.to_vec());
+                self.good_features.push(features_vec);
             }
             for xf in &genome.transforms {
                 transform_features.push(TransformFeatures::extract(xf).to_vec());
@@ -851,6 +934,36 @@ mod tests {
         let engine = TasteEngine::new();
         let xf = crate::genome::FlameTransform::default();
         assert!(engine.score_transform(&xf, 1).is_none());
+    }
+
+    // --- CompositionFeatures tests ---
+
+    #[test]
+    fn composition_features_basic() {
+        let genome = crate::genome::FlameGenome::default_genome();
+        let f = CompositionFeatures::extract(&genome);
+        assert!(
+            f.transform_count >= 3.0,
+            "transform_count was {}",
+            f.transform_count
+        );
+        assert!(
+            f.variation_diversity >= 1.0,
+            "diversity was {}",
+            f.variation_diversity
+        );
+        assert!(
+            f.mean_determinant > 0.0,
+            "mean_det was {}",
+            f.mean_determinant
+        );
+    }
+
+    #[test]
+    fn composition_features_vec_length() {
+        let genome = crate::genome::FlameGenome::default_genome();
+        let f = CompositionFeatures::extract(&genome);
+        assert_eq!(f.to_vec().len(), COMPOSITION_FEATURE_COUNT);
     }
 
     #[test]
