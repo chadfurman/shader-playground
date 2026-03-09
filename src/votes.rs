@@ -128,8 +128,13 @@ impl VoteLedger {
     ) -> Option<PathBuf> {
         use rand::prelude::IndexedRandom;
 
-        // Scan both genomes/ and genomes/seeds/ for diverse pool
-        let dirs = [genomes_dir.to_path_buf(), genomes_dir.join("seeds")];
+        // Scan voted/ (curated), history/, seeds/, and legacy flat genomes
+        let dirs = [
+            genomes_dir.join("voted"),
+            genomes_dir.join("history"),
+            genomes_dir.join("seeds"),
+            genomes_dir.to_path_buf(), // legacy flat genomes
+        ];
         let mut entries = Vec::new();
         for dir in &dirs {
             if let Ok(read) = fs::read_dir(dir) {
