@@ -1352,6 +1352,9 @@ impl App {
         let weights = load_weights();
         let favorite_profile = Self::scan_favorite_profile();
         let genomes_root = project_dir().join("genomes");
+        // Ensure genome subdirectories exist
+        let _ = std::fs::create_dir_all(genomes_root.join("voted"));
+        let _ = std::fs::create_dir_all(genomes_root.join("history"));
         let vote_ledger = VoteLedger::load(&genomes_root);
         let lineage_cache = crate::votes::LineageCache::build(&genomes_root);
         let flames_dir = project_dir().join("genomes").join("flames");
