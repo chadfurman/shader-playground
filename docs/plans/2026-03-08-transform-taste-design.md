@@ -55,6 +55,39 @@ When breeding assigns a slot to fresh random:
 3. Apply `taste_exploration_rate` — sometimes skip scoring and pick pure random
 4. Pick the lowest-scoring candidate (closest to learned centroid)
 
+## Genome Persistence Restructure
+
+All genomes are now saved to disk. Directory structure:
+
+```
+genomes/
+  voted/          ← upvoted genomes copied here (breeding prefers these)
+  history/        ← every genome ever generated (auto-evolve, breed, etc.)
+  seeds/          ← hand-curated seeds (existing, unchanged)
+  flames/         ← imported .flame files (existing, unchanged)
+  votes.json      ← existing vote ledger
+```
+
+**Save flow:**
+- Every auto-evolve/breed writes the new genome to `history/`
+- Upvoting copies the genome to `voted/` (in addition to history)
+- Downvoting does NOT copy to voted (stays only in history)
+- `votes.json` file paths updated to point to `voted/` for upvoted genomes
+
+**Breeding parent selection:**
+- Prefers genomes from `voted/` (curated pool)
+- Falls back to `history/` or `seeds/` or `flames/`
+
+**Compression:**
+- `history/` can be nuked/archived without losing curated genomes
+- ~10KB/genome average, ~15:1 gzip compression ratio
+- At 6000 genomes/day: ~60MB/day raw, ~4MB/day compressed
+
+**Migration:**
+- On startup, if `voted/` doesn't exist, create it
+- Move any existing genomes in `genomes/*.json` that have positive votes into `voted/`
+- Future genomes go to the new structure automatically
+
 ## Config
 
 Reuses existing taste config fields:
