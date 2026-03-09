@@ -1356,7 +1356,7 @@ impl App {
         let _ = std::fs::create_dir_all(genomes_root.join("voted"));
         let _ = std::fs::create_dir_all(genomes_root.join("history"));
         let vote_ledger = VoteLedger::load(&genomes_root);
-        let lineage_cache = crate::votes::LineageCache::build(&genomes_root);
+        let lineage_cache = crate::votes::LineageCache::load(&genomes_root);
         let flames_dir = project_dir().join("genomes").join("flames");
         let seeds_dir = project_dir().join("genomes").join("seeds");
         let genome = crate::flam3::load_random_flame(&flames_dir)
@@ -1807,13 +1807,16 @@ impl ApplicationHandler for App {
                         &self.favorite_profile,
                         &mut Some(&mut self.taste_engine),
                     );
-                    self.lineage_cache.register(
+                    let genomes_dir = project_dir().join("genomes");
+                    self.lineage_cache.register_and_save(
                         &self.genome.name,
                         &self.genome.parent_a,
                         &self.genome.parent_b,
+                        self.genome.generation,
+                        &genomes_dir,
                     );
                     // Auto-save to history
-                    let history_dir = project_dir().join("genomes").join("history");
+                    let history_dir = genomes_dir.join("history");
                     if let Err(e) = self.genome.save(&history_dir) {
                         eprintln!("[history] save error: {e}");
                     }
@@ -2062,13 +2065,16 @@ impl ApplicationHandler for App {
                                 &self.favorite_profile,
                                 &mut Some(&mut self.taste_engine),
                             );
-                            self.lineage_cache.register(
+                            let genomes_dir = project_dir().join("genomes");
+                            self.lineage_cache.register_and_save(
                                 &self.genome.name,
                                 &self.genome.parent_a,
                                 &self.genome.parent_b,
+                                self.genome.generation,
+                                &genomes_dir,
                             );
                             // Auto-save to history
-                            let history_dir = project_dir().join("genomes").join("history");
+                            let history_dir = genomes_dir.join("history");
                             if let Err(e) = self.genome.save(&history_dir) {
                                 eprintln!("[history] save error: {e}");
                             }

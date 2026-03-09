@@ -172,6 +172,14 @@ impl VoteLedger {
 
 use std::collections::{HashSet, VecDeque};
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LineageEntry {
+    pub parent_a: Option<String>,
+    pub parent_b: Option<String>,
+    pub generation: u32,
+    pub created: String,
+}
+
 /// Tracks genome ancestry for genetic distance computation.
 /// Built by scanning saved genome files; rebuilt when genomes change.
 #[derive(Debug, Default)]
@@ -208,10 +216,61 @@ impl LineageCache {
         Self { parents }
     }
 
+    /// Load lineage from lineage.json, falling back to scanning genome files.
+    pub fn load(genomes_dir: &Path) -> Self {
+        let lineage_path = genomes_dir.join("lineage.json");
+        if lineage_path.exists()
+            && let Ok(json) = fs::read_to_string(&lineage_path)
+            && let Ok(entries) = serde_json::from_str::<HashMap<String, LineageEntry>>(&json)
+        {
+            let parents: HashMap<String, (Option<String>, Option<String>)> = entries
+                .into_iter()
+                .map(|(k, v)| (k, (v.parent_a, v.parent_b)))
+                .collect();
+            return Self { parents };
+        }
+        // Fallback: scan genome files (migration path)
+        Self::build(genomes_dir)
+    }
+
     /// Register a genome's lineage (call after breeding/saving a new genome).
     pub fn register(&mut self, name: &str, parent_a: &Option<String>, parent_b: &Option<String>) {
         self.parents
             .insert(name.to_string(), (parent_a.clone(), parent_b.clone()));
+    }
+
+    /// Register a new genome and persist to lineage.json.
+    pub fn register_and_save(
+        &mut self,
+        name: &str,
+        parent_a: &Option<String>,
+        parent_b: &Option<String>,
+        generation: u32,
+        genomes_dir: &Path,
+    ) {
+        self.register(name, parent_a, parent_b);
+        // Append to lineage.json
+        let lineage_path = genomes_dir.join("lineage.json");
+        let mut entries: HashMap<String, LineageEntry> = if lineage_path.exists() {
+            fs::read_to_string(&lineage_path)
+                .ok()
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+        entries.insert(
+            name.to_string(),
+            LineageEntry {
+                parent_a: parent_a.clone(),
+                parent_b: parent_b.clone(),
+                generation,
+                created: today(),
+            },
+        );
+        if let Ok(json) = serde_json::to_string_pretty(&entries) {
+            let _ = fs::write(&lineage_path, json);
+        }
     }
 
     /// Compute genetic distance between two genomes.
@@ -343,6 +402,21 @@ mod tests {
         let mut cache = LineageCache::default();
         cache.register("new_genome", &Some("pa".into()), &Some("pb".into()));
         assert_eq!(cache.genetic_distance("new_genome", "pa", 8), 1);
+    }
+
+    #[test]
+    fn lineage_entry_serialization_roundtrip() {
+        let entry = LineageEntry {
+            parent_a: Some("pa".into()),
+            parent_b: Some("pb".into()),
+            generation: 3,
+            created: "2026-03-08".into(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let entry2: LineageEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(entry.parent_a, entry2.parent_a);
+        assert_eq!(entry.parent_b, entry2.parent_b);
+        assert_eq!(entry.generation, entry2.generation);
     }
 
     #[test]
