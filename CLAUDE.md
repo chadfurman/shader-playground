@@ -40,3 +40,9 @@ Never suppress warnings with `#[allow(dead_code)]`. If code is unused, either ho
 - extra4: jitter_amount, tonemap_mode, histogram_equalization, dof_strength
 - extra5: dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
 - extra6: dist_lum_strength, iter_lum_range, _reserved, _reserved
+
+### Documentation
+- Docs live in `docs/` (Docsify site, `npx docsify-cli serve docs` to preview)
+- When modifying rendering, genetics, taste, audio, or config systems, update the corresponding doc
+- `docs/reference/vocabulary.md` is the single source of truth for terminology
+- Living docs: update alongside code changes, not retroactively
