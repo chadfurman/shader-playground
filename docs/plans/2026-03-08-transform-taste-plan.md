@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Add transform-level taste learning, genome composition features, biased random transform generation, and restructured genome persistence (save all genomes, separate voted pool).
+**Goal:** Add transform-level taste learning, genome composition features, biased random transform generation, restructured genome persistence (save all genomes, separate voted pool), persistent ancestry tree, and generation-based history archiving.
 
-**Architecture:** Two taste models (transform-level + genome-level composition) built from the same upvoted genomes. Transform model biases random-source transforms during breeding. Genome persistence restructured into `history/` (all genomes) and `voted/` (upvoted genomes) directories.
+**Architecture:** Two taste models (transform-level + genome-level composition) built from the same upvoted genomes. Transform model biases random-source transforms during breeding. Genome persistence restructured into `history/` (all genomes) and `voted/` (upvoted genomes) directories. Persistent `lineage.json` tracks full ancestry tree. History auto-archives by generation when size exceeds threshold.
 
 **Tech Stack:** Rust, serde_json, existing `TasteModel` Gaussian centroid math
 
@@ -278,7 +278,294 @@ git commit -m "feat: taste model rebuilds from voted/ directory"
 
 ---
 
-## Task 6: TransformFeatures — extraction and tests
+## Task 6: Persistent lineage.json ancestry tree
+
+**Files:**
+- Modify: `src/votes.rs` (replace `LineageCache` internal storage, add persistence)
+- Modify: `src/main.rs` (update `LineageCache::build` call)
+
+**Step 1: Add LineageEntry struct and persistence to LineageCache**
+
+In `src/votes.rs`, add a serializable entry struct and update `LineageCache`:
+
+```rust
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LineageEntry {
+    pub parent_a: Option<String>,
+    pub parent_b: Option<String>,
+    pub generation: u32,
+    pub created: String,
+}
+
+impl LineageCache {
+    /// Load lineage from lineage.json, falling back to scanning genome files.
+    pub fn load(genomes_dir: &Path) -> Self {
+        let lineage_path = genomes_dir.join("lineage.json");
+        if lineage_path.exists() {
+            if let Ok(json) = fs::read_to_string(&lineage_path) {
+                if let Ok(entries) = serde_json::from_str::<HashMap<String, LineageEntry>>(&json) {
+                    let parents: HashMap<String, (Option<String>, Option<String>)> = entries
+                        .into_iter()
+                        .map(|(k, v)| (k, (v.parent_a, v.parent_b)))
+                        .collect();
+                    return Self { parents };
+                }
+            }
+        }
+        // Fallback: scan genome files (migration path)
+        Self::build(genomes_dir)
+    }
+
+    /// Register a new genome and persist to lineage.json.
+    pub fn register_and_save(
+        &mut self,
+        name: &str,
+        parent_a: &Option<String>,
+        parent_b: &Option<String>,
+        generation: u32,
+        genomes_dir: &Path,
+    ) {
+        self.register(name, parent_a, parent_b);
+        // Append to lineage.json
+        let lineage_path = genomes_dir.join("lineage.json");
+        let mut entries: HashMap<String, LineageEntry> = if lineage_path.exists() {
+            fs::read_to_string(&lineage_path)
+                .ok()
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default()
+        } else {
+            HashMap::new()
+        };
+        entries.insert(
+            name.to_string(),
+            LineageEntry {
+                parent_a: parent_a.clone(),
+                parent_b: parent_b.clone(),
+                generation,
+                created: today(),
+            },
+        );
+        if let Ok(json) = serde_json::to_string_pretty(&entries) {
+            let _ = fs::write(&lineage_path, json);
+        }
+    }
+}
+```
+
+The existing `register()` and `build()` methods remain unchanged for backwards compatibility. `register_and_save()` wraps `register()` with disk persistence.
+
+**Step 2: Update main.rs to use `LineageCache::load` and `register_and_save`**
+
+In `src/main.rs`:
+
+- Change `LineageCache::build(&genomes_root)` → `LineageCache::load(&genomes_root)` in `App::new()`
+- Change all `self.lineage_cache.register(...)` calls to `self.lineage_cache.register_and_save(...)` with the additional `generation` and `genomes_dir` params. There are two call sites: manual evolve (~line 1803) and auto-evolve (~line 2053).
+
+```rust
+// Replace:
+self.lineage_cache.register(
+    &self.genome.name,
+    &self.genome.parent_a,
+    &self.genome.parent_b,
+);
+// With:
+let genomes_dir = project_dir().join("genomes");
+self.lineage_cache.register_and_save(
+    &self.genome.name,
+    &self.genome.parent_a,
+    &self.genome.parent_b,
+    self.genome.generation,
+    &genomes_dir,
+);
+```
+
+**Step 3: Add tests**
+
+Add to the existing `mod tests` in `src/votes.rs`:
+
+```rust
+    #[test]
+    fn lineage_entry_serialization_roundtrip() {
+        let entry = LineageEntry {
+            parent_a: Some("pa".into()),
+            parent_b: Some("pb".into()),
+            generation: 3,
+            created: "2026-03-08".into(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let entry2: LineageEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(entry.parent_a, entry2.parent_a);
+        assert_eq!(entry.parent_b, entry2.parent_b);
+        assert_eq!(entry.generation, entry2.generation);
+    }
+```
+
+**Step 4: Run tests**
+
+Run: `cargo test --lib votes`
+Expected: All tests pass.
+
+**Step 5: Commit**
+
+```bash
+git add src/votes.rs src/main.rs
+git commit -m "feat: persistent lineage.json ancestry tree"
+```
+
+---
+
+## Task 7: Archive config fields + archive logic
+
+**Files:**
+- Modify: `src/weights.rs` (add `archive_threshold_mb` and `archive_on_startup` to `RuntimeConfig`)
+- Modify: `src/main.rs` (add archive check on startup)
+
+**Step 1: Add config fields**
+
+In `src/weights.rs`, add to `RuntimeConfig`:
+
+```rust
+    #[serde(default = "default_archive_threshold_mb")]
+    pub archive_threshold_mb: u64,
+    #[serde(default = "default_archive_on_startup")]
+    pub archive_on_startup: bool,
+```
+
+Add default functions:
+
+```rust
+fn default_archive_threshold_mb() -> u64 {
+    100
+}
+fn default_archive_on_startup() -> bool {
+    true
+}
+```
+
+**Step 2: Add archive function in main.rs**
+
+Add a standalone function (not on App) in `src/main.rs`:
+
+```rust
+/// Archive old genomes from history/ when size exceeds threshold.
+/// Groups by generation, archives the older half into a tar.gz.
+fn archive_history_if_needed(genomes_dir: &Path, threshold_mb: u64) {
+    let history_dir = genomes_dir.join("history");
+    if !history_dir.exists() {
+        return;
+    }
+
+    // Calculate total size
+    let mut total_bytes: u64 = 0;
+    let mut genomes: Vec<(PathBuf, u32)> = Vec::new(); // (path, generation)
+
+    if let Ok(read) = std::fs::read_dir(&history_dir) {
+        for entry in read.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "json") {
+                if let Ok(meta) = path.metadata() {
+                    total_bytes += meta.len();
+                    // Try to read generation from the genome
+                    let gen = std::fs::read_to_string(&path)
+                        .ok()
+                        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+                        .and_then(|v| v.get("generation")?.as_u64())
+                        .unwrap_or(0) as u32;
+                    genomes.push((path, gen));
+                }
+            }
+        }
+    }
+
+    let threshold_bytes = threshold_mb * 1024 * 1024;
+    if total_bytes < threshold_bytes {
+        return;
+    }
+
+    eprintln!(
+        "[archive] history/ is {}MB (threshold {}MB), archiving old genomes...",
+        total_bytes / (1024 * 1024),
+        threshold_mb
+    );
+
+    // Find median generation
+    genomes.sort_by_key(|(_, gen)| *gen);
+    let median_idx = genomes.len() / 2;
+    let median_gen = genomes[median_idx].1;
+
+    // Delete genomes below median generation (lineage.json preserves ancestry)
+    let mut archived_count = 0u32;
+    for (path, gen) in &genomes {
+        if *gen < median_gen {
+            if std::fs::remove_file(path).is_ok() {
+                archived_count += 1;
+            }
+        }
+    }
+
+    eprintln!(
+        "[archive] removed {} genomes below generation {}",
+        archived_count, median_gen
+    );
+}
+```
+
+Note: This does simple deletion rather than tar.gz to avoid adding a compression dependency. The lineage.json preserves ancestry regardless. Tar.gz archiving can be added later if needed.
+
+**Step 3: Call archive on startup**
+
+In `App::new()`, after the directory creation lines, add:
+
+```rust
+if weights._config.archive_on_startup {
+    archive_history_if_needed(&genomes_root, weights._config.archive_threshold_mb);
+}
+```
+
+**Step 4: Add config doc entries to weights.json**
+
+Add to the `_config_doc` section:
+
+```json
+"archive_threshold_mb": "History directory size threshold in MB before archiving (default 100)",
+"archive_on_startup": "Check and archive old history genomes on app start (default true)"
+```
+
+Add to the `_config` section:
+
+```json
+"archive_threshold_mb": 100,
+"archive_on_startup": true
+```
+
+**Step 5: Add tests for config fields**
+
+Add to the `mod tests` in `src/weights.rs`:
+
+```rust
+    #[test]
+    fn archive_config_defaults() {
+        let cfg: RuntimeConfig = serde_json::from_str("{}").unwrap();
+        assert_eq!(cfg.archive_threshold_mb, 100);
+        assert!(cfg.archive_on_startup);
+    }
+```
+
+**Step 6: Run tests**
+
+Run: `cargo test`
+Expected: All tests pass.
+
+**Step 7: Commit**
+
+```bash
+git add src/weights.rs src/main.rs weights.json
+git commit -m "feat: add generation-based history archiving with configurable threshold"
+```
+
+---
+
+## Task 8: TransformFeatures — extraction and tests
 
 **Files:**
 - Modify: `src/taste.rs` (add `TransformFeatures` struct + tests)
@@ -448,7 +735,7 @@ git commit -m "feat: add TransformFeatures extraction with unit tests"
 
 ---
 
-## Task 7: CompositionFeatures — extraction and tests
+## Task 9: CompositionFeatures — extraction and tests
 
 **Files:**
 - Modify: `src/taste.rs` (add `CompositionFeatures` struct + tests)
@@ -592,7 +879,7 @@ git commit -m "feat: add CompositionFeatures extraction with unit tests"
 
 ---
 
-## Task 8: Expand TasteEngine with transform model
+## Task 10: Expand TasteEngine with transform model
 
 **Files:**
 - Modify: `src/taste.rs` (`TasteEngine` struct and `rebuild` method)
@@ -688,7 +975,7 @@ git commit -m "feat: expand TasteEngine with transform taste model"
 
 ---
 
-## Task 9: Generate biased transforms
+## Task 11: Generate biased transforms
 
 **Files:**
 - Modify: `src/taste.rs` (add `generate_biased_transform` method to `TasteEngine`)
@@ -779,7 +1066,7 @@ git commit -m "feat: add generate_biased_transform for taste-driven random trans
 
 ---
 
-## Task 10: Wire biased transforms into breeding
+## Task 12: Wire biased transforms into breeding
 
 **Files:**
 - Modify: `src/genome.rs` (`breed()` method, wildcard slot and environment slot generation)
@@ -823,7 +1110,7 @@ git commit -m "feat: wire taste-biased transforms into breeding wildcard slot"
 
 ---
 
-## Task 11: Final verification
+## Task 13: Final verification
 
 **Step 1: Run all tests**
 

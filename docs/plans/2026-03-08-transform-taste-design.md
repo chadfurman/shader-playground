@@ -88,6 +88,47 @@ genomes/
 - Move any existing genomes in `genomes/*.json` that have positive votes into `voted/`
 - Future genomes go to the new structure automatically
 
+## Persistent Ancestry Tree
+
+Replace the in-memory-only `LineageCache` (which rebuilds by scanning genome JSONs on startup) with a persistent `lineage.json` file.
+
+```json
+{
+  "mutant-1234": {
+    "parent_a": "mutant-0567",
+    "parent_b": "seed-8901",
+    "generation": 3,
+    "created": "2026-03-08T14:30:00Z"
+  }
+}
+```
+
+**Properties:**
+- Tiny file — just names, parent pointers, generation, timestamp. Grows ~100 bytes per genome.
+- Updated on every breed (append new entry, flush to disk)
+- Survives archiving — even after old genome JSONs are deleted, the lineage tree remains complete
+- `LineageCache` loads from `lineage.json` on startup instead of scanning genome files
+- Still falls back to scanning genome JSONs if `lineage.json` doesn't exist (migration)
+
+## Archiving Strategy
+
+Generation-based archiving with size fallback. The `voted/` directory is never archived — only `history/`.
+
+**Trigger:** When `history/` exceeds `archive_threshold_mb` (config, default 100MB).
+
+**Process:**
+1. Scan all genomes in `history/`, group by generation
+2. Find the median generation
+3. Move all genomes below the median generation into `history/archive-YYYY-MM-DD.tar.gz`
+4. Delete the archived JSON files from `history/`
+5. `lineage.json` is untouched (ancestry survives)
+
+**Config fields:**
+- `archive_threshold_mb` — size at which archiving triggers (default 100)
+- `archive_on_startup` — whether to check/archive on app start (default true)
+
+**Manual trigger:** Could also be triggered by a keyboard shortcut or CLI flag later.
+
 ## Config
 
 Reuses existing taste config fields:
@@ -98,7 +139,10 @@ Reuses existing taste config fields:
 - `taste_min_votes` — minimum votes before model activates
 - `taste_engine_enabled` — master gate
 
-No new config fields needed.
+New config fields for archiving:
+
+- `archive_threshold_mb` — history size threshold before archiving (default 100)
+- `archive_on_startup` — check and archive on app start (default true)
 
 ## Architecture
 
