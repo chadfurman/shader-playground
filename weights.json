@@ -107,7 +107,9 @@
       "archive_threshold_mb": "History directory size threshold in MB before archiving (default 100)",
       "archive_on_startup": "Check and archive old history genomes on app start (default true)",
       "dist_lum_strength": "Radial luminosity falloff from origin — 0.0 disables, 0.3 was old default (default 0.0)",
-      "iter_lum_range": "Iteration depth luminosity range — 0.0 = uniform, 0.5 = early iters 2x brighter (default 0.5)"
+      "iter_lum_range": "Iteration depth luminosity range — 0.0 = uniform, 0.5 = early iters 2x brighter (default 0.5)",
+      "window_width": "Initial window width in logical pixels (default 640)",
+      "window_height": "Initial window height in logical pixels (default 480)"
     }
   },
   "_config": {
@@ -172,7 +174,9 @@
     "archive_threshold_mb": 100,
     "archive_on_startup": true,
     "dist_lum_strength": 0.0,
-    "iter_lum_range": 0.5
+    "iter_lum_range": 0.5,
+    "window_width": 640,
+    "window_height": 480
   },
   "bass": {
     "color_shift": -0.01,

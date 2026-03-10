@@ -882,6 +882,16 @@ impl Gpu {
 // ── Helper Functions ──
 
 pub fn project_dir() -> PathBuf {
+    // When running as a .app bundle, use Contents/Resources
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(macos_dir) = exe.parent() {
+            let resources = macos_dir.with_file_name("Resources");
+            if resources.join("weights.json").exists() {
+                return resources;
+            }
+        }
+    }
+    // Development mode: walk up from cwd looking for Cargo.toml
     let mut dir = std::env::current_dir().unwrap();
     loop {
         if dir.join("Cargo.toml").exists() {
@@ -1765,9 +1775,35 @@ impl ApplicationHandler for App {
             return;
         }
         let attrs = WindowAttributes::default()
-            .with_title("shader playground")
-            .with_inner_size(winit::dpi::LogicalSize::new(800, 600));
+            .with_title("Shader Playground")
+            .with_inner_size(winit::dpi::LogicalSize::new(
+                self.weights._config.window_width,
+                self.weights._config.window_height,
+            ))
+            .with_resizable(true);
         let window = Arc::new(event_loop.create_window(attrs).unwrap());
+
+        // Register as a proper macOS application so it appears in window pickers / Dock
+        #[cfg(target_os = "macos")]
+        {
+            use objc2::msg_send;
+            use objc2::runtime::AnyObject;
+            use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+            use objc2_foundation::{MainThreadMarker, NSString};
+
+            let mtm = MainThreadMarker::new().expect("must be on main thread");
+            let ns_app = NSApplication::sharedApplication(mtm);
+            ns_app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+            #[allow(deprecated)]
+            ns_app.activateIgnoringOtherApps(true);
+
+            // Set the process name so window pickers show "Shader Playground"
+            let process_info: *mut AnyObject =
+                unsafe { msg_send![objc2::class!(NSProcessInfo), processInfo] };
+            let name = NSString::from_str("Shader Playground");
+            let _: () = unsafe { msg_send![process_info, setProcessName: &*name] };
+        }
+
         self.gpu = Some(Gpu::create(window.clone()));
         self.window = Some(window);
 

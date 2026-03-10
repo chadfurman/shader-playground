@@ -227,6 +227,10 @@ pub struct RuntimeConfig {
     pub dist_lum_strength: f32,
     #[serde(default = "default_iter_lum_range")]
     pub iter_lum_range: f32,
+    #[serde(default = "default_window_width")]
+    pub window_width: u32,
+    #[serde(default = "default_window_height")]
+    pub window_height: u32,
 }
 
 fn default_morph_duration() -> f32 {
@@ -382,6 +386,12 @@ fn default_archive_on_startup() -> bool {
 fn default_iter_lum_range() -> f32 {
     0.5
 } // 0.0 = uniform brightness, 0.5 = early iters 2x brighter than late
+fn default_window_width() -> u32 {
+    640
+}
+fn default_window_height() -> u32 {
+    480
+}
 
 const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
 

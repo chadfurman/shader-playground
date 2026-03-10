@@ -1,0 +1,308 @@
+{
+  "mutant-7704": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-8089",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-1294": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-7205",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-3038": {
+    "parent_a": "mutant-5871",
+    "parent_b": "seed-aurora",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-4286": {
+    "parent_a": "mutant-8089",
+    "parent_b": "default",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-8017": {
+    "parent_a": "mutant-2074",
+    "parent_b": "seed-deep-space",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-3578": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-4286",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-4445": {
+    "parent_a": "mutant-9222",
+    "parent_b": "seed-ocean-current",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-4642": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-7205",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-3795": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-6223",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-4625": {
+    "parent_a": "mutant-9866",
+    "parent_b": "default",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-6596": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-9866",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-5325": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-4852",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-8866": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-9249",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-8434": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-4488",
+    "generation": 2,
+    "created": "2026-03-23"
+  },
+  "mutant-6149": {
+    "parent_a": "mutant-9712",
+    "parent_b": "mutant-2502",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-9732": {
+    "parent_a": "mutant-9712",
+    "parent_b": "mutant-9666",
+    "generation": 5,
+    "created": "2026-03-23"
+  },
+  "mutant-5564": {
+    "parent_a": "mutant-9712",
+    "parent_b": "mutant-2502",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-8358": {
+    "parent_a": "mutant-9222",
+    "parent_b": "mutant-4488",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-5871": {
+    "parent_a": "mutant-5749",
+    "parent_b": "seed-prism",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-8195": {
+    "parent_a": "mutant-9202",
+    "parent_b": "mutant-9761",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-2961": {
+    "parent_a": "mutant-9732",
+    "parent_b": "seed-ice-crystal",
+    "generation": 6,
+    "created": "2026-03-23"
+  },
+  "mutant-9963": {
+    "parent_a": "mutant-9202",
+    "parent_b": "mutant-7205",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-3311": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-4488",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-7941": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-2881",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-7742": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-9866",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-9202": {
+    "parent_a": "mutant-9222",
+    "parent_b": "seed-prism",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-5487": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-2502",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-5676": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-julia-garden",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-1967": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-3311",
+    "generation": 5,
+    "created": "2026-03-23"
+  },
+  "mutant-9712": {
+    "parent_a": "mutant-9249",
+    "parent_b": "mutant-7673",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-4852": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-7205",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-9866": {
+    "parent_a": "mutant-9249",
+    "parent_b": "seed-deep-space",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-1206": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-2502",
+    "generation": 2,
+    "created": "2026-03-23"
+  },
+  "mutant-2327": {
+    "parent_a": "mutant-9249",
+    "parent_b": "seed-golden-spiral",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-5254": {
+    "parent_a": "mutant-9249",
+    "parent_b": "seed-ocean-current",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-2881": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-jellyfish",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-6821": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-1610",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-9737": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-7673",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-3669": {
+    "parent_a": "mutant-9249",
+    "parent_b": "mutant-6223",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-7015": {
+    "parent_a": "mutant-8089",
+    "parent_b": "default",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-3627": {
+    "parent_a": "mutant-5254",
+    "parent_b": "seed-wind-ribbons",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-2074": {
+    "parent_a": "mutant-4642",
+    "parent_b": "seed-crystal-flower",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-2399": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-5788",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-9666": {
+    "parent_a": "mutant-2399",
+    "parent_b": "seed-deep-space",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-5749": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-wind-ribbons",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-7984": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-9761",
+    "generation": 3,
+    "created": "2026-03-23"
+  },
+  "mutant-9249": {
+    "parent_a": "mutant-9222",
+    "parent_b": "seed-crystal-flower",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-9222": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-cosmic-web",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-6936": {
+    "parent_a": "mutant-9732",
+    "parent_b": "mutant-5788",
+    "generation": 6,
+    "created": "2026-03-23"
+  },
+  "mutant-5077": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-6654",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-9165": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-6149",
+    "generation": 5,
+    "created": "2026-03-22"
+  }
+}
