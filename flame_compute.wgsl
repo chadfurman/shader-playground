@@ -24,6 +24,9 @@ struct Uniforms {
 @group(0) @binding(4) var palette_sampler: sampler;
 @group(0) @binding(5) var<storage, read_write> point_state: array<f32>;
 
+// Unique thread ID for subgroup leader election (set from gid.x in main)
+var<private> sg_thread_id: u32;
+
 fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 42u + field]; }
 
 fn xf_param(idx: u32, param_offset: u32) -> f32 {
@@ -370,15 +373,55 @@ fn xform_color(idx: u32) -> f32 {
     return xf(idx, 7u);
 }
 
-// Splat helper — writes density + color + velocity + depth to one pixel
+// Splat helper — writes density + color + velocity + depth to one pixel.
+// Uses subgroup reduction: threads targeting the same pixel combine their
+// values via register-level subgroupAdd, then one thread does the atomicAdd.
+// Reduces atomic contention by up to 32x in dense attractor regions.
 fn splat_pixel(bi: u32, wt: f32, ic: u32, ig: u32, ib: u32, ivx: i32, ivy: i32, idepth: u32) {
-    atomicAdd(&histogram[bi],      u32(wt * 1000.0));
-    atomicAdd(&histogram[bi + 1u], u32(f32(ic) * wt));
-    atomicAdd(&histogram[bi + 2u], u32(f32(ig) * wt));
-    atomicAdd(&histogram[bi + 3u], u32(f32(ib) * wt));
-    atomicAdd(&histogram[bi + 4u], u32(i32(f32(ivx) * wt)));
-    atomicAdd(&histogram[bi + 5u], u32(i32(f32(ivy) * wt)));
-    atomicAdd(&histogram[bi + 6u], u32(f32(idepth) * wt));
+    let v0 = u32(wt * 1000.0);
+    let v1 = u32(f32(ic) * wt);
+    let v2 = u32(f32(ig) * wt);
+    let v3 = u32(f32(ib) * wt);
+    let v4 = u32(i32(f32(ivx) * wt));
+    let v5 = u32(i32(f32(ivy) * wt));
+    let v6 = u32(f32(idepth) * wt);
+
+    // Broadcast first thread's pixel index — that thread defines the "leader pixel"
+    let leader_bi = subgroupBroadcastFirst(bi);
+    let is_leader_pixel = bi == leader_bi;
+
+    // Sum values across threads that match the leader's pixel (others contribute 0)
+    let s0 = subgroupAdd(select(0u, v0, is_leader_pixel));
+    let s1 = subgroupAdd(select(0u, v1, is_leader_pixel));
+    let s2 = subgroupAdd(select(0u, v2, is_leader_pixel));
+    let s3 = subgroupAdd(select(0u, v3, is_leader_pixel));
+    let s4 = subgroupAdd(select(0u, v4, is_leader_pixel));
+    let s5 = subgroupAdd(select(0u, v5, is_leader_pixel));
+    let s6 = subgroupAdd(select(0u, v6, is_leader_pixel));
+
+    // First thread writes the combined sum — it always matches since
+    // subgroupBroadcastFirst broadcast ITS value
+    let leader_thread = subgroupBroadcastFirst(sg_thread_id);
+    if (sg_thread_id == leader_thread) {
+        atomicAdd(&histogram[leader_bi],      s0);
+        atomicAdd(&histogram[leader_bi + 1u], s1);
+        atomicAdd(&histogram[leader_bi + 2u], s2);
+        atomicAdd(&histogram[leader_bi + 3u], s3);
+        atomicAdd(&histogram[leader_bi + 4u], s4);
+        atomicAdd(&histogram[leader_bi + 5u], s5);
+        atomicAdd(&histogram[leader_bi + 6u], s6);
+    }
+
+    // Non-matching threads still write individually
+    if (!is_leader_pixel) {
+        atomicAdd(&histogram[bi],      v0);
+        atomicAdd(&histogram[bi + 1u], v1);
+        atomicAdd(&histogram[bi + 2u], v2);
+        atomicAdd(&histogram[bi + 3u], v3);
+        atomicAdd(&histogram[bi + 4u], v4);
+        atomicAdd(&histogram[bi + 5u], v5);
+        atomicAdd(&histogram[bi + 6u], v6);
+    }
 }
 
 // Bilinear sub-pixel splat — distributes point across 2x2 quad.
@@ -453,6 +496,7 @@ fn palette_spectral(t: f32) -> vec3<f32> {
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    sg_thread_id = gid.x;
     let speed = u.globals.x;
     let zoom = u.globals.y;
     let t = u.time * speed;

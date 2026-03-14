@@ -154,7 +154,18 @@ impl Gpu {
         .expect("no GPU adapter");
 
         let adapter_limits = adapter.limits();
+        let adapter_features = adapter.features();
+        let has_subgroups = adapter_features.contains(wgpu::Features::SUBGROUP);
+        eprintln!("[gpu] Adapter: {:?}", adapter.get_info().name);
+        eprintln!("[gpu] Subgroup support: {}", has_subgroups);
+
+        let mut required_features = wgpu::Features::empty();
+        if has_subgroups {
+            required_features |= wgpu::Features::SUBGROUP;
+        }
+
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            required_features,
             required_limits: wgpu::Limits {
                 max_storage_buffer_binding_size: adapter_limits.max_storage_buffer_binding_size,
                 max_buffer_size: adapter_limits.max_buffer_size,
