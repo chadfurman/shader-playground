@@ -1464,6 +1464,8 @@ struct App {
     watcher: Option<FileWatcher>,
     start: Instant,
     frame: u32,
+    fps_frame_count: u32,
+    last_fps_time: Instant,
     mouse: [f32; 2],
     globals: [f32; 20],
     xf_params: Vec<f32>,
@@ -1531,6 +1533,8 @@ impl App {
             watcher: None,
             start: Instant::now(),
             frame: 0,
+            fps_frame_count: 0,
+            last_fps_time: Instant::now(),
             mouse: [0.5, 0.5],
             globals: initial_globals,
             xf_params: initial_xf.clone(),
@@ -2455,6 +2459,17 @@ impl ApplicationHandler for App {
 
                 gpu.render();
                 self.frame += 1;
+
+                // FPS logging
+                self.fps_frame_count += 1;
+                if self.fps_frame_count >= 60 {
+                    let elapsed = self.last_fps_time.elapsed();
+                    let fps = self.fps_frame_count as f64 / elapsed.as_secs_f64();
+                    let ms = elapsed.as_millis() as f64 / self.fps_frame_count as f64;
+                    log::info!("[perf] {fps:.1} fps ({ms:.1}ms/frame)");
+                    self.fps_frame_count = 0;
+                    self.last_fps_time = Instant::now();
+                }
 
                 // Log to perf.log: every slow frame (<30fps) + periodic baseline every 300 frames
                 let ms_per_frame = dt * 1000.0;
