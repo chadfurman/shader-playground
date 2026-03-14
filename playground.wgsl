@@ -299,41 +299,41 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let prev = textureSample(prev_frame, prev_sampler, prev_uv).rgb;
     col = max(col, prev * trail);
 
-    // ── Density-aware bloom — soft glow on sparse points, crisp dense structure ──
+    // ── Accumulation-sourced bloom — reads clean density data, no feedback loop ──
+    // Samples neighbor pixels from the accumulation buffer (not prev_frame) to avoid
+    // exponential bloom accumulation. Converts raw density+color to approximate luminance
+    // and adds a soft glow halo around bright regions.
     if (bloom_int > 0.001) {
-        // Bloom weight inversely proportional to density: sparse pixels get full bloom,
-        // dense pixels get almost none. Uses normalized density (relative to max).
-        let max_d = bitcast<f32>(max_density_buf[0]);
-        let norm_density = clamp(density / max(max_d, 1.0), 0.0, 1.0);
-        let sparsity = 1.0 - sqrt(norm_density);  // sqrt for gentler falloff
+        let max_d = max(max_density_val, 0.001);
+        let norm_density = clamp(density / max_d, 0.0, 1.0);
+        let sparsity = 1.0 - sqrt(norm_density);
 
-        let texel = 1.0 / u.resolution;
         var bloom_sum = vec3(0.0);
+        let radii = array<i32, 3>(2, 5, 12);
+        let rweights = array<f32, 3>(0.5, 0.3, 0.2);
 
-        let r1 = 2.0;
-        bloom_sum += (
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-r1, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2( r1, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -r1) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  r1) * texel).rgb
-        ) * 0.25 * 0.5;
-
-        let r2 = 5.0;
-        bloom_sum += (
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-r2, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2( r2, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -r2) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  r2) * texel).rgb
-        ) * 0.25 * 0.3;
-
-        let r3 = 12.0;
-        bloom_sum += (
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(-r3, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2( r3, 0.0) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0, -r3) * texel).rgb +
-            textureSample(prev_frame, prev_sampler, tex_uv + vec2(0.0,  r3) * texel).rgb
-        ) * 0.25 * 0.2;
-
+        for (var ri = 0u; ri < 3u; ri++) {
+            let r = radii[ri];
+            let rw = rweights[ri];
+            // 4 cardinal taps per radius
+            var ring = vec3(0.0);
+            let offsets = array<vec2<i32>, 4>(
+                vec2(-r, 0), vec2(r, 0), vec2(0, -r), vec2(0, r)
+            );
+            for (var d = 0u; d < 4u; d++) {
+                let sp = clamp(vec2<i32>(px) + offsets[d], vec2(0i), vec2<i32>(vec2(u.resolution)) - 1);
+                let si = (u32(sp.y) * w + u32(sp.x)) * 7u;
+                let sd = accumulation[si];
+                if (sd > 0.0) {
+                    let sc = vec3(accumulation[si + 1u], accumulation[si + 2u], accumulation[si + 3u]) / sd;
+                    // Same tonemapping as the main pixel: log density → sqrt normalized
+                    let neighbor_log = log(1.0 + sd / 1000.0 * flame_bright);
+                    let neighbor_alpha = sqrt(neighbor_log / max(max_log, 0.001));
+                    ring += sc / 255.0 * neighbor_alpha;
+                }
+            }
+            bloom_sum += ring * rw * 0.25;
+        }
         col += bloom_sum * bloom_int * sparsity;
     }
 
