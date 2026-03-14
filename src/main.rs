@@ -1498,6 +1498,8 @@ struct App {
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
     prev_zoom: f32,
+    genome_frame_count: u32,
+    genome_start_time: Instant,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1571,6 +1573,8 @@ impl App {
                 .open("perf.log")
                 .ok(),
             prev_zoom: 3.0,
+            genome_frame_count: 0,
+            genome_start_time: Instant::now(),
         }
     }
 
@@ -1730,6 +1734,10 @@ impl App {
 
     /// Begin morphing toward the current genome. Captures current base as start point.
     fn begin_morph(&mut self) {
+        // Reset per-genome performance tracking
+        self.genome_frame_count = 0;
+        self.genome_start_time = Instant::now();
+
         // Snapshot wherever the morph currently is as our new start
         self.morph_start_globals = self.morph_base_globals;
         self.morph_start_xf = self.morph_base_xf.clone();
@@ -2498,6 +2506,26 @@ impl ApplicationHandler for App {
                 gpu.render();
                 self.frame += 1;
 
+                // Per-genome performance tracking — flag for post-render evolve
+                self.genome_frame_count += 1;
+                let genome_elapsed = self.genome_start_time.elapsed().as_secs_f32();
+                let mut perf_skip = false;
+                if genome_elapsed > 3.0 && self.genome_frame_count > 30 {
+                    let genome_fps = self.genome_frame_count as f32 / genome_elapsed;
+                    let min_fps = self.weights._config.min_genome_fps;
+                    if min_fps > 0.0 && genome_fps < min_fps && !self.flame_locked {
+                        eprintln!(
+                            "[perf-skip] {} avg {genome_fps:.1}fps < {min_fps}fps threshold \
+                             (xf={}, sym={}, frames={})",
+                            self.genome.name,
+                            self.genome.transform_count(),
+                            self.genome.symmetry,
+                            self.genome_frame_count,
+                        );
+                        perf_skip = true;
+                    }
+                }
+
                 // FPS logging
                 self.fps_frame_count += 1;
                 if self.fps_frame_count >= 60 {
@@ -2534,6 +2562,40 @@ impl ApplicationHandler for App {
 
                 if let Some(w) = &self.window {
                     w.request_redraw();
+                }
+
+                // Perf-skip: auto-evolve away from expensive genomes (after gpu borrow ends)
+                if perf_skip {
+                    self.genome_history.push(self.genome.clone());
+                    if self.genome_history.len() > 10 {
+                        self.genome_history.remove(0);
+                    }
+                    let (pa, pb, community) = self.pick_breeding_parents();
+                    self.genome = FlameGenome::mutate(
+                        &pa,
+                        &pb,
+                        &community,
+                        &self.audio_features,
+                        &self.weights._config,
+                        &self.favorite_profile,
+                        &mut Some(&mut self.taste_engine),
+                    );
+                    let genomes_dir = project_dir().join("genomes");
+                    self.lineage_cache.register_and_save(
+                        &self.genome.name,
+                        &self.genome.parent_a,
+                        &self.genome.parent_b,
+                        self.genome.generation,
+                        &genomes_dir,
+                    );
+                    self.last_mutation_time = self.start.elapsed().as_secs_f32();
+                    self.begin_morph();
+                    eprintln!(
+                        "[auto-evolve] t={:.1}s → {} (gen {}) [perf skip]",
+                        self.start.elapsed().as_secs_f32(),
+                        self.genome.name,
+                        self.genome.generation,
+                    );
                 }
             }
             _ => {}

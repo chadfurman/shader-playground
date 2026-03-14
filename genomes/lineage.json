@@ -1,39 +1,81 @@
 {
-  "mutant-5254": {
-    "parent_a": "mutant-9249",
-    "parent_b": "seed-ocean-current",
-    "generation": 3,
-    "created": "2026-03-22"
+  "mutant-2547": {
+    "parent_a": "mutant-3155",
+    "parent_b": "mutant-9712",
+    "generation": 10,
+    "created": "2026-03-27"
   },
-  "mutant-3627": {
-    "parent_a": "mutant-5254",
+  "mutant-7903": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-9308",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-4053": {
+    "parent_a": "mutant-3083",
+    "parent_b": "seed-golden-spiral",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-5719": {
+    "parent_a": "mutant-3511",
+    "parent_b": "mutant-4169",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-1849": {
+    "parent_a": "mutant-9866",
     "parent_b": "seed-wind-ribbons",
     "generation": 4,
-    "created": "2026-03-23"
+    "created": "2026-03-27"
   },
-  "mutant-5079": {
-    "parent_a": "mutant-6149",
-    "parent_b": "seed-cosmic-web",
-    "generation": 5,
-    "created": "2026-03-24"
+  "mutant-6471": {
+    "parent_a": "mutant-9231",
+    "parent_b": "seed-prism",
+    "generation": 3,
+    "created": "2026-03-27"
   },
-  "mutant-9676": {
-    "parent_a": "mutant-3795",
-    "parent_b": "mutant-4286",
-    "generation": 5,
-    "created": "2026-03-24"
-  },
-  "mutant-4392": {
-    "parent_a": "mutant-9222",
-    "parent_b": "seed-ocean-current",
-    "generation": 2,
-    "created": "2026-03-24"
-  },
-  "mutant-5203": {
+  "mutant-2601": {
     "parent_a": "mutant-8089",
-    "parent_b": "mutant-3795",
-    "generation": 5,
+    "parent_b": "mutant-6894",
+    "generation": 6,
     "created": "2026-03-24"
+  },
+  "mutant-7059": {
+    "parent_a": "mutant-9963",
+    "parent_b": "default",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-3300": {
+    "parent_a": "mutant-3511",
+    "parent_b": "mutant-3531",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-8358": {
+    "parent_a": "mutant-6979",
+    "parent_b": "mutant-7910",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-3511": {
+    "parent_a": "mutant-4642",
+    "parent_b": "seed-golden-spiral",
+    "generation": 3,
+    "created": "2026-03-26"
+  },
+  "mutant-6124": {
+    "parent_a": "mutant-3864",
+    "parent_b": "mutant-1964",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-2271": {
+    "parent_a": "mutant-9760",
+    "parent_b": "mutant-2074",
+    "generation": 9,
+    "created": "2026-03-27"
   },
   "mutant-1248": {
     "parent_a": "mutant-9222",
@@ -41,82 +83,22 @@
     "generation": 2,
     "created": "2026-03-24"
   },
-  "mutant-1001": {
-    "parent_a": "mutant-5079",
-    "parent_b": "mutant-5254",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-6810": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-6596",
-    "generation": 5,
-    "created": "2026-03-24"
-  },
-  "mutant-7725": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-6894",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-7923": {
-    "parent_a": "mutant-9963",
-    "parent_b": "mutant-3049",
-    "generation": 4,
-    "created": "2026-03-24"
-  },
-  "mutant-3155": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-1967",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-1391": {
-    "parent_a": "mutant-5744",
-    "parent_b": "mutant-2018",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-1767": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-1967",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-4223": {
-    "parent_a": "mutant-3155",
-    "parent_b": "mutant-2987",
-    "generation": 10,
-    "created": "2026-03-27"
-  },
-  "mutant-6314": {
-    "parent_a": "mutant-3864",
-    "parent_b": "mutant-7923",
+  "mutant-5390": {
+    "parent_a": "mutant-9233",
+    "parent_b": "mutant-4625",
     "generation": 7,
     "created": "2026-03-27"
   },
-  "mutant-6646": {
-    "parent_a": "mutant-5079",
-    "parent_b": "mutant-8089",
-    "generation": 6,
-    "created": "2026-03-26"
-  },
-  "mutant-2130": {
-    "parent_a": "mutant-9866",
-    "parent_b": "mutant-5788",
-    "generation": 4,
-    "created": "2026-03-26"
-  },
-  "mutant-9712": {
-    "parent_a": "mutant-9249",
-    "parent_b": "mutant-7673",
-    "generation": 3,
+  "mutant-7015": {
+    "parent_a": "mutant-8089",
+    "parent_b": "default",
+    "generation": 1,
     "created": "2026-03-22"
   },
-  "mutant-9614": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-8196",
-    "generation": 9,
+  "mutant-1772": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-3864",
+    "generation": 7,
     "created": "2026-03-27"
   },
   "mutant-6149": {
@@ -125,81 +107,21 @@
     "generation": 4,
     "created": "2026-03-22"
   },
-  "mutant-1921": {
-    "parent_a": "mutant-8715",
-    "parent_b": "mutant-4852",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-3913": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-6646",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-6983": {
-    "parent_a": "mutant-6571",
-    "parent_b": "mutant-1851",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-1787": {
-    "parent_a": "mutant-6646",
-    "parent_b": "mutant-2452",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-8553": {
-    "parent_a": "mutant-9732",
-    "parent_b": "seed-mandala",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-3759": {
-    "parent_a": "mutant-4326",
-    "parent_b": "mutant-9760",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-1444": {
-    "parent_a": "mutant-9963",
-    "parent_b": "mutant-5077",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-1294": {
-    "parent_a": "mutant-8089",
-    "parent_b": "mutant-7205",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-5719": {
-    "parent_a": "mutant-3511",
-    "parent_b": "mutant-4169",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-5744": {
-    "parent_a": "mutant-8089",
-    "parent_b": "mutant-8309",
-    "generation": 7,
-    "created": "2026-03-26"
-  },
-  "mutant-4053": {
+  "mutant-9614": {
     "parent_a": "mutant-3083",
-    "parent_b": "seed-golden-spiral",
+    "parent_b": "mutant-8196",
     "generation": 9,
     "created": "2026-03-27"
   },
-  "mutant-5211": {
-    "parent_a": "mutant-9231",
-    "parent_b": "mutant-3693",
-    "generation": 10,
-    "created": "2026-03-27"
+  "mutant-8309": {
+    "parent_a": "mutant-4326",
+    "parent_b": "seed-aurora",
+    "generation": 6,
+    "created": "2026-03-24"
   },
-  "mutant-1702": {
+  "mutant-9010": {
     "parent_a": "mutant-2018",
-    "parent_b": "mutant-1553",
+    "parent_b": "mutant-3038",
     "generation": 4,
     "created": "2026-03-27"
   },
@@ -209,340 +131,64 @@
     "generation": 4,
     "created": "2026-03-24"
   },
-  "mutant-9059": {
-    "parent_a": "mutant-9308",
-    "parent_b": "mutant-1787",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-4493": {
-    "parent_a": "mutant-2018",
-    "parent_b": "seed-swirl-nebula",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-9964": {
+  "mutant-2396": {
     "parent_a": "mutant-2601",
-    "parent_b": "mutant-1440",
-    "generation": 10,
+    "parent_b": "mutant-7742",
+    "generation": 7,
     "created": "2026-03-27"
   },
-  "mutant-3083": {
-    "parent_a": "mutant-4104",
-    "parent_b": "mutant-5749",
+  "mutant-8097": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-9308",
     "generation": 8,
-    "created": "2026-03-24"
-  },
-  "mutant-9871": {
-    "parent_a": "mutant-3864",
-    "parent_b": "mutant-2881",
-    "generation": 7,
     "created": "2026-03-27"
   },
-  "mutant-8977": {
-    "parent_a": "mutant-9732",
-    "parent_b": "seed-wind-ribbons",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-4163": {
-    "parent_a": "mutant-9866",
-    "parent_b": "mutant-3693",
-    "generation": 10,
-    "created": "2026-03-27"
-  },
-  "mutant-8709": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-6757",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-4347": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-6027",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-5779": {
-    "parent_a": "mutant-1471",
-    "parent_b": "seed-golden-spiral",
-    "generation": 2,
-    "created": "2026-03-27"
-  },
-  "mutant-4852": {
-    "parent_a": "mutant-8017",
-    "parent_b": "mutant-5871",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-1567": {
-    "parent_a": "mutant-5749",
-    "parent_b": "seed-aurora",
-    "generation": 2,
-    "created": "2026-03-26"
-  },
-  "mutant-5011": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-3795",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-5676": {
+  "mutant-3325": {
     "parent_a": "mutant-8089",
-    "parent_b": "seed-julia-garden",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-3985": {
-    "parent_a": "mutant-5165",
-    "parent_b": "mutant-8089",
-    "generation": 6,
-    "created": "2026-03-26"
-  },
-  "mutant-9772": {
-    "parent_a": "mutant-5165",
-    "parent_b": "mutant-2018",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-5165": {
-    "parent_a": "mutant-8017",
-    "parent_b": "seed-cosmic-web",
-    "generation": 5,
-    "created": "2026-03-24"
-  },
-  "mutant-2601": {
-    "parent_a": "mutant-8089",
-    "parent_b": "mutant-6894",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-5076": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-8715",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-3864": {
-    "parent_a": "mutant-5165",
     "parent_b": "mutant-5487",
-    "generation": 6,
-    "created": "2026-03-26"
-  },
-  "mutant-3300": {
-    "parent_a": "mutant-3511",
-    "parent_b": "mutant-3531",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-3311": {
-    "parent_a": "mutant-9866",
-    "parent_b": "mutant-4488",
     "generation": 4,
-    "created": "2026-03-22"
-  },
-  "mutant-9732": {
-    "parent_a": "mutant-9712",
-    "parent_b": "mutant-9666",
-    "generation": 5,
-    "created": "2026-03-23"
-  },
-  "mutant-3511": {
-    "parent_a": "mutant-4642",
-    "parent_b": "seed-golden-spiral",
-    "generation": 3,
     "created": "2026-03-26"
   },
-  "mutant-1509": {
-    "parent_a": "mutant-7725",
-    "parent_b": "mutant-6223",
-    "generation": 7,
-    "created": "2026-03-24"
-  },
-  "mutant-2033": {
-    "parent_a": "mutant-8089",
-    "parent_b": "mutant-5788",
-    "generation": 1,
-    "created": "2026-03-27"
-  },
-  "mutant-4445": {
-    "parent_a": "mutant-9222",
-    "parent_b": "seed-ocean-current",
-    "generation": 2,
-    "created": "2026-03-22"
-  },
-  "mutant-7984": {
-    "parent_a": "mutant-5871",
-    "parent_b": "mutant-9761",
-    "generation": 3,
-    "created": "2026-03-23"
-  },
-  "mutant-5871": {
-    "parent_a": "mutant-5749",
-    "parent_b": "seed-prism",
-    "generation": 2,
-    "created": "2026-03-22"
-  },
-  "mutant-6365": {
-    "parent_a": "mutant-5079",
-    "parent_b": "mutant-4401",
-    "generation": 11,
-    "created": "2026-03-27"
-  },
-  "mutant-8309": {
-    "parent_a": "mutant-4326",
-    "parent_b": "seed-aurora",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-8627": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-5982",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-1553": {
-    "parent_a": "mutant-5871",
-    "parent_b": "mutant-9982",
-    "generation": 3,
-    "created": "2026-03-26"
-  },
-  "mutant-7823": {
-    "parent_a": "mutant-9399",
-    "parent_b": "mutant-9732",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-6228": {
-    "parent_a": "mutant-4642",
+  "mutant-1202": {
+    "parent_a": "mutant-3038",
     "parent_b": "mutant-9866",
     "generation": 4,
     "created": "2026-03-27"
   },
-  "mutant-7296": {
-    "parent_a": "mutant-1471",
-    "parent_b": "seed-swirl-nebula",
-    "generation": 2,
-    "created": "2026-03-27"
-  },
-  "mutant-1967": {
-    "parent_a": "mutant-2399",
-    "parent_b": "mutant-3311",
-    "generation": 5,
-    "created": "2026-03-23"
-  },
-  "mutant-1337": {
-    "parent_a": "mutant-9732",
-    "parent_b": "mutant-3038",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-6471": {
-    "parent_a": "mutant-9231",
-    "parent_b": "seed-prism",
-    "generation": 3,
-    "created": "2026-03-27"
-  },
-  "mutant-2952": {
-    "parent_a": "mutant-7742",
-    "parent_b": "mutant-4852",
-    "generation": 5,
-    "created": "2026-03-24"
-  },
-  "mutant-1849": {
-    "parent_a": "mutant-9866",
-    "parent_b": "seed-wind-ribbons",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-8434": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-4488",
-    "generation": 2,
-    "created": "2026-03-23"
-  },
-  "mutant-3092": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-2712",
+  "mutant-8963": {
+    "parent_a": "mutant-1440",
+    "parent_b": "mutant-6646",
     "generation": 10,
     "created": "2026-03-27"
   },
-  "mutant-4970": {
-    "parent_a": "mutant-5254",
-    "parent_b": "mutant-1294",
-    "generation": 4,
-    "created": "2026-03-24"
-  },
-  "mutant-4642": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-7205",
-    "generation": 2,
-    "created": "2026-03-22"
-  },
-  "mutant-8898": {
-    "parent_a": "mutant-3864",
-    "parent_b": "mutant-5744",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-3386": {
-    "parent_a": "mutant-1509",
-    "parent_b": "mutant-4104",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-4113": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-7725",
+  "mutant-9240": {
+    "parent_a": "mutant-6646",
+    "parent_b": "mutant-3795",
     "generation": 7,
     "created": "2026-03-27"
   },
-  "mutant-8165": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-4053",
-    "generation": 10,
-    "created": "2026-03-27"
-  },
-  "mutant-2018": {
-    "parent_a": "mutant-9249",
-    "parent_b": "mutant-6223",
-    "generation": 3,
-    "created": "2026-03-27"
-  },
-  "mutant-2796": {
-    "parent_a": "mutant-9231",
-    "parent_b": "mutant-5962",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-2789": {
+  "mutant-7672": {
     "parent_a": "mutant-5749",
-    "parent_b": "mutant-6048",
-    "generation": 8,
+    "parent_b": "mutant-4488",
+    "generation": 2,
     "created": "2026-03-27"
   },
-  "mutant-1512": {
-    "parent_a": "mutant-8715",
-    "parent_b": "mutant-8493",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-5460": {
-    "parent_a": "mutant-9866",
-    "parent_b": "mutant-2789",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-3930": {
+  "mutant-5962": {
     "parent_a": "mutant-2074",
-    "parent_b": "mutant-5676",
+    "parent_b": "mutant-5788",
     "generation": 4,
     "created": "2026-03-24"
   },
-  "mutant-4753": {
-    "parent_a": "mutant-3083",
-    "parent_b": "seed-aurora",
-    "generation": 9,
+  "mutant-6821": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-1610",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-6979": {
+    "parent_a": "mutant-3985",
+    "parent_b": "mutant-9866",
+    "generation": 7,
     "created": "2026-03-26"
   },
   "mutant-6276": {
@@ -551,39 +197,57 @@
     "generation": 9,
     "created": "2026-03-27"
   },
-  "mutant-1175": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-9810",
+  "mutant-6596": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-9866",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-4795": {
+    "parent_a": "mutant-4642",
+    "parent_b": "mutant-1175",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-7823": {
+    "parent_a": "mutant-9399",
+    "parent_b": "mutant-9732",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-4642": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-7205",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-6585": {
+    "parent_a": "mutant-8434",
+    "parent_b": "mutant-3968",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-1789": {
+    "parent_a": "mutant-9202",
+    "parent_b": "mutant-8376",
+    "generation": 6,
+    "created": "2026-03-26"
+  },
+  "mutant-2789": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-6048",
     "generation": 8,
     "created": "2026-03-27"
   },
-  "mutant-2929": {
-    "parent_a": "mutant-3155",
-    "parent_b": "mutant-8017",
-    "generation": 10,
-    "created": "2026-03-27"
+  "mutant-1509": {
+    "parent_a": "mutant-7725",
+    "parent_b": "mutant-6223",
+    "generation": 7,
+    "created": "2026-03-24"
   },
-  "mutant-7748": {
-    "parent_a": "mutant-3511",
-    "parent_b": "mutant-2952",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-9681": {
-    "parent_a": "mutant-5165",
-    "parent_b": "mutant-4286",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-9210": {
-    "parent_a": "mutant-7742",
-    "parent_b": "mutant-9761",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-3724": {
-    "parent_a": "mutant-9231",
-    "parent_b": "mutant-1921",
+  "mutant-1045": {
+    "parent_a": "mutant-6979",
+    "parent_b": "mutant-3759",
     "generation": 10,
     "created": "2026-03-27"
   },
@@ -593,105 +257,21 @@
     "generation": 6,
     "created": "2026-03-23"
   },
-  "mutant-1000": {
-    "parent_a": "mutant-2018",
+  "mutant-4767": {
+    "parent_a": "mutant-6646",
+    "parent_b": "mutant-8627",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-7067": {
+    "parent_a": "mutant-6979",
     "parent_b": "mutant-6654",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-8300": {
-    "parent_a": "mutant-3985",
-    "parent_b": "seed-prism",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-1851": {
-    "parent_a": "mutant-5744",
-    "parent_b": "mutant-6228",
     "generation": 8,
     "created": "2026-03-27"
   },
-  "mutant-5114": {
-    "parent_a": "mutant-5203",
-    "parent_b": "seed-mandala",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-7342": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-2311",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-9222": {
-    "parent_a": "mutant-8089",
-    "parent_b": "seed-cosmic-web",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-5487": {
-    "parent_a": "mutant-5871",
-    "parent_b": "mutant-2502",
-    "generation": 3,
-    "created": "2026-03-22"
-  },
-  "mutant-2559": {
-    "parent_a": "mutant-9165",
-    "parent_b": "mutant-5749",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-3391": {
-    "parent_a": "mutant-9963",
-    "parent_b": "mutant-6654",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-8960": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-5744",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-6637": {
-    "parent_a": "mutant-5871",
-    "parent_b": "mutant-4104",
-    "generation": 8,
-    "created": "2026-03-24"
-  },
-  "mutant-8376": {
-    "parent_a": "mutant-9712",
-    "parent_b": "mutant-3795",
-    "generation": 5,
-    "created": "2026-03-24"
-  },
-  "mutant-3795": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-6223",
-    "generation": 4,
-    "created": "2026-03-23"
-  },
-  "mutant-8400": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-3300",
-    "generation": 11,
-    "created": "2026-03-27"
-  },
-  "mutant-6071": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-5165",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-2452": {
-    "parent_a": "mutant-7725",
-    "parent_b": "mutant-2327",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-6048": {
-    "parent_a": "mutant-7101",
-    "parent_b": "mutant-8089",
+  "mutant-9871": {
+    "parent_a": "mutant-3864",
+    "parent_b": "mutant-2881",
     "generation": 7,
     "created": "2026-03-27"
   },
@@ -701,298 +281,22 @@
     "generation": 10,
     "created": "2026-03-27"
   },
-  "mutant-9866": {
-    "parent_a": "mutant-9249",
-    "parent_b": "seed-deep-space",
-    "generation": 3,
-    "created": "2026-03-22"
-  },
-  "mutant-2875": {
-    "parent_a": "mutant-9963",
-    "parent_b": "seed-deep-space",
-    "generation": 4,
-    "created": "2026-03-24"
-  },
-  "mutant-4767": {
-    "parent_a": "mutant-6646",
-    "parent_b": "mutant-8627",
-    "generation": 10,
-    "created": "2026-03-27"
-  },
-  "mutant-7101": {
-    "parent_a": "mutant-5165",
-    "parent_b": "seed-star-bloom",
-    "generation": 6,
-    "created": "2026-03-26"
-  },
-  "mutant-2881": {
-    "parent_a": "mutant-8089",
-    "parent_b": "seed-jellyfish",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-2237": {
-    "parent_a": "mutant-8017",
-    "parent_b": "mutant-8089",
-    "generation": 5,
-    "created": "2026-03-24"
-  },
-  "mutant-1206": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-2502",
-    "generation": 2,
-    "created": "2026-03-23"
-  },
-  "mutant-5390": {
-    "parent_a": "mutant-9233",
-    "parent_b": "mutant-4625",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-9604": {
-    "parent_a": "mutant-9760",
-    "parent_b": "mutant-4753",
-    "generation": 10,
-    "created": "2026-03-27"
-  },
-  "mutant-6369": {
-    "parent_a": "mutant-9399",
-    "parent_b": "mutant-6936",
-    "generation": 7,
-    "created": "2026-03-26"
-  },
-  "mutant-7037": {
-    "parent_a": "mutant-9399",
-    "parent_b": "mutant-7673",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-8342": {
-    "parent_a": "mutant-9866",
-    "parent_b": "mutant-5077",
-    "generation": 4,
-    "created": "2026-03-24"
-  },
-  "mutant-4795": {
-    "parent_a": "mutant-4642",
-    "parent_b": "mutant-1175",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-3772": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-8342",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-3669": {
-    "parent_a": "mutant-9249",
-    "parent_b": "mutant-6223",
-    "generation": 3,
-    "created": "2026-03-22"
-  },
-  "mutant-7672": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-4488",
-    "generation": 2,
-    "created": "2026-03-27"
-  },
-  "mutant-6596": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-9866",
-    "generation": 4,
-    "created": "2026-03-23"
-  },
-  "mutant-8895": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-9712",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-2170": {
-    "parent_a": "mutant-5165",
-    "parent_b": "mutant-9109",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-5948": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-8493",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-8866": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-9249",
-    "generation": 4,
-    "created": "2026-03-22"
-  },
-  "mutant-1789": {
-    "parent_a": "mutant-9202",
-    "parent_b": "mutant-8376",
-    "generation": 6,
-    "created": "2026-03-26"
-  },
-  "mutant-9231": {
-    "parent_a": "mutant-9222",
-    "parent_b": "mutant-2502",
-    "generation": 2,
-    "created": "2026-03-24"
-  },
-  "mutant-5388": {
-    "parent_a": "mutant-4326",
-    "parent_b": "mutant-1248",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-3629": {
-    "parent_a": "mutant-4753",
-    "parent_b": "mutant-4392",
-    "generation": 10,
-    "created": "2026-03-27"
-  },
-  "mutant-9249": {
-    "parent_a": "mutant-9222",
-    "parent_b": "seed-crystal-flower",
-    "generation": 2,
-    "created": "2026-03-22"
-  },
-  "mutant-9399": {
-    "parent_a": "mutant-5749",
-    "parent_b": "seed-ice-crystal",
-    "generation": 2,
-    "created": "2026-03-26"
-  },
-  "mutant-2003": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-4326",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-9069": {
-    "parent_a": "mutant-9231",
-    "parent_b": "mutant-4326",
-    "generation": 6,
-    "created": "2026-03-26"
-  },
-  "mutant-9202": {
-    "parent_a": "mutant-9222",
-    "parent_b": "seed-prism",
-    "generation": 2,
-    "created": "2026-03-22"
-  },
-  "mutant-4401": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-4753",
-    "generation": 10,
-    "created": "2026-03-27"
-  },
-  "mutant-1865": {
-    "parent_a": "mutant-9165",
-    "parent_b": "mutant-5749",
-    "generation": 6,
-    "created": "2026-03-26"
-  },
-  "mutant-2961": {
-    "parent_a": "mutant-9732",
-    "parent_b": "seed-ice-crystal",
-    "generation": 6,
-    "created": "2026-03-23"
-  },
-  "mutant-7059": {
-    "parent_a": "mutant-9963",
-    "parent_b": "default",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-9760": {
-    "parent_a": "mutant-3968",
-    "parent_b": "mutant-1509",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-9523": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-5982",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-7742": {
-    "parent_a": "mutant-5871",
-    "parent_b": "mutant-9866",
-    "generation": 4,
-    "created": "2026-03-23"
-  },
-  "mutant-6757": {
-    "parent_a": "mutant-3511",
-    "parent_b": "mutant-9010",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-4286": {
-    "parent_a": "mutant-8089",
-    "parent_b": "default",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-4104": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-9233",
-    "generation": 7,
-    "created": "2026-03-24"
-  },
-  "mutant-9200": {
-    "parent_a": "mutant-3985",
-    "parent_b": "mutant-2074",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-6001": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-6149",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-5258": {
+  "mutant-5126": {
     "parent_a": "mutant-2327",
-    "parent_b": "mutant-4529",
-    "generation": 11,
+    "parent_b": "seed-prism",
+    "generation": 4,
     "created": "2026-03-27"
   },
-  "mutant-2074": {
-    "parent_a": "mutant-4642",
-    "parent_b": "seed-crystal-flower",
-    "generation": 3,
-    "created": "2026-03-22"
-  },
-  "mutant-8493": {
-    "parent_a": "mutant-3864",
-    "parent_b": "mutant-9712",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-9233": {
-    "parent_a": "mutant-9222",
-    "parent_b": "mutant-9732",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-1812": {
-    "parent_a": "mutant-7742",
-    "parent_b": "mutant-3693",
+  "mutant-9964": {
+    "parent_a": "mutant-2601",
+    "parent_b": "mutant-1440",
     "generation": 10,
     "created": "2026-03-27"
   },
-  "mutant-7673": {
-    "parent_a": "mutant-9165",
-    "parent_b": "mutant-6012",
-    "generation": 6,
-    "created": "2026-03-24"
-  },
-  "mutant-3968": {
-    "parent_a": "mutant-5165",
-    "parent_b": "mutant-5254",
-    "generation": 6,
+  "mutant-9676": {
+    "parent_a": "mutant-3795",
+    "parent_b": "mutant-4286",
+    "generation": 5,
     "created": "2026-03-24"
   },
   "mutant-2987": {
@@ -1001,173 +305,17 @@
     "generation": 4,
     "created": "2026-03-24"
   },
-  "mutant-9308": {
-    "parent_a": "mutant-7101",
-    "parent_b": "mutant-3391",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-5749": {
-    "parent_a": "mutant-8089",
-    "parent_b": "seed-wind-ribbons",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-4326": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-4625",
-    "generation": 5,
-    "created": "2026-03-24"
-  },
-  "mutant-7761": {
-    "parent_a": "mutant-1587",
-    "parent_b": "mutant-2327",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-9010": {
-    "parent_a": "mutant-2018",
-    "parent_b": "mutant-3038",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-2955": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-3968",
-    "generation": 7,
-    "created": "2026-03-26"
-  },
-  "mutant-7704": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-8089",
-    "generation": 4,
-    "created": "2026-03-22"
-  },
-  "mutant-7910": {
-    "parent_a": "mutant-5871",
+  "mutant-9233": {
+    "parent_a": "mutant-9222",
     "parent_b": "mutant-9732",
     "generation": 6,
     "created": "2026-03-24"
   },
-  "mutant-5564": {
-    "parent_a": "mutant-9712",
-    "parent_b": "mutant-2502",
-    "generation": 4,
+  "mutant-9712": {
+    "parent_a": "mutant-9249",
+    "parent_b": "mutant-7673",
+    "generation": 3,
     "created": "2026-03-22"
-  },
-  "mutant-5547": {
-    "parent_a": "mutant-5749",
-    "parent_b": "default",
-    "generation": 2,
-    "created": "2026-03-27"
-  },
-  "mutant-9165": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-6149",
-    "generation": 5,
-    "created": "2026-03-22"
-  },
-  "mutant-1202": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-9866",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-7903": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-9308",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-5000": {
-    "parent_a": "mutant-2130",
-    "parent_b": "mutant-1527",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-6367": {
-    "parent_a": "mutant-5079",
-    "parent_b": "mutant-4104",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-5226": {
-    "parent_a": "mutant-5254",
-    "parent_b": "mutant-2399",
-    "generation": 4,
-    "created": "2026-03-24"
-  },
-  "mutant-1772": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-3864",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-6722": {
-    "parent_a": "mutant-4326",
-    "parent_b": "mutant-8089",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-8715": {
-    "parent_a": "mutant-6979",
-    "parent_b": "mutant-9963",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-9547": {
-    "parent_a": "mutant-6646",
-    "parent_b": "mutant-2961",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-3020": {
-    "parent_a": "mutant-1471",
-    "parent_b": "mutant-5487",
-    "generation": 4,
-    "created": "2026-03-26"
-  },
-  "mutant-3578": {
-    "parent_a": "mutant-2399",
-    "parent_b": "mutant-4286",
-    "generation": 4,
-    "created": "2026-03-22"
-  },
-  "mutant-5077": {
-    "parent_a": "mutant-8089",
-    "parent_b": "mutant-6654",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-6027": {
-    "parent_a": "mutant-1509",
-    "parent_b": "mutant-8309",
-    "generation": 8,
-    "created": "2026-03-26"
-  },
-  "mutant-2779": {
-    "parent_a": "mutant-8017",
-    "parent_b": "mutant-2502",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-6571": {
-    "parent_a": "mutant-7725",
-    "parent_b": "mutant-3636",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-7859": {
-    "parent_a": "mutant-4104",
-    "parent_b": "mutant-3636",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-8454": {
-    "parent_a": "mutant-5254",
-    "parent_b": "mutant-6794",
-    "generation": 6,
-    "created": "2026-03-27"
   },
   "mutant-1557": {
     "parent_a": "mutant-4642",
@@ -1175,11 +323,35 @@
     "generation": 4,
     "created": "2026-03-27"
   },
-  "mutant-5126": {
-    "parent_a": "mutant-2327",
-    "parent_b": "seed-prism",
-    "generation": 4,
+  "mutant-7055": {
+    "parent_a": "mutant-6369",
+    "parent_b": "mutant-5568",
+    "generation": 8,
     "created": "2026-03-27"
+  },
+  "mutant-1787": {
+    "parent_a": "mutant-6646",
+    "parent_b": "mutant-2452",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-1058": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-9222",
+    "generation": 4,
+    "created": "2026-03-26"
+  },
+  "mutant-1106": {
+    "parent_a": "mutant-6623",
+    "parent_b": "mutant-4625",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-3083": {
+    "parent_a": "mutant-4104",
+    "parent_b": "mutant-5749",
+    "generation": 8,
+    "created": "2026-03-24"
   },
   "mutant-3585": {
     "parent_a": "mutant-6646",
@@ -1187,11 +359,89 @@
     "generation": 8,
     "created": "2026-03-27"
   },
-  "mutant-5831": {
-    "parent_a": "mutant-9249",
-    "parent_b": "mutant-2399",
+  "mutant-6001": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-6149",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-7148": {
+    "parent_a": "mutant-6646",
+    "parent_b": "mutant-7910",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-8493": {
+    "parent_a": "mutant-3864",
+    "parent_b": "mutant-9712",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-6228": {
+    "parent_a": "mutant-4642",
+    "parent_b": "mutant-9866",
     "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-5388": {
+    "parent_a": "mutant-4326",
+    "parent_b": "mutant-1248",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-2498": {
+    "parent_a": "mutant-2074",
+    "parent_b": "seed-julia-garden",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-5948": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-8493",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-7704": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-8089",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-4970": {
+    "parent_a": "mutant-5254",
+    "parent_b": "mutant-1294",
+    "generation": 4,
+    "created": "2026-03-24"
+  },
+  "mutant-9866": {
+    "parent_a": "mutant-9249",
+    "parent_b": "seed-deep-space",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-5254": {
+    "parent_a": "mutant-9249",
+    "parent_b": "seed-ocean-current",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-6365": {
+    "parent_a": "mutant-5079",
+    "parent_b": "mutant-4401",
+    "generation": 11,
+    "created": "2026-03-27"
+  },
+  "mutant-4753": {
+    "parent_a": "mutant-3083",
+    "parent_b": "seed-aurora",
+    "generation": 9,
     "created": "2026-03-26"
+  },
+  "mutant-3627": {
+    "parent_a": "mutant-5254",
+    "parent_b": "seed-wind-ribbons",
+    "generation": 4,
+    "created": "2026-03-23"
   },
   "mutant-6894": {
     "parent_a": "mutant-3795",
@@ -1199,39 +449,111 @@
     "generation": 5,
     "created": "2026-03-24"
   },
-  "mutant-6387": {
-    "parent_a": "mutant-7742",
-    "parent_b": "mutant-5079",
-    "generation": 6,
-    "created": "2026-03-27"
-  },
-  "mutant-6979": {
-    "parent_a": "mutant-3985",
-    "parent_b": "mutant-9866",
-    "generation": 7,
-    "created": "2026-03-26"
-  },
-  "mutant-5962": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-5788",
-    "generation": 4,
-    "created": "2026-03-24"
-  },
-  "mutant-7055": {
-    "parent_a": "mutant-6369",
-    "parent_b": "mutant-5568",
+  "mutant-3084": {
+    "parent_a": "mutant-9200",
+    "parent_b": "mutant-6596",
     "generation": 8,
     "created": "2026-03-27"
   },
-  "mutant-2582": {
-    "parent_a": "mutant-4104",
-    "parent_b": "mutant-4401",
-    "generation": 11,
+  "mutant-1587": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-9165",
+    "generation": 6,
     "created": "2026-03-27"
   },
-  "mutant-8358": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-9732",
+  "mutant-1702": {
+    "parent_a": "mutant-2018",
+    "parent_b": "mutant-1553",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-2559": {
+    "parent_a": "mutant-9165",
+    "parent_b": "mutant-5749",
+    "generation": 6,
+    "created": "2026-03-24"
+  },
+  "mutant-3410": {
+    "parent_a": "mutant-9308",
+    "parent_b": "mutant-2601",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-3531": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-6794",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-6757": {
+    "parent_a": "mutant-3511",
+    "parent_b": "mutant-9010",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-2929": {
+    "parent_a": "mutant-3155",
+    "parent_b": "mutant-8017",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-3669": {
+    "parent_a": "mutant-9249",
+    "parent_b": "mutant-6223",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-1337": {
+    "parent_a": "mutant-9732",
+    "parent_b": "mutant-3038",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-1471": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-9982",
+    "generation": 1,
+    "created": "2026-03-24"
+  },
+  "mutant-6108": {
+    "parent_a": "mutant-1471",
+    "parent_b": "mutant-2399",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-9666": {
+    "parent_a": "mutant-2399",
+    "parent_b": "seed-deep-space",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-3724": {
+    "parent_a": "mutant-9231",
+    "parent_b": "mutant-1921",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-5077": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-6654",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-9963": {
+    "parent_a": "mutant-9202",
+    "parent_b": "mutant-7205",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-2796": {
+    "parent_a": "mutant-9231",
+    "parent_b": "mutant-5962",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-8977": {
+    "parent_a": "mutant-9732",
+    "parent_b": "seed-wind-ribbons",
     "generation": 6,
     "created": "2026-03-27"
   },
@@ -1241,28 +563,64 @@
     "generation": 5,
     "created": "2026-03-27"
   },
-  "mutant-2166": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-6012",
-    "generation": 5,
-    "created": "2026-03-27"
-  },
-  "mutant-8196": {
-    "parent_a": "mutant-1587",
-    "parent_b": "mutant-2502",
+  "mutant-6048": {
+    "parent_a": "mutant-7101",
+    "parent_b": "mutant-8089",
     "generation": 7,
     "created": "2026-03-27"
   },
-  "mutant-8474": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-7953",
-    "generation": 6,
+  "mutant-7923": {
+    "parent_a": "mutant-9963",
+    "parent_b": "mutant-3049",
+    "generation": 4,
+    "created": "2026-03-24"
+  },
+  "mutant-7296": {
+    "parent_a": "mutant-1471",
+    "parent_b": "seed-swirl-nebula",
+    "generation": 2,
     "created": "2026-03-27"
   },
-  "mutant-5863": {
+  "mutant-9059": {
     "parent_a": "mutant-9308",
-    "parent_b": "mutant-7105",
-    "generation": 8,
+    "parent_b": "mutant-1787",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-9231": {
+    "parent_a": "mutant-9222",
+    "parent_b": "mutant-2502",
+    "generation": 2,
+    "created": "2026-03-24"
+  },
+  "mutant-2692": {
+    "parent_a": "mutant-6048",
+    "parent_b": "mutant-2547",
+    "generation": 11,
+    "created": "2026-03-27"
+  },
+  "mutant-4852": {
+    "parent_a": "mutant-8017",
+    "parent_b": "mutant-5871",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-3772": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-8342",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-3155": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-1967",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-5011": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-3795",
+    "generation": 9,
     "created": "2026-03-27"
   },
   "mutant-4625": {
@@ -1271,17 +629,137 @@
     "generation": 4,
     "created": "2026-03-23"
   },
-  "mutant-9666": {
-    "parent_a": "mutant-2399",
-    "parent_b": "seed-deep-space",
+  "mutant-3555": {
+    "parent_a": "mutant-9010",
+    "parent_b": "mutant-4169",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-3311": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-4488",
     "generation": 4,
     "created": "2026-03-22"
   },
-  "mutant-2090": {
-    "parent_a": "mutant-6979",
-    "parent_b": "mutant-3693",
-    "generation": 10,
+  "mutant-9737": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-7673",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-6646": {
+    "parent_a": "mutant-5079",
+    "parent_b": "mutant-8089",
+    "generation": 6,
+    "created": "2026-03-26"
+  },
+  "mutant-2261": {
+    "parent_a": "mutant-7725",
+    "parent_b": "mutant-6149",
+    "generation": 7,
     "created": "2026-03-27"
+  },
+  "mutant-8454": {
+    "parent_a": "mutant-5254",
+    "parent_b": "mutant-6794",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-8709": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-6757",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-1175": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-9810",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-6369": {
+    "parent_a": "mutant-9399",
+    "parent_b": "mutant-6936",
+    "generation": 7,
+    "created": "2026-03-26"
+  },
+  "mutant-9732": {
+    "parent_a": "mutant-9712",
+    "parent_b": "mutant-9666",
+    "generation": 5,
+    "created": "2026-03-23"
+  },
+  "mutant-8960": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-5744",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-2952": {
+    "parent_a": "mutant-7742",
+    "parent_b": "mutant-4852",
+    "generation": 5,
+    "created": "2026-03-24"
+  },
+  "mutant-5000": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-1527",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-9308": {
+    "parent_a": "mutant-7101",
+    "parent_b": "mutant-3391",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-6387": {
+    "parent_a": "mutant-7742",
+    "parent_b": "mutant-5079",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-3968": {
+    "parent_a": "mutant-5165",
+    "parent_b": "mutant-5254",
+    "generation": 6,
+    "created": "2026-03-24"
+  },
+  "mutant-7742": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-9866",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-1001": {
+    "parent_a": "mutant-5079",
+    "parent_b": "mutant-5254",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-1206": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-2502",
+    "generation": 2,
+    "created": "2026-03-23"
+  },
+  "mutant-1294": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-7205",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-7342": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-2311",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-2237": {
+    "parent_a": "mutant-8017",
+    "parent_b": "mutant-8089",
+    "generation": 5,
+    "created": "2026-03-24"
   },
   "mutant-9944": {
     "parent_a": "mutant-9010",
@@ -1289,28 +767,52 @@
     "generation": 7,
     "created": "2026-03-27"
   },
-  "mutant-1058": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-9222",
-    "generation": 4,
-    "created": "2026-03-26"
+  "mutant-5203": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-3795",
+    "generation": 5,
+    "created": "2026-03-24"
   },
-  "mutant-2405": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-2327",
-    "generation": 4,
+  "mutant-1812": {
+    "parent_a": "mutant-7742",
+    "parent_b": "mutant-3693",
+    "generation": 10,
     "created": "2026-03-27"
   },
-  "mutant-6623": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-3864",
+  "mutant-2399": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-5788",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-2779": {
+    "parent_a": "mutant-8017",
+    "parent_b": "mutant-2502",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-8866": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-9249",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-8196": {
+    "parent_a": "mutant-1587",
+    "parent_b": "mutant-2502",
     "generation": 7,
     "created": "2026-03-27"
   },
-  "mutant-5223": {
-    "parent_a": "mutant-5254",
-    "parent_b": "mutant-7574",
+  "mutant-1440": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-2875",
     "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-3197": {
+    "parent_a": "mutant-9308",
+    "parent_b": "mutant-2271",
+    "generation": 10,
     "created": "2026-03-27"
   },
   "mutant-1234": {
@@ -1319,16 +821,196 @@
     "generation": 6,
     "created": "2026-03-27"
   },
-  "mutant-2271": {
-    "parent_a": "mutant-9760",
-    "parent_b": "mutant-2074",
+  "mutant-9006": {
+    "parent_a": "mutant-5254",
+    "parent_b": "mutant-6757",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-1000": {
+    "parent_a": "mutant-2018",
+    "parent_b": "mutant-6654",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-2018": {
+    "parent_a": "mutant-9249",
+    "parent_b": "mutant-6223",
+    "generation": 3,
+    "created": "2026-03-27"
+  },
+  "mutant-9772": {
+    "parent_a": "mutant-5165",
+    "parent_b": "mutant-2018",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-5547": {
+    "parent_a": "mutant-5749",
+    "parent_b": "default",
+    "generation": 2,
+    "created": "2026-03-27"
+  },
+  "mutant-9200": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-4392",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-5226": {
+    "parent_a": "mutant-5254",
+    "parent_b": "mutant-2399",
+    "generation": 4,
+    "created": "2026-03-24"
+  },
+  "mutant-7761": {
+    "parent_a": "mutant-1587",
+    "parent_b": "mutant-2327",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-7673": {
+    "parent_a": "mutant-9165",
+    "parent_b": "mutant-6012",
+    "generation": 6,
+    "created": "2026-03-24"
+  },
+  "mutant-7984": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-9761",
+    "generation": 3,
+    "created": "2026-03-23"
+  },
+  "mutant-8627": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-5982",
     "generation": 9,
     "created": "2026-03-27"
   },
-  "mutant-5546": {
-    "parent_a": "mutant-8715",
-    "parent_b": "mutant-3734",
+  "mutant-2881": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-jellyfish",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-7807": {
+    "parent_a": "mutant-1587",
+    "parent_b": "mutant-8110",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-2074": {
+    "parent_a": "mutant-4642",
+    "parent_b": "seed-crystal-flower",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-2961": {
+    "parent_a": "mutant-9732",
+    "parent_b": "seed-ice-crystal",
+    "generation": 6,
+    "created": "2026-03-23"
+  },
+  "mutant-4223": {
+    "parent_a": "mutant-3155",
+    "parent_b": "mutant-2987",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-8898": {
+    "parent_a": "mutant-3864",
+    "parent_b": "mutant-5744",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-1915": {
+    "parent_a": "mutant-7903",
+    "parent_b": "mutant-2987",
     "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-3750": {
+    "parent_a": "mutant-8017",
+    "parent_b": "mutant-5982",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-7101": {
+    "parent_a": "mutant-5165",
+    "parent_b": "seed-star-bloom",
+    "generation": 6,
+    "created": "2026-03-26"
+  },
+  "mutant-5871": {
+    "parent_a": "mutant-5749",
+    "parent_b": "seed-prism",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-5564": {
+    "parent_a": "mutant-9712",
+    "parent_b": "mutant-2502",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-8715": {
+    "parent_a": "mutant-6979",
+    "parent_b": "mutant-9963",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-6623": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-3864",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-3930": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-5676",
+    "generation": 4,
+    "created": "2026-03-24"
+  },
+  "mutant-4445": {
+    "parent_a": "mutant-9222",
+    "parent_b": "seed-ocean-current",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-1967": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-3311",
+    "generation": 5,
+    "created": "2026-03-23"
+  },
+  "mutant-9202": {
+    "parent_a": "mutant-9222",
+    "parent_b": "seed-prism",
+    "generation": 2,
+    "created": "2026-03-22"
+  },
+  "mutant-9760": {
+    "parent_a": "mutant-3968",
+    "parent_b": "mutant-1509",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-6300": {
+    "parent_a": "mutant-4326",
+    "parent_b": "mutant-7296",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-5076": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-8715",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-7748": {
+    "parent_a": "mutant-3511",
+    "parent_b": "mutant-2952",
+    "generation": 6,
     "created": "2026-03-27"
   },
   "mutant-3038": {
@@ -1337,29 +1019,29 @@
     "generation": 3,
     "created": "2026-03-22"
   },
-  "mutant-3531": {
-    "parent_a": "mutant-3038",
-    "parent_b": "mutant-6794",
-    "generation": 6,
+  "mutant-8402": {
+    "parent_a": "mutant-3083",
+    "parent_b": "seed-crystal-flower",
+    "generation": 9,
+    "created": "2026-03-26"
+  },
+  "mutant-5165": {
+    "parent_a": "mutant-8017",
+    "parent_b": "seed-cosmic-web",
+    "generation": 5,
+    "created": "2026-03-24"
+  },
+  "mutant-1512": {
+    "parent_a": "mutant-8715",
+    "parent_b": "mutant-8493",
+    "generation": 9,
     "created": "2026-03-27"
   },
-  "mutant-9963": {
-    "parent_a": "mutant-9202",
-    "parent_b": "mutant-7205",
-    "generation": 3,
-    "created": "2026-03-22"
-  },
-  "mutant-6300": {
-    "parent_a": "mutant-4326",
-    "parent_b": "mutant-7296",
-    "generation": 6,
+  "mutant-2090": {
+    "parent_a": "mutant-6979",
+    "parent_b": "mutant-3693",
+    "generation": 10,
     "created": "2026-03-27"
-  },
-  "mutant-8017": {
-    "parent_a": "mutant-2074",
-    "parent_b": "seed-deep-space",
-    "generation": 4,
-    "created": "2026-03-23"
   },
   "mutant-2327": {
     "parent_a": "mutant-9249",
@@ -1367,64 +1049,142 @@
     "generation": 3,
     "created": "2026-03-22"
   },
-  "mutant-7064": {
-    "parent_a": "mutant-5744",
-    "parent_b": "mutant-1527",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-7941": {
-    "parent_a": "mutant-2399",
-    "parent_b": "mutant-2881",
-    "generation": 4,
-    "created": "2026-03-22"
-  },
-  "mutant-5325": {
-    "parent_a": "mutant-9866",
-    "parent_b": "mutant-4852",
-    "generation": 4,
-    "created": "2026-03-23"
-  },
-  "mutant-7746": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-6936",
-    "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-8402": {
-    "parent_a": "mutant-3083",
-    "parent_b": "seed-crystal-flower",
+  "mutant-6983": {
+    "parent_a": "mutant-6571",
+    "parent_b": "mutant-1851",
     "generation": 9,
-    "created": "2026-03-26"
-  },
-  "mutant-9109": {
-    "parent_a": "mutant-9732",
-    "parent_b": "mutant-1509",
-    "generation": 8,
-    "created": "2026-03-26"
-  },
-  "mutant-2547": {
-    "parent_a": "mutant-3155",
-    "parent_b": "mutant-9712",
-    "generation": 10,
     "created": "2026-03-27"
   },
-  "mutant-7925": {
-    "parent_a": "mutant-2399",
-    "parent_b": "mutant-8342",
+  "mutant-6618": {
+    "parent_a": "mutant-6048",
+    "parent_b": "mutant-1432",
+    "generation": 12,
+    "created": "2026-03-27"
+  },
+  "mutant-3391": {
+    "parent_a": "mutant-9963",
+    "parent_b": "mutant-6654",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-5258": {
+    "parent_a": "mutant-2327",
+    "parent_b": "mutant-4529",
+    "generation": 11,
+    "created": "2026-03-27"
+  },
+  "mutant-5779": {
+    "parent_a": "mutant-1471",
+    "parent_b": "seed-golden-spiral",
+    "generation": 2,
+    "created": "2026-03-27"
+  },
+  "mutant-4326": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-4625",
     "generation": 5,
     "created": "2026-03-24"
   },
-  "mutant-6108": {
+  "mutant-7037": {
+    "parent_a": "mutant-9399",
+    "parent_b": "mutant-7673",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-8895": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-9712",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-1921": {
+    "parent_a": "mutant-8715",
+    "parent_b": "mutant-4852",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-6027": {
+    "parent_a": "mutant-1509",
+    "parent_b": "mutant-8309",
+    "generation": 8,
+    "created": "2026-03-26"
+  },
+  "mutant-9547": {
+    "parent_a": "mutant-6646",
+    "parent_b": "mutant-2961",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-1865": {
+    "parent_a": "mutant-9165",
+    "parent_b": "mutant-5749",
+    "generation": 6,
+    "created": "2026-03-26"
+  },
+  "mutant-5546": {
+    "parent_a": "mutant-8715",
+    "parent_b": "mutant-3734",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-3020": {
     "parent_a": "mutant-1471",
-    "parent_b": "mutant-2399",
+    "parent_b": "mutant-5487",
+    "generation": 4,
+    "created": "2026-03-26"
+  },
+  "mutant-2033": {
+    "parent_a": "mutant-8089",
+    "parent_b": "mutant-5788",
+    "generation": 1,
+    "created": "2026-03-27"
+  },
+  "mutant-5223": {
+    "parent_a": "mutant-5254",
+    "parent_b": "mutant-7574",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-6571": {
+    "parent_a": "mutant-7725",
+    "parent_b": "mutant-3636",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-4334": {
+    "parent_a": "mutant-2327",
+    "parent_b": "mutant-6894",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-9069": {
+    "parent_a": "mutant-9231",
+    "parent_b": "mutant-4326",
+    "generation": 6,
+    "created": "2026-03-26"
+  },
+  "mutant-9210": {
+    "parent_a": "mutant-7742",
+    "parent_b": "mutant-9761",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-4493": {
+    "parent_a": "mutant-2018",
+    "parent_b": "seed-swirl-nebula",
     "generation": 4,
     "created": "2026-03-27"
   },
-  "mutant-9240": {
-    "parent_a": "mutant-6646",
-    "parent_b": "mutant-3795",
-    "generation": 7,
+  "mutant-5676": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-julia-garden",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-5863": {
+    "parent_a": "mutant-9308",
+    "parent_b": "mutant-7105",
+    "generation": 8,
     "created": "2026-03-27"
   },
   "mutant-5042": {
@@ -1433,17 +1193,197 @@
     "generation": 9,
     "created": "2026-03-27"
   },
-  "mutant-8963": {
-    "parent_a": "mutant-1440",
-    "parent_b": "mutant-6646",
+  "mutant-6220": {
+    "parent_a": "mutant-6571",
+    "parent_b": "mutant-7101",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-7859": {
+    "parent_a": "mutant-4104",
+    "parent_b": "mutant-3636",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-4477": {
+    "parent_a": "mutant-5223",
+    "parent_b": "mutant-1509",
     "generation": 10,
     "created": "2026-03-27"
   },
-  "mutant-1587": {
-    "parent_a": "mutant-5871",
-    "parent_b": "mutant-9165",
+  "mutant-4286": {
+    "parent_a": "mutant-8089",
+    "parent_b": "default",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-6722": {
+    "parent_a": "mutant-4326",
+    "parent_b": "mutant-8089",
     "generation": 6,
     "created": "2026-03-27"
+  },
+  "mutant-7746": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-6936",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-7725": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-6894",
+    "generation": 6,
+    "created": "2026-03-24"
+  },
+  "mutant-8300": {
+    "parent_a": "mutant-3985",
+    "parent_b": "seed-prism",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-9165": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-6149",
+    "generation": 5,
+    "created": "2026-03-22"
+  },
+  "mutant-6810": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-6596",
+    "generation": 5,
+    "created": "2026-03-24"
+  },
+  "mutant-2452": {
+    "parent_a": "mutant-7725",
+    "parent_b": "mutant-2327",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-9399": {
+    "parent_a": "mutant-5749",
+    "parent_b": "seed-ice-crystal",
+    "generation": 2,
+    "created": "2026-03-26"
+  },
+  "mutant-4104": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-9233",
+    "generation": 7,
+    "created": "2026-03-24"
+  },
+  "mutant-5831": {
+    "parent_a": "mutant-9249",
+    "parent_b": "mutant-2399",
+    "generation": 4,
+    "created": "2026-03-26"
+  },
+  "mutant-8165": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-4053",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-5114": {
+    "parent_a": "mutant-5203",
+    "parent_b": "seed-mandala",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-1851": {
+    "parent_a": "mutant-5744",
+    "parent_b": "mutant-6228",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-5460": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-2789",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-3759": {
+    "parent_a": "mutant-4326",
+    "parent_b": "mutant-9760",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-6314": {
+    "parent_a": "mutant-3864",
+    "parent_b": "mutant-7923",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-4163": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-3693",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-6071": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-5165",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-9109": {
+    "parent_a": "mutant-9732",
+    "parent_b": "mutant-1509",
+    "generation": 8,
+    "created": "2026-03-26"
+  },
+  "mutant-9222": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-cosmic-web",
+    "generation": 1,
+    "created": "2026-03-22"
+  },
+  "mutant-2170": {
+    "parent_a": "mutant-5165",
+    "parent_b": "mutant-9109",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-8553": {
+    "parent_a": "mutant-9732",
+    "parent_b": "seed-mandala",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-2582": {
+    "parent_a": "mutant-4104",
+    "parent_b": "mutant-4401",
+    "generation": 11,
+    "created": "2026-03-27"
+  },
+  "mutant-8434": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-4488",
+    "generation": 2,
+    "created": "2026-03-23"
+  },
+  "mutant-8474": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-7953",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-3386": {
+    "parent_a": "mutant-1509",
+    "parent_b": "mutant-4104",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-5487": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-2502",
+    "generation": 3,
+    "created": "2026-03-22"
+  },
+  "mutant-2130": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-5788",
+    "generation": 4,
+    "created": "2026-03-26"
   },
   "mutant-8195": {
     "parent_a": "mutant-9231",
@@ -1451,82 +1391,310 @@
     "generation": 5,
     "created": "2026-03-26"
   },
-  "mutant-7015": {
+  "mutant-5744": {
     "parent_a": "mutant-8089",
-    "parent_b": "default",
-    "generation": 1,
-    "created": "2026-03-22"
-  },
-  "mutant-2498": {
-    "parent_a": "mutant-2074",
-    "parent_b": "seed-julia-garden",
-    "generation": 4,
-    "created": "2026-03-27"
-  },
-  "mutant-6585": {
-    "parent_a": "mutant-8434",
-    "parent_b": "mutant-3968",
+    "parent_b": "mutant-8309",
     "generation": 7,
-    "created": "2026-03-27"
-  },
-  "mutant-3325": {
-    "parent_a": "mutant-8089",
-    "parent_b": "mutant-5487",
-    "generation": 4,
     "created": "2026-03-26"
   },
-  "mutant-3084": {
-    "parent_a": "mutant-9200",
-    "parent_b": "mutant-6596",
-    "generation": 8,
+  "mutant-1444": {
+    "parent_a": "mutant-9963",
+    "parent_b": "mutant-5077",
+    "generation": 4,
     "created": "2026-03-27"
   },
-  "mutant-1471": {
-    "parent_a": "mutant-8089",
-    "parent_b": "mutant-9982",
-    "generation": 1,
-    "created": "2026-03-24"
-  },
-  "mutant-2399": {
-    "parent_a": "mutant-5871",
-    "parent_b": "mutant-5788",
-    "generation": 3,
-    "created": "2026-03-22"
-  },
-  "mutant-1440": {
-    "parent_a": "mutant-3083",
-    "parent_b": "mutant-2875",
-    "generation": 9,
-    "created": "2026-03-27"
-  },
-  "mutant-7067": {
-    "parent_a": "mutant-6979",
-    "parent_b": "mutant-6654",
-    "generation": 8,
-    "created": "2026-03-27"
-  },
-  "mutant-9737": {
-    "parent_a": "mutant-5749",
-    "parent_b": "mutant-7673",
+  "mutant-9249": {
+    "parent_a": "mutant-9222",
+    "parent_b": "seed-crystal-flower",
     "generation": 2,
     "created": "2026-03-22"
   },
-  "mutant-6821": {
-    "parent_a": "mutant-2074",
-    "parent_b": "mutant-1610",
+  "mutant-2875": {
+    "parent_a": "mutant-9963",
+    "parent_b": "seed-deep-space",
+    "generation": 4,
+    "created": "2026-03-24"
+  },
+  "mutant-3795": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-6223",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-9158": {
+    "parent_a": "mutant-5165",
+    "parent_b": "mutant-9010",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-9958": {
+    "parent_a": "mutant-7101",
+    "parent_b": "mutant-5254",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-4401": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-4753",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-3578": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-4286",
     "generation": 4,
     "created": "2026-03-22"
   },
-  "mutant-7148": {
-    "parent_a": "mutant-6646",
-    "parent_b": "mutant-7910",
-    "generation": 7,
+  "mutant-2044": {
+    "parent_a": "mutant-4767",
+    "parent_b": "mutant-5266",
+    "generation": 11,
     "created": "2026-03-27"
+  },
+  "mutant-6637": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-4104",
+    "generation": 8,
+    "created": "2026-03-24"
+  },
+  "mutant-5325": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-4852",
+    "generation": 4,
+    "created": "2026-03-23"
   },
   "mutant-3327": {
     "parent_a": "mutant-9760",
     "parent_b": "mutant-4642",
     "generation": 9,
     "created": "2026-03-27"
+  },
+  "mutant-9148": {
+    "parent_a": "mutant-6124",
+    "parent_b": "mutant-9270",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-8342": {
+    "parent_a": "mutant-9866",
+    "parent_b": "mutant-5077",
+    "generation": 4,
+    "created": "2026-03-24"
+  },
+  "mutant-1767": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-1967",
+    "generation": 6,
+    "created": "2026-03-24"
+  },
+  "mutant-7987": {
+    "parent_a": "mutant-9866",
+    "parent_b": "seed-ice-crystal",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-1127": {
+    "parent_a": "mutant-9200",
+    "parent_b": "mutant-3410",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-1553": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-9982",
+    "generation": 3,
+    "created": "2026-03-26"
+  },
+  "mutant-7941": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-2881",
+    "generation": 4,
+    "created": "2026-03-22"
+  },
+  "mutant-9604": {
+    "parent_a": "mutant-9760",
+    "parent_b": "mutant-4753",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-3667": {
+    "parent_a": "mutant-7725",
+    "parent_b": "mutant-3084",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-8017": {
+    "parent_a": "mutant-2074",
+    "parent_b": "seed-deep-space",
+    "generation": 4,
+    "created": "2026-03-23"
+  },
+  "mutant-2405": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-2327",
+    "generation": 4,
+    "created": "2026-03-27"
+  },
+  "mutant-2003": {
+    "parent_a": "mutant-3038",
+    "parent_b": "mutant-4326",
+    "generation": 6,
+    "created": "2026-03-24"
+  },
+  "mutant-2955": {
+    "parent_a": "mutant-5749",
+    "parent_b": "mutant-3968",
+    "generation": 7,
+    "created": "2026-03-26"
+  },
+  "mutant-4113": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-7725",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-3864": {
+    "parent_a": "mutant-5165",
+    "parent_b": "mutant-5487",
+    "generation": 6,
+    "created": "2026-03-26"
+  },
+  "mutant-4347": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-6027",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-1391": {
+    "parent_a": "mutant-5744",
+    "parent_b": "mutant-2018",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-7064": {
+    "parent_a": "mutant-5744",
+    "parent_b": "mutant-1527",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-9681": {
+    "parent_a": "mutant-5165",
+    "parent_b": "mutant-4286",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-5211": {
+    "parent_a": "mutant-9231",
+    "parent_b": "mutant-3693",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-7330": {
+    "parent_a": "mutant-9006",
+    "parent_b": "mutant-5749",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-8400": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-3300",
+    "generation": 11,
+    "created": "2026-03-27"
+  },
+  "mutant-3092": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-2712",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-8376": {
+    "parent_a": "mutant-9712",
+    "parent_b": "mutant-3795",
+    "generation": 5,
+    "created": "2026-03-24"
+  },
+  "mutant-7925": {
+    "parent_a": "mutant-2399",
+    "parent_b": "mutant-8342",
+    "generation": 5,
+    "created": "2026-03-24"
+  },
+  "mutant-3629": {
+    "parent_a": "mutant-4753",
+    "parent_b": "mutant-4392",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-4370": {
+    "parent_a": "mutant-9249",
+    "parent_b": "mutant-9458",
+    "generation": 6,
+    "created": "2026-03-27"
+  },
+  "mutant-3913": {
+    "parent_a": "mutant-2130",
+    "parent_b": "mutant-6646",
+    "generation": 7,
+    "created": "2026-03-27"
+  },
+  "mutant-9025": {
+    "parent_a": "mutant-9010",
+    "parent_b": "mutant-8402",
+    "generation": 10,
+    "created": "2026-03-27"
+  },
+  "mutant-5079": {
+    "parent_a": "mutant-6149",
+    "parent_b": "seed-cosmic-web",
+    "generation": 5,
+    "created": "2026-03-24"
+  },
+  "mutant-4392": {
+    "parent_a": "mutant-9222",
+    "parent_b": "seed-ocean-current",
+    "generation": 2,
+    "created": "2026-03-24"
+  },
+  "mutant-7910": {
+    "parent_a": "mutant-5871",
+    "parent_b": "mutant-9732",
+    "generation": 6,
+    "created": "2026-03-24"
+  },
+  "mutant-2166": {
+    "parent_a": "mutant-2074",
+    "parent_b": "mutant-6012",
+    "generation": 5,
+    "created": "2026-03-27"
+  },
+  "mutant-6367": {
+    "parent_a": "mutant-5079",
+    "parent_b": "mutant-4104",
+    "generation": 8,
+    "created": "2026-03-27"
+  },
+  "mutant-9523": {
+    "parent_a": "mutant-3083",
+    "parent_b": "mutant-5982",
+    "generation": 9,
+    "created": "2026-03-27"
+  },
+  "mutant-3985": {
+    "parent_a": "mutant-5165",
+    "parent_b": "mutant-8089",
+    "generation": 6,
+    "created": "2026-03-26"
+  },
+  "mutant-1567": {
+    "parent_a": "mutant-5749",
+    "parent_b": "seed-aurora",
+    "generation": 2,
+    "created": "2026-03-26"
+  },
+  "mutant-5749": {
+    "parent_a": "mutant-8089",
+    "parent_b": "seed-wind-ribbons",
+    "generation": 1,
+    "created": "2026-03-22"
   }
 }

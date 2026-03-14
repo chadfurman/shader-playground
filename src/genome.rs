@@ -368,7 +368,22 @@ impl FlameTransform {
         if var_idx != 0 {
             xf.linear = 0.0;
         }
+        xf.clamp_determinant();
         xf
+    }
+
+    /// Ensure the affine determinant stays in [0.2, 0.95] to prevent
+    /// attractor collapse (empty voids) or area-preserving stagnation.
+    /// Rescales a and d to restore the determinant while preserving
+    /// rotation and shear characteristics.
+    pub fn clamp_determinant(&mut self) {
+        let det = (self.a * self.d - self.b * self.c).abs();
+        if !(0.2..=0.95).contains(&det) {
+            let target = det.clamp(0.2, 0.95);
+            let scale = (target / det.max(1e-10)).sqrt();
+            self.a *= scale;
+            self.d *= scale;
+        }
     }
 }
 
@@ -1104,6 +1119,14 @@ impl FlameGenome {
         child.normalize_weights();
         child.distribute_colors();
 
+        // Universal determinant clamping — prevent attractor collapse/voids
+        for xf in &mut child.transforms {
+            xf.clamp_determinant();
+        }
+        if let Some(ref mut ft) = child.final_transform {
+            ft.clamp_determinant();
+        }
+
         // Log transform taste scores if model is available
         if let Some(te) = taste.as_ref() {
             let scores: Vec<f32> = child
@@ -1194,15 +1217,30 @@ impl FlameGenome {
         let mut child = self.clone();
         let mut rng = rand::rng();
 
-        // Single mutation per evolve — preserves the backbone, changes one thing at a time
-        match rng.random_range(0..8) {
-            0 | 1 => child.mutate_perturb(&mut rng, audio, cfg, profile), // most common
-            2 => child.mutate_swap_variations(&mut rng),
-            3 => child.mutate_rotate_colors(&mut rng),
-            4 => child.mutate_shuffle_transforms(&mut rng),
-            5 => child.mutate_global_params(&mut rng),
-            6 => child.mutate_final_transform(&mut rng, audio, cfg, profile),
-            _ => child.mutate_symmetry(&mut rng, audio),
+        // Single mutation per evolve — preserves the backbone, changes one thing at a time.
+        // Weights: perturb 30%, final_xf 20%, swap_var 12%, symmetry 10%,
+        //          rotate_colors 10%, shuffle 8%, globals 10%
+        let mutation_roll: f32 = rng.random();
+        if mutation_roll < 0.30 {
+            child.mutate_perturb(&mut rng, audio, cfg, profile);
+        } else if mutation_roll < 0.50 {
+            child.mutate_final_transform(&mut rng, audio, cfg, profile);
+        } else if mutation_roll < 0.62 {
+            child.mutate_swap_variations(&mut rng);
+        } else if mutation_roll < 0.72 {
+            child.mutate_symmetry(&mut rng, audio);
+        } else if mutation_roll < 0.82 {
+            child.mutate_rotate_colors(&mut rng);
+        } else if mutation_roll < 0.90 {
+            child.mutate_shuffle_transforms(&mut rng);
+        } else {
+            child.mutate_global_params(&mut rng);
+        }
+
+        // Force final transform on high-symmetry genomes (4+ fold)
+        // to break kaleidoscope monotony
+        if child.symmetry.unsigned_abs() >= 4 && child.final_transform.is_none() {
+            child.mutate_final_transform(&mut rng, audio, cfg, profile);
         }
 
         // Add/remove transforms — biased toward 3-5 (Electric Sheep sweet spot)
@@ -1225,6 +1263,14 @@ impl FlameGenome {
         child.normalize_variations();
         child.normalize_weights();
         child.distribute_colors();
+
+        // Universal determinant clamping — prevent attractor collapse/voids
+        for xf in &mut child.transforms {
+            xf.clamp_determinant();
+        }
+        if let Some(ref mut ft) = child.final_transform {
+            ft.clamp_determinant();
+        }
 
         // Ensure genome has a palette; 20% chance to generate a fresh one
         if child.palette.is_none() || rng.random::<f32>() < 0.2 {

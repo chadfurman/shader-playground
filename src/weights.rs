@@ -155,6 +155,8 @@ pub struct RuntimeConfig {
     pub accumulation_decay: f32,
     #[serde(default = "default_jacobian_weight_strength")]
     pub jacobian_weight_strength: f32,
+    #[serde(default = "default_min_genome_fps")]
+    pub min_genome_fps: f32,
     #[serde(default = "default_samples_per_frame")]
     pub samples_per_frame: u32,
     #[serde(default = "default_bloom_radius")]
@@ -309,6 +311,9 @@ fn default_accumulation_decay() -> f32 {
 }
 fn default_jacobian_weight_strength() -> f32 {
     0.0
+}
+fn default_min_genome_fps() -> f32 {
+    15.0
 }
 fn default_samples_per_frame() -> u32 {
     256

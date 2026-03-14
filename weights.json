@@ -109,6 +109,7 @@
       "dist_lum_strength": "Radial luminosity falloff from origin — 0.0 disables, 0.3 was old default (default 0.0)",
       "iter_lum_range": "Iteration depth luminosity range — 0.0 = uniform, 0.5 = early iters 2x brighter (default 0.5)",
       "jacobian_weight_strength": "Blend Jacobian determinant into transform selection: 0.0 = weight-only, 1.0 = fully Jacobian (default 0.0, try 0.1)",
+      "min_genome_fps": "Auto-evolve away from genomes below this FPS after 3s (default 15, 0 = disabled)",
       "window_width": "Initial window width in logical pixels (default 640)",
       "window_height": "Initial window height in logical pixels (default 480)"
     }
@@ -178,7 +179,8 @@
     "iter_lum_range": 0.5,
     "window_width": 640,
     "window_height": 480,
-    "jacobian_weight_strength": 0.1
+    "jacobian_weight_strength": 0.1,
+    "min_genome_fps": 15.0
   },
   "bass": {
     "color_shift": -0.01,

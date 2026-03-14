@@ -37,14 +37,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let depth = f32(histogram[hist_idx + 6u]);
 
     // Exponential decay blend: accum = accum * decay + new_frame
+    // Cap at 1M to prevent unbounded growth on dense/high-symmetry fractals
     let decay = params.decay;
-    accumulation[accum_idx]      = accumulation[accum_idx]      * decay + density;
-    accumulation[accum_idx + 1u] = accumulation[accum_idx + 1u] * decay + r;
-    accumulation[accum_idx + 2u] = accumulation[accum_idx + 2u] * decay + g;
-    accumulation[accum_idx + 3u] = accumulation[accum_idx + 3u] * decay + b;
-    accumulation[accum_idx + 4u] = accumulation[accum_idx + 4u] * decay + vx;
-    accumulation[accum_idx + 5u] = accumulation[accum_idx + 5u] * decay + vy;
-    accumulation[accum_idx + 6u] = accumulation[accum_idx + 6u] * decay + depth;
+    let cap = 1000000.0;
+    accumulation[accum_idx]      = min(accumulation[accum_idx]      * decay + density, cap);
+    accumulation[accum_idx + 1u] = min(accumulation[accum_idx + 1u] * decay + r, cap);
+    accumulation[accum_idx + 2u] = min(accumulation[accum_idx + 2u] * decay + g, cap);
+    accumulation[accum_idx + 3u] = min(accumulation[accum_idx + 3u] * decay + b, cap);
+    accumulation[accum_idx + 4u] = min(accumulation[accum_idx + 4u] * decay + vx, cap);
+    accumulation[accum_idx + 5u] = min(accumulation[accum_idx + 5u] * decay + vy, cap);
+    accumulation[accum_idx + 6u] = min(accumulation[accum_idx + 6u] * decay + depth, cap);
 
     // Track max density for per-image normalization.
     // For positive f32, bitcast<u32> preserves ordering (IEEE 754), so atomicMax works.
