@@ -2013,8 +2013,10 @@ impl ApplicationHandler for App {
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
                     eprintln!(
-                        "[evolve] → {} (gen {})",
-                        self.genome.name, self.genome.generation
+                        "[evolve] t={:.1}s → {} (gen {})",
+                        self.start.elapsed().as_secs_f32(),
+                        self.genome.name,
+                        self.genome.generation
                     );
                 }
                 Key::Named(NamedKey::Backspace) => {
@@ -2271,8 +2273,10 @@ impl ApplicationHandler for App {
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
                             eprintln!(
-                                "[auto-evolve] → {} (gen {})",
-                                self.genome.name, self.genome.generation
+                                "[auto-evolve] t={:.1}s → {} (gen {})",
+                                self.start.elapsed().as_secs_f32(),
+                                self.genome.name,
+                                self.genome.generation
                             );
                         }
                     }
