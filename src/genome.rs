@@ -1116,16 +1116,18 @@ impl FlameGenome {
 
         // Normalize like Electric Sheep does
         child.normalize_variations();
+        child.enforce_variation_diversity(&mut rng);
         child.normalize_weights();
         child.distribute_colors();
 
-        // Universal determinant clamping — prevent attractor collapse/voids
+        // Universal determinant clamping + scale hierarchy
         for xf in &mut child.transforms {
             xf.clamp_determinant();
         }
         if let Some(ref mut ft) = child.final_transform {
             ft.clamp_determinant();
         }
+        child.enforce_scale_hierarchy();
 
         // Log transform taste scores if model is available
         if let Some(te) = taste.as_ref() {
@@ -1261,16 +1263,18 @@ impl FlameGenome {
 
         // Post-mutation normalization (Electric Sheep conventions)
         child.normalize_variations();
+        child.enforce_variation_diversity(&mut rng);
         child.normalize_weights();
         child.distribute_colors();
 
-        // Universal determinant clamping — prevent attractor collapse/voids
+        // Universal determinant clamping + scale hierarchy
         for xf in &mut child.transforms {
             xf.clamp_determinant();
         }
         if let Some(ref mut ft) = child.final_transform {
             ft.clamp_determinant();
         }
+        child.enforce_scale_hierarchy();
 
         // Ensure genome has a palette; 20% chance to generate a fresh one
         if child.palette.is_none() || rng.random::<f32>() < 0.2 {
@@ -1656,6 +1660,95 @@ impl FlameGenome {
                 for (idx, val) in &active {
                     xf.set_variation(*idx, val / sum);
                 }
+            }
+        }
+    }
+
+    /// Enforce variation diversity across the genome.
+    /// If any single variation type accounts for >60% of total weight across all transforms,
+    /// swap it out in a random transform for a different variation.
+    pub(crate) fn enforce_variation_diversity(&mut self, rng: &mut impl Rng) {
+        // Tally total weight per variation across all transforms
+        let mut totals = [0.0f32; VARIATION_COUNT];
+        let mut grand_total = 0.0f32;
+        for xf in &self.transforms {
+            for (vi, total) in totals.iter_mut().enumerate() {
+                let v = xf.get_variation(vi);
+                *total += v;
+                grand_total += v;
+            }
+        }
+        if grand_total < 0.01 {
+            return;
+        }
+
+        // Find the dominant variation
+        let (dominant_idx, dominant_weight) = totals
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+
+        // If it's >60% of total, swap it in a random transform
+        if *dominant_weight / grand_total > 0.6 && self.transforms.len() > 1 {
+            let xf_idx = rng.random_range(0..self.transforms.len());
+            let xf = &mut self.transforms[xf_idx];
+            let old_weight = xf.get_variation(dominant_idx);
+            if old_weight > 0.01 {
+                xf.set_variation(dominant_idx, 0.0);
+                // Pick a different variation
+                let mut new_var = rng.random_range(0..VARIATION_COUNT);
+                while new_var == dominant_idx {
+                    new_var = rng.random_range(0..VARIATION_COUNT);
+                }
+                xf.set_variation(new_var, old_weight);
+            }
+        }
+    }
+
+    /// Enforce hierarchical scale distribution across transforms.
+    /// If all transforms have similar scale (determinant variance near zero),
+    /// push one toward macro (0.7) and one toward micro (0.3) to create depth.
+    pub(crate) fn enforce_scale_hierarchy(&mut self) {
+        if self.transforms.len() < 3 {
+            return;
+        }
+        let dets: Vec<f32> = self
+            .transforms
+            .iter()
+            .map(|xf| (xf.a * xf.d - xf.b * xf.c).abs())
+            .collect();
+        let mean = dets.iter().sum::<f32>() / dets.len() as f32;
+        let variance = dets.iter().map(|d| (d - mean).powi(2)).sum::<f32>() / dets.len() as f32;
+
+        // If variance is very low, transforms are all at similar scale — force spread
+        if variance < 0.02 {
+            // Find the largest and smallest determinant transforms
+            let (max_idx, _) = dets
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap();
+            let (min_idx, _) = dets
+                .iter()
+                .enumerate()
+                .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                .unwrap();
+
+            // Push the "largest" toward macro scale (det ~0.7)
+            let macro_target = 0.7;
+            let macro_det = dets[max_idx].max(0.01);
+            let macro_scale = (macro_target / macro_det).sqrt();
+            self.transforms[max_idx].a *= macro_scale;
+            self.transforms[max_idx].d *= macro_scale;
+
+            // Push the "smallest" toward micro scale (det ~0.3)
+            if min_idx != max_idx {
+                let micro_target = 0.3;
+                let micro_det = dets[min_idx].max(0.01);
+                let micro_scale = (micro_target / micro_det).sqrt();
+                self.transforms[min_idx].a *= micro_scale;
+                self.transforms[min_idx].d *= micro_scale;
             }
         }
     }
