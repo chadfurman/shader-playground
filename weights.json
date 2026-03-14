@@ -84,7 +84,7 @@
       "morph_stagger_min": "Slowest random morph rate multiplier (default 0.3)",
       "morph_stagger_max": "Fastest random morph rate multiplier (default 0.6)",
       "jitter_amount": "Sub-pixel jitter for free supersampling (0.0=off, 1.0=full pixel, default 0.0)",
-      "tonemap_mode": "Tonemapping curve (0=sqrt-log, 1=ACES filmic, default 0)",
+      "tonemap_mode": "Tonemapping curve: 0=sqrt-log, 1=ACES filmic, 2=AgX view transform (default 0)",
       "histogram_equalization": "Adaptive density equalization strength (0.0=off, 1.0=full, default 0.0)",
       "dof_strength": "Depth of field blur strength (0.0=off, default 0.0)",
       "dof_focal_distance": "Focal distance for DoF (0.0=auto center of mass, default 0.0)",
@@ -108,6 +108,7 @@
       "archive_on_startup": "Check and archive old history genomes on app start (default true)",
       "dist_lum_strength": "Radial luminosity falloff from origin — 0.0 disables, 0.3 was old default (default 0.0)",
       "iter_lum_range": "Iteration depth luminosity range — 0.0 = uniform, 0.5 = early iters 2x brighter (default 0.5)",
+      "jacobian_weight_strength": "Blend Jacobian determinant into transform selection: 0.0 = weight-only, 1.0 = fully Jacobian (default 0.0, try 0.1)",
       "window_width": "Initial window width in logical pixels (default 640)",
       "window_height": "Initial window height in logical pixels (default 480)"
     }
@@ -176,7 +177,8 @@
     "dist_lum_strength": 0.0,
     "iter_lum_range": 0.5,
     "window_width": 640,
-    "window_height": 480
+    "window_height": 480,
+    "jacobian_weight_strength": 0.1
   },
   "bass": {
     "color_shift": -0.01,

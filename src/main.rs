@@ -2414,9 +2414,43 @@ impl ApplicationHandler for App {
                 };
 
                 let xf_write_len = self.num_transforms * 42;
-                let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
-                gpu.queue
-                    .write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
+                let xf_len = xf_write_len.min(self.xf_params.len());
+
+                // Jacobian importance sampling: blend |a*d - b*c| with genetic weight
+                let jac_strength = self.weights._config.jacobian_weight_strength;
+                if jac_strength > 0.001 && self.num_transforms > 0 {
+                    let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
+                    let n = self.num_transforms;
+                    let mut weights: Vec<f32> = Vec::with_capacity(n);
+                    for i in 0..n {
+                        let base = i * 42;
+                        let w = adjusted[base]; // field 0 = weight
+                        let a = adjusted[base + 1];
+                        let b = adjusted[base + 2];
+                        let c = adjusted[base + 3];
+                        let d = adjusted[base + 4];
+                        let det = (a * d - b * c).abs();
+                        weights.push(w * (1.0 - jac_strength) + det * jac_strength);
+                    }
+                    let total: f32 = weights.iter().sum();
+                    if total > 0.0 {
+                        for (i, jw) in weights.iter().enumerate() {
+                            adjusted[i * 42] = jw / total;
+                        }
+                    }
+                    gpu.queue.write_buffer(
+                        &gpu.transform_buffer,
+                        0,
+                        bytemuck::cast_slice(&adjusted),
+                    );
+                } else {
+                    let xf_slice = &self.xf_params[..xf_len];
+                    gpu.queue.write_buffer(
+                        &gpu.transform_buffer,
+                        0,
+                        bytemuck::cast_slice(xf_slice),
+                    );
+                }
 
                 // Write accumulation uniforms — faster decay during morph transition
                 let base_decay = self.weights._config.accumulation_decay;

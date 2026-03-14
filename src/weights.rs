@@ -153,6 +153,8 @@ pub struct RuntimeConfig {
     pub trail: f32,
     #[serde(default = "default_accumulation_decay")]
     pub accumulation_decay: f32,
+    #[serde(default = "default_jacobian_weight_strength")]
+    pub jacobian_weight_strength: f32,
     #[serde(default = "default_samples_per_frame")]
     pub samples_per_frame: u32,
     #[serde(default = "default_bloom_radius")]
@@ -304,6 +306,9 @@ fn default_trail() -> f32 {
 } // temporal AA only — accumulation is primary persistence
 fn default_accumulation_decay() -> f32 {
     0.9
+}
+fn default_jacobian_weight_strength() -> f32 {
+    0.0
 }
 fn default_samples_per_frame() -> u32 {
     256

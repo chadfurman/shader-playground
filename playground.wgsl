@@ -37,6 +37,40 @@ fn aces_tonemap(x: f32) -> f32 {
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 
+// AgX view transform (Troy Sobotka, Blender 4.0)
+// Analytical polynomial approximation — gracefully desaturates to white at high exposure.
+// These matrices and polynomial coefficients ARE the algorithm, not magic numbers.
+const AGX_INSET: mat3x3<f32> = mat3x3<f32>(
+    vec3(0.842479062253094,  0.0423282422610123, 0.0423756549057051),
+    vec3(0.0784335999999992, 0.878468636469772,  0.0784336),
+    vec3(0.0792237451477643, 0.0791661274605434, 0.879142973793104)
+);
+const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(
+    vec3(1.19687900512017,   -0.0528968517574562, -0.0529716355144438),
+    vec3(-0.0980208811401368, 1.15190312990417,   -0.0980434501171241),
+    vec3(-0.0990297440797205, -0.0989611768448433, 1.15107367264116)
+);
+fn agx_view_transform(color: vec3<f32>) -> vec3<f32> {
+    let agx = AGX_INSET * max(color, vec3(0.0));
+    let min_ev = -12.47393;
+    let max_ev = 4.026069;
+    var log_col = clamp(
+        vec3(log2(max(agx.x, 1e-10)), log2(max(agx.y, 1e-10)), log2(max(agx.z, 1e-10))),
+        vec3(min_ev), vec3(max_ev)
+    );
+    log_col = (log_col - min_ev) / (max_ev - min_ev);
+    let x2 = log_col * log_col;
+    let x4 = x2 * x2;
+    let mapped = 15.5 * x4 * x2
+               - 40.14 * x4 * log_col
+               + 31.96 * x4
+               - 6.868 * x2 * log_col
+               + 0.4298 * x2
+               + 0.1191 * log_col
+               - 0.00232;
+    return AGX_OUTSET * mapped;
+}
+
 // ── Vertex ──
 
 @vertex
@@ -303,8 +337,20 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
         col += bloom_sum * bloom_int * sparsity;
     }
 
-    // ── Soft clamp to prevent >1.0 without crushing dynamic range ──
-    // No Reinhard, no extra gamma — the vibrancy blend already did gamma.
+    // ── Final display transform ──
+    let tonemap_final = u32(u.extra4.y);
+    if (tonemap_final == 2u) {
+        // AgX: graceful HDR→display compression, desaturates highlights to white
+        col = agx_view_transform(col);
+    }
+    // Shoulder compression — linear below knee, soft rolloff above.
+    // Preserves punchy midtones while taming hot highlights.
+    let knee = 0.8;
+    col = vec3(
+        select(col.x, knee + (1.0 - knee) * (col.x - knee) / (col.x - knee + (1.0 - knee)), col.x > knee),
+        select(col.y, knee + (1.0 - knee) * (col.y - knee) / (col.y - knee + (1.0 - knee)), col.y > knee),
+        select(col.z, knee + (1.0 - knee) * (col.z - knee) / (col.z - knee + (1.0 - knee)), col.z > knee)
+    );
     col = clamp(col, vec3(0.0), vec3(1.0));
 
     return vec4(col, 1.0);
