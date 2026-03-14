@@ -47,10 +47,10 @@ What worked, what didn't, and why. Reference for future optimization work.
 
 5. **Shoulder curves > Reinhard > hard clamp.** Full Reinhard `x/(1+x)` compresses the entire range and feels muted. A knee curve that only activates above a threshold preserves midtone punch while taming highlights.
 
-6. **Richer genomes are more expensive.** Determinant clamping + scale hierarchy + forced final transforms produce genuinely more complex fractals that need more compute. The perf-skip threshold needs to be generous (9fps, not 15fps) or you skip almost everything. The real perf fix is GPU-level (subgroups, native Metal) not genome-level.
+6. **Richer genomes are more expensive — that's the tradeoff.** Determinant clamping + scale hierarchy + forced final transforms produce genuinely more complex fractals. 15fps perf-skip threshold was too aggressive and skipped almost everything. 9fps is the sweet spot — only truly broken genomes get culled.
 
-7. **Perf-skip threshold is a blunt instrument.** A genome running at 14fps is still beautiful — skipping it wastes the visual quality we worked to create. Better to have the taste engine *learn* which transform combinations are expensive and gently steer away from them during breeding, rather than hard-killing genomes after the fact.
+7. **Sobol QMC breaks the chaos game.** The IFS chaos game is a Markov chain that requires true randomness. Low-discrepancy sequences force too-uniform sampling, destroying attractor exploration.
 
 ## Future Ideas
 
-- **Performance-aware taste model:** When a genome gets perf-skipped, feed its transform features as negative signal to the taste engine. Over time, `generate_biased_transform` learns to avoid producing transform combinations that correlate with poor performance. This would be a natural fit for the IGMM upgrade (Phase 3) — have separate "aesthetic quality" and "computational cost" dimensions in the mixture model, so the system can balance beauty vs renderability.
+- **Performance-aware taste model:** When a genome gets perf-skipped, record its transform features as a negative signal in the taste engine. Over time, `generate_biased_transform` learns to avoid transform combinations that correlate with bad performance (high symmetry + many transforms + expensive variations). Ties into the IGMM upgrade where aesthetic quality and performance quality could be separate dimensions.
