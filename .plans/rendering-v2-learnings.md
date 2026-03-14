@@ -46,3 +46,11 @@ What worked, what didn't, and why. Reference for future optimization work.
 4. **Jacobian weighting works but is sensitive.** 0.1 is gentle and helpful. 0.5 is destructive. The sweet spot is low because contractive transforms are important for filling in dense structure — you want to bias slightly toward expansive transforms, not aggressively.
 
 5. **Shoulder curves > Reinhard > hard clamp.** Full Reinhard `x/(1+x)` compresses the entire range and feels muted. A knee curve that only activates above a threshold preserves midtone punch while taming highlights.
+
+6. **Richer genomes are more expensive.** Determinant clamping + scale hierarchy + forced final transforms produce genuinely more complex fractals that need more compute. The perf-skip threshold needs to be generous (9fps, not 15fps) or you skip almost everything. The real perf fix is GPU-level (subgroups, native Metal) not genome-level.
+
+7. **Perf-skip threshold is a blunt instrument.** A genome running at 14fps is still beautiful — skipping it wastes the visual quality we worked to create. Better to have the taste engine *learn* which transform combinations are expensive and gently steer away from them during breeding, rather than hard-killing genomes after the fact.
+
+## Future Ideas
+
+- **Performance-aware taste model:** When a genome gets perf-skipped, feed its transform features as negative signal to the taste engine. Over time, `generate_biased_transform` learns to avoid producing transform combinations that correlate with poor performance. This would be a natural fit for the IGMM upgrade (Phase 3) — have separate "aesthetic quality" and "computational cost" dimensions in the mixture model, so the system can balance beauty vs renderability.
