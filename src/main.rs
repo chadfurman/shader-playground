@@ -1,5 +1,5 @@
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::time::Instant;
 use std::{fs, mem};
@@ -586,7 +586,7 @@ impl Gpu {
                 immediate_size: 0,
             });
 
-        let histogram_cdf_src = fs::read_to_string(project_dir().join("histogram_cdf.wgsl"))
+        let histogram_cdf_src = fs::read_to_string(resource_dir().join("histogram_cdf.wgsl"))
             .unwrap_or_else(|_| include_str!("../histogram_cdf.wgsl").to_string());
         let histogram_cdf_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("histogram_cdf"),
@@ -881,17 +881,18 @@ impl Gpu {
 
 // ── Helper Functions ──
 
-pub fn project_dir() -> PathBuf {
-    // When running as a .app bundle, use Contents/Resources
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(macos_dir) = exe.parent() {
-            let resources = macos_dir.with_file_name("Resources");
-            if resources.join("weights.json").exists() {
-                return resources;
-            }
+/// Returns the directory where read-only resources (shaders, default config) live.
+/// In a .app bundle this is Contents/Resources; in dev mode, the repo root.
+pub fn resource_dir() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(macos_dir) = exe.parent()
+    {
+        let resources = macos_dir.with_file_name("Resources");
+        if resources.join("weights.json").exists() {
+            return resources;
         }
     }
-    // Development mode: walk up from cwd looking for Cargo.toml
+    // Dev mode: walk up from cwd looking for Cargo.toml
     let mut dir = std::env::current_dir().unwrap();
     loop {
         if dir.join("Cargo.toml").exists() {
@@ -903,12 +904,97 @@ pub fn project_dir() -> PathBuf {
     }
 }
 
+/// Returns the writable data directory for user content (genomes, votes, config overrides).
+///
+/// - Dev mode: same as resource_dir() (the repo root)
+/// - Bundle mode: ~/Library/Application Support/Shader Playground/ (macOS)
+///   or equivalent XDG dir on Linux, %APPDATA% on Windows.
+///
+/// On first launch, seeds resources from the bundle into the data dir.
+pub fn data_dir() -> PathBuf {
+    let res = resource_dir();
+    // If resource_dir has a Cargo.toml, we're in dev mode — use it directly
+    if res.join("Cargo.toml").exists() {
+        return res;
+    }
+    // Bundle mode: use platform-appropriate app data directory
+    let home = std::env::var("HOME").ok().map(PathBuf::from);
+    let app_data = if cfg!(target_os = "macos") {
+        home.as_ref()
+            .map(|h| h.join("Library/Application Support/Shader Playground"))
+    } else if cfg!(target_os = "windows") {
+        std::env::var("APPDATA")
+            .ok()
+            .map(|a| PathBuf::from(a).join("Shader Playground"))
+    } else {
+        // Linux: XDG_DATA_HOME or ~/.local/share
+        std::env::var("XDG_DATA_HOME")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| home.as_ref().map(|h| h.join(".local/share")))
+            .map(|d| d.join("shader-playground"))
+    };
+    let data = app_data.unwrap_or_else(|| res.clone());
+    // Seed on first launch: copy writable resources from bundle
+    if !data.join("weights.json").exists() {
+        let _ = std::fs::create_dir_all(&data);
+        // Copy weights.json and params.json as user-editable copies
+        for f in &["weights.json", "params.json"] {
+            let src = res.join(f);
+            if src.exists() {
+                let _ = std::fs::copy(&src, data.join(f));
+            }
+        }
+        // Copy seed genomes — in a bundle, these are flat in Resources/
+        let dst_genomes = data.join("genomes");
+        let _ = std::fs::create_dir_all(&dst_genomes);
+        let src_genomes = res.join("genomes");
+        if src_genomes.exists() {
+            // Dev-like layout: Resources/genomes/ exists
+            copy_dir_recursive(&src_genomes, &dst_genomes);
+        } else {
+            // Bundle layout: default.json and flames/ are flat in Resources/
+            let default_src = res.join("default.json");
+            if default_src.exists() {
+                let _ = std::fs::copy(&default_src, dst_genomes.join("default.json"));
+            }
+            let flames_src = res.join("flames");
+            if flames_src.exists() {
+                copy_dir_recursive(&flames_src, &dst_genomes.join("flames"));
+            }
+        }
+    }
+    data
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    let _ = std::fs::create_dir_all(dst);
+    if let Ok(entries) = std::fs::read_dir(src) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let dest = dst.join(entry.file_name());
+            if path.is_dir() {
+                copy_dir_recursive(&path, &dest);
+            } else {
+                let _ = std::fs::copy(&path, &dest);
+            }
+        }
+    }
+}
+
+/// project_dir() returns the writable data directory — this is the primary
+/// directory the app reads/writes genomes, votes, etc.
+/// For read-only resources (shaders), use resource_dir().
+pub fn project_dir() -> PathBuf {
+    data_dir()
+}
+
 fn shader_path() -> PathBuf {
-    project_dir().join("playground.wgsl")
+    resource_dir().join("playground.wgsl")
 }
 
 fn compute_path() -> PathBuf {
-    project_dir().join("flame_compute.wgsl")
+    resource_dir().join("flame_compute.wgsl")
 }
 
 fn params_path() -> PathBuf {
@@ -926,7 +1012,7 @@ fn load_compute_source() -> String {
 }
 
 fn accumulation_path() -> PathBuf {
-    project_dir().join("accumulation.wgsl")
+    resource_dir().join("accumulation.wgsl")
 }
 
 fn load_accumulation_source() -> String {

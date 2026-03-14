@@ -1,6 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossterm::{cursor, event, execute, queue, style, terminal};
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -22,7 +22,13 @@ struct LiveDevice {
 }
 
 /// Run the interactive device picker with live level meters.
+/// When no terminal is available (e.g. .app bundle), auto-selects System Audio.
 pub fn run() -> Selection {
+    // No terminal → auto-select System Audio for .app bundle launches
+    if !std::io::stdin().is_terminal() {
+        eprintln!("[audio] No terminal detected — auto-selecting System Audio");
+        return Selection::SystemAudio;
+    }
     let mut devices = build_device_list();
     if devices.is_empty() {
         eprintln!("No audio devices found.");

@@ -21,6 +21,27 @@ crossterm = "0.28"
 quick-xml = "0.39.2"
 half = "2.7.1"
 
+[package.metadata.packager]
+product-name = "Shader Playground"
+identifier = "com.chadfurman.shader-playground"
+version = "0.4.1"
+description = "Real-time fractal flame visualizer with genetic evolution and audio reactivity"
+authors = ["Chad Furman"]
+resources = [
+    "playground.wgsl",
+    "flame_compute.wgsl",
+    "accumulation.wgsl",
+    "histogram_cdf.wgsl",
+    "weights.json",
+    "params.json",
+    "genomes/default.json",
+    "genomes/flames",
+]
+
+[package.metadata.packager.macos]
+minimum-system-version = "13.0"
+info-plist-path = "macos/Info.plist"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.5.2"
 objc2-app-kit = "0.2.2"
