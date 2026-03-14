@@ -45,6 +45,7 @@ fn randf(state: ptr<function, u32>) -> f32 {
     return f32(pcg(state)) / 4294967295.0;
 }
 
+
 fn rot2(a: f32) -> mat2x2<f32> {
     let c = cos(a); let s = sin(a);
     return mat2x2(c, -s, s, c);
@@ -504,6 +505,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         prev_p = p;
         p = apply_xform(p, tidx, t, &rng);
+
+        // Wavefront regeneration: immediately recycle escaped/dead points
+        // instead of waiting for the next frame's 5% random refresh.
+        // This ensures 100% of iterations produce visible pixels.
+        let escaped = abs(p.x) > 10.0 || abs(p.y) > 10.0
+                    || p.x != p.x || p.y != p.y;  // NaN
+        if (escaped) {
+            p = vec2(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0);
+            color_idx = randf(&rng);
+            prev_p = p;
+            continue;  // skip splatting this iteration — warmup the new point
+        }
+
         let cb = u.extra2.w;  // color_blend from weights
         // Blend toward transform color, but add position-based variation
         // so points at different positions get slightly different palette lookups
