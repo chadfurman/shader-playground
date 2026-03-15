@@ -511,6 +511,38 @@ impl FlameTransform {
         }
     }
 
+    /// Returns the index of the variation with the highest weight, or None if no active variations.
+    pub fn primary_variation_index(&self) -> Option<usize> {
+        let mut best_idx = None;
+        let mut best_weight = 0.0f32;
+        for i in 0..VARIATION_COUNT {
+            let w = self.get_variation(i);
+            if w > best_weight {
+                best_weight = w;
+                best_idx = Some(i);
+            }
+        }
+        best_idx
+    }
+
+    /// Linearly interpolate between two transforms at parameter t (0.0 = self, 1.0 = other).
+    /// Lerps affine coefficients (a, b, c, d), offset, weight, and color.
+    pub fn lerp_with(&self, other: &Self, t: f32) -> Self {
+        let lerp = |a: f32, b: f32| a + (b - a) * t;
+        let mut result = self.clone();
+        for r in 0..3 {
+            for c in 0..3 {
+                result.affine[r][c] = lerp(self.affine[r][c], other.affine[r][c]);
+            }
+        }
+        for i in 0..3 {
+            result.offset[i] = lerp(self.offset[i], other.offset[i]);
+        }
+        result.weight = lerp(self.weight, other.weight);
+        result.color = lerp(self.color, other.color);
+        result
+    }
+
     pub fn random_transform(rng: &mut impl Rng) -> Self {
         let a = rng.random::<f32>() * 2.0 - 1.0;
         let b = rng.random::<f32>() * 2.0 - 1.0;
@@ -559,6 +591,25 @@ pub struct GlobalParams {
     pub zoom: f32,
     pub trail: f32,
     pub flame_brightness: f32,
+}
+
+/// If child and parent transforms share a primary variation, interpolate affine params.
+/// Otherwise, fall back to a direct swap (clone parent transform).
+fn interpolate_or_swap(
+    child: &FlameTransform,
+    parent: &FlameTransform,
+    lo: f32,
+    hi: f32,
+    rng: &mut impl Rng,
+) -> FlameTransform {
+    let child_pv = child.primary_variation_index();
+    let parent_pv = parent.primary_variation_index();
+    if child_pv.is_some() && child_pv == parent_pv {
+        let t = rng.random_range(lo..=hi);
+        child.lerp_with(parent, t)
+    } else {
+        parent.clone()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -1192,19 +1243,33 @@ impl FlameGenome {
 
         // Wildcard: already random from above
 
-        // Group A: transforms from Parent A
+        // Group A: transforms from Parent A (interpolate if shared variation)
         for &slot in group_a {
             if !parent_a.transforms.is_empty() {
                 let src_idx = rng.random_range(0..parent_a.transforms.len());
-                transforms[slot] = parent_a.transforms[src_idx].clone();
+                let parent_xf = &parent_a.transforms[src_idx];
+                transforms[slot] = interpolate_or_swap(
+                    &transforms[slot],
+                    parent_xf,
+                    cfg.interpolation_range_lo,
+                    cfg.interpolation_range_hi,
+                    &mut rng,
+                );
             }
         }
 
-        // Group B: transforms from Parent B
+        // Group B: transforms from Parent B (interpolate if shared variation)
         for &slot in group_b {
             if !parent_b.transforms.is_empty() {
                 let src_idx = rng.random_range(0..parent_b.transforms.len());
-                transforms[slot] = parent_b.transforms[src_idx].clone();
+                let parent_xf = &parent_b.transforms[src_idx];
+                transforms[slot] = interpolate_or_swap(
+                    &transforms[slot],
+                    parent_xf,
+                    cfg.interpolation_range_lo,
+                    cfg.interpolation_range_hi,
+                    &mut rng,
+                );
             }
         }
 
@@ -2504,6 +2569,78 @@ mod tests {
         assert!(
             any_changed,
             "z-scale should modify z-offset or z-scale of at least one transform"
+        );
+    }
+
+    fn approx_eq(a: f32, b: f32) -> bool {
+        (a - b).abs() < 0.01
+    }
+
+    #[test]
+    fn lerp_transform_midpoint() {
+        let mut xf_a = FlameTransform::default();
+        xf_a.affine = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
+        xf_a.offset = [0.0, 0.0, 0.0];
+        xf_a.weight = 0.2;
+        xf_a.color = 0.0;
+        xf_a.linear = 1.0;
+
+        let mut xf_b = FlameTransform::default();
+        xf_b.affine = [[2.0, 4.0, 0.0], [6.0, 8.0, 0.0], [0.0, 0.0, 1.0]];
+        xf_b.offset = [10.0, 12.0, 0.0];
+        xf_b.weight = 1.0;
+        xf_b.color = 1.0;
+        xf_b.linear = 1.0;
+
+        let mid = xf_a.lerp_with(&xf_b, 0.5);
+        assert!(approx_eq(mid.a(), 1.0), "a was {}", mid.a());
+        assert!(approx_eq(mid.b(), 2.0), "b was {}", mid.b());
+        assert!(approx_eq(mid.c(), 3.0), "c was {}", mid.c());
+        assert!(approx_eq(mid.d(), 4.0), "d was {}", mid.d());
+        assert!(
+            approx_eq(mid.offset[0], 5.0),
+            "offset_x was {}",
+            mid.offset[0]
+        );
+        assert!(
+            approx_eq(mid.offset[1], 6.0),
+            "offset_y was {}",
+            mid.offset[1]
+        );
+        assert!(approx_eq(mid.weight, 0.6), "weight was {}", mid.weight);
+        assert!(approx_eq(mid.color, 0.5), "color was {}", mid.color);
+    }
+
+    #[test]
+    fn interpolate_or_swap_shared_variation_interpolates() {
+        let mut rng = rand::rng();
+        let mut child = FlameTransform::default();
+        child.affine = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]];
+        child.linear = 1.0;
+
+        let mut parent = FlameTransform::default();
+        parent.affine = [[2.0, 2.0, 0.0], [2.0, 2.0, 0.0], [0.0, 0.0, 1.0]];
+        parent.linear = 1.0;
+
+        let result = interpolate_or_swap(&child, &parent, 0.5, 0.5, &mut rng);
+        assert!(approx_eq(result.a(), 1.0), "a was {}", result.a());
+    }
+
+    #[test]
+    fn interpolate_or_swap_different_variation_swaps() {
+        let mut rng = rand::rng();
+        let mut child = FlameTransform::default();
+        child.linear = 1.0;
+
+        let mut parent = FlameTransform::default();
+        parent.affine[0][0] = 99.0;
+        parent.spherical = 1.0;
+
+        let result = interpolate_or_swap(&child, &parent, 0.3, 0.7, &mut rng);
+        assert!(
+            approx_eq(result.a(), 99.0),
+            "a was {}, expected parent clone",
+            result.a()
         );
     }
 }

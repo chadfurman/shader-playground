@@ -234,6 +234,40 @@ pub struct RuntimeConfig {
     pub archive_threshold_mb: u64,
     #[serde(default = "default_archive_on_startup")]
     pub archive_on_startup: bool,
+
+    // Novelty search
+    #[serde(default = "default_novelty_weight")]
+    pub novelty_weight: f32,
+    #[serde(default = "default_novelty_k_neighbors")]
+    pub novelty_k_neighbors: u32,
+
+    // Interpolative crossover
+    #[serde(default = "default_interpolation_range_lo")]
+    pub interpolation_range_lo: f32,
+    #[serde(default = "default_interpolation_range_hi")]
+    pub interpolation_range_hi: f32,
+
+    // Taste engine
+    #[serde(default = "default_igmm_activation_threshold")]
+    pub igmm_activation_threshold: f32,
+    #[serde(default = "default_igmm_decay_rate")]
+    pub igmm_decay_rate: f32,
+    #[serde(default = "default_igmm_min_weight")]
+    pub igmm_min_weight: f32,
+    #[serde(default = "default_igmm_max_clusters")]
+    pub igmm_max_clusters: u32,
+    #[serde(default = "default_igmm_learning_rate")]
+    pub igmm_learning_rate: f32,
+
+    // Proxy render (CPU chaos game for perceptual features)
+    #[serde(default = "default_proxy_render_grid_size")]
+    pub proxy_render_grid_size: u32,
+    #[serde(default = "default_proxy_render_iterations")]
+    pub proxy_render_iterations: u32,
+    #[serde(default = "default_proxy_render_warmup")]
+    pub proxy_render_warmup: u32,
+    #[serde(default = "default_spatial_entropy_blocks")]
+    pub spatial_entropy_blocks: u32,
     #[serde(default)]
     pub dist_lum_strength: f32,
     #[serde(default = "default_iter_lum_range")]
@@ -408,6 +442,45 @@ fn default_archive_threshold_mb() -> u64 {
 }
 fn default_archive_on_startup() -> bool {
     true
+}
+fn default_novelty_weight() -> f32 {
+    0.3
+}
+fn default_novelty_k_neighbors() -> u32 {
+    5
+}
+fn default_interpolation_range_lo() -> f32 {
+    0.3
+}
+fn default_interpolation_range_hi() -> f32 {
+    0.7
+}
+fn default_igmm_activation_threshold() -> f32 {
+    2.0
+}
+fn default_igmm_decay_rate() -> f32 {
+    0.95
+}
+fn default_igmm_min_weight() -> f32 {
+    0.1
+}
+fn default_igmm_max_clusters() -> u32 {
+    8
+}
+fn default_igmm_learning_rate() -> f32 {
+    0.1
+}
+fn default_proxy_render_grid_size() -> u32 {
+    64
+}
+fn default_proxy_render_iterations() -> u32 {
+    500
+}
+fn default_proxy_render_warmup() -> u32 {
+    50
+}
+fn default_spatial_entropy_blocks() -> u32 {
+    8
 }
 fn default_iter_lum_range() -> f32 {
     0.5

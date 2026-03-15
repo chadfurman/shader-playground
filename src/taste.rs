@@ -1,6 +1,10 @@
 use std::collections::VecDeque;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 
 use crate::genome::FlameGenome;
+use crate::weights::RuntimeConfig;
 
 /// Number of hue histogram bins (one per 30 degrees of hue wheel).
 const HUE_BINS: usize = 12;
@@ -343,33 +347,57 @@ pub struct TasteEngine {
     model: Option<TasteModel>,
     /// Transform-level taste model (None if not enough data)
     transform_model: Option<TasteModel>,
+    /// IGMM model for multi-style taste learning
+    igmm: IgmmModel,
     /// Recent palette features for diversity nudge
     recent_palettes: VecDeque<PaletteFeatures>,
     /// All feature vectors from good genomes (for rebuilding model)
     good_features: Vec<Vec<f32>>,
+    /// Config for proxy render parameters
+    config: RuntimeConfig,
 }
 
 impl TasteEngine {
     pub fn new() -> Self {
+        // Use serde defaults (not derive Default which zeros everything)
+        let config: RuntimeConfig = serde_json::from_str("{}").unwrap_or_default();
         Self {
             model: None,
             transform_model: None,
+            igmm: IgmmModel::new(),
             recent_palettes: VecDeque::new(),
             good_features: Vec::new(),
+            config,
         }
     }
 
-    /// Rebuild the model from all voted/imported genomes.
-    /// Call this on startup and whenever votes change.
-    pub fn rebuild(&mut self, good_genomes: &[&FlameGenome], recent_memory: usize) {
+    /// Update the runtime config (called when weights are reloaded).
+    pub fn set_config(&mut self, cfg: &RuntimeConfig) {
+        self.config = cfg.clone();
+    }
+
+    /// Build a full feature vector from a genome (palette + composition + perceptual).
+    pub fn extract_full_features(&self, genome: &FlameGenome) -> Option<Vec<f32>> {
+        let palette_feats = PaletteFeatures::extract(genome)?;
+        let mut features_vec = palette_feats.to_vec();
+        features_vec.extend(CompositionFeatures::extract(genome).to_vec());
+        features_vec.extend(PerceptualFeatures::from_genome(genome, &self.config).to_vec());
+        Some(features_vec)
+    }
+
+    /// Rebuild with an explicit IGMM save path.
+    /// Tries loading from disk first; if missing, bootstraps from genomes.
+    pub fn rebuild_with_igmm_path(
+        &mut self,
+        good_genomes: &[&FlameGenome],
+        recent_memory: usize,
+        igmm_path: Option<&Path>,
+    ) {
         self.good_features.clear();
         let mut transform_features: Vec<Vec<f32>> = Vec::new();
 
         for genome in good_genomes {
-            if let Some(palette_feats) = PaletteFeatures::extract(genome) {
-                let mut features_vec = palette_feats.to_vec();
-                let comp = CompositionFeatures::extract(genome);
-                features_vec.extend(comp.to_vec());
+            if let Some(features_vec) = self.extract_full_features(genome) {
                 self.good_features.push(features_vec);
             }
             for xf in &genome.transforms {
@@ -379,6 +407,29 @@ impl TasteEngine {
 
         self.model = TasteModel::build(&self.good_features);
         self.transform_model = TasteModel::build(&transform_features);
+
+        // IGMM: try loading from disk, fall back to cold-start bootstrap
+        let loaded = igmm_path.and_then(|p| IgmmModel::load(p).ok());
+        if let Some(model) = loaded {
+            self.igmm = model;
+            eprintln!(
+                "[taste] IGMM loaded from disk: {} clusters",
+                self.igmm.clusters.len()
+            );
+        } else {
+            // Cold-start: feed all good features through on_upvote
+            self.igmm = IgmmModel::new();
+            for features in &self.good_features {
+                self.igmm.on_upvote(features, &self.config);
+            }
+            if !self.igmm.clusters.is_empty() {
+                eprintln!(
+                    "[taste] IGMM cold-start: {} clusters from {} genomes",
+                    self.igmm.clusters.len(),
+                    self.good_features.len()
+                );
+            }
+        }
 
         // Trim recent palette memory
         while self.recent_palettes.len() > recent_memory {
@@ -399,6 +450,49 @@ impl TasteEngine {
                 tm.feature_means.len()
             );
         }
+    }
+
+    /// Handle an upvote: extract features, update IGMM, save model.
+    pub fn on_upvote(&mut self, genome: &FlameGenome, save_path: Option<&Path>) {
+        if let Some(features) = self.extract_full_features(genome) {
+            self.igmm.on_upvote(&features, &self.config);
+            if let Some(path) = save_path
+                && let Err(e) = self.igmm.save(path)
+            {
+                eprintln!("[taste] IGMM save error: {e}");
+            }
+        }
+    }
+
+    /// Score a genome using the IGMM model (lower = better).
+    /// Falls back to Gaussian centroid if IGMM has no clusters.
+    pub fn score_genome(&self, genome: &FlameGenome) -> Option<f32> {
+        let features = self.extract_full_features(genome)?;
+        if !self.igmm.clusters.is_empty() {
+            Some(self.igmm.score(&features))
+        } else {
+            self.model.as_ref().map(|m| m.score(&features))
+        }
+    }
+
+    /// Score a genome with novelty bonus from the archive.
+    /// fitness = taste_score - novelty_weight * novelty_score
+    /// Lower fitness = better. Subtracting novelty rewards novel genomes.
+    pub fn score_genome_with_novelty(
+        &self,
+        genome: &FlameGenome,
+        archive_features: &[&Vec<f32>],
+        novelty_weight: f32,
+        novelty_k: u32,
+    ) -> Option<f32> {
+        let features = self.extract_full_features(genome)?;
+        let taste = if !self.igmm.clusters.is_empty() {
+            self.igmm.score(&features)
+        } else {
+            self.model.as_ref()?.score(&features)
+        };
+        let novelty = novelty_score(&features, archive_features, novelty_k);
+        Some(taste - novelty_weight * novelty)
     }
 
     /// Score a transform against the transform taste model.
@@ -538,6 +632,372 @@ impl TasteEngine {
     pub fn sample_count(&self) -> u32 {
         self.model.as_ref().map_or(0, |m| m.sample_count)
     }
+}
+
+// ── Perceptual Features ──
+
+/// Grid size for proxy render (always 64x64 for box counting).
+const PROXY_GRID: usize = 64;
+
+/// Number of perceptual features.
+pub const PERCEPTUAL_FEATURE_COUNT: usize = 3;
+
+/// Perceptual features extracted from a CPU proxy render of a genome.
+#[derive(Clone, Debug)]
+pub struct PerceptualFeatures {
+    pub fractal_dimension: f32,
+    pub spatial_entropy: f32,
+    pub coverage_ratio: f32,
+}
+
+impl PerceptualFeatures {
+    /// Extract perceptual features from a genome using a CPU proxy render.
+    pub fn from_genome(genome: &FlameGenome, cfg: &RuntimeConfig) -> Self {
+        let grid = proxy_render(genome, cfg);
+        Self {
+            fractal_dimension: box_counting_fd(&grid),
+            spatial_entropy: spatial_entropy(&grid, cfg.spatial_entropy_blocks as usize),
+            coverage_ratio: coverage_ratio(&grid),
+        }
+    }
+
+    /// Convert to flat f32 vector.
+    pub fn to_vec(&self) -> Vec<f32> {
+        let v = vec![
+            self.fractal_dimension,
+            self.spatial_entropy,
+            self.coverage_ratio,
+        ];
+        debug_assert_eq!(v.len(), PERCEPTUAL_FEATURE_COUNT);
+        v
+    }
+}
+
+/// Compute the linear regression slope of y vs x.
+/// Returns 0.0 if fewer than 2 points.
+fn linear_regression_slope(xs: &[f32], ys: &[f32]) -> f32 {
+    let n = xs.len().min(ys.len());
+    if n < 2 {
+        return 0.0;
+    }
+    let n_f = n as f32;
+    let sum_x: f32 = xs[..n].iter().sum();
+    let sum_y: f32 = ys[..n].iter().sum();
+    let sum_xy: f32 = xs[..n].iter().zip(ys[..n].iter()).map(|(x, y)| x * y).sum();
+    let sum_xx: f32 = xs[..n].iter().map(|x| x * x).sum();
+    let denom = n_f * sum_xx - sum_x * sum_x;
+    if denom.abs() < 1e-12 {
+        return 0.0;
+    }
+    (n_f * sum_xy - sum_x * sum_y) / denom
+}
+
+/// Box-counting fractal dimension estimate.
+/// Uses box sizes [2, 4, 8, 16, 32] on a 64x64 boolean grid.
+/// Returns slope of log(count) vs log(1/size).
+pub fn box_counting_fd(grid: &[[bool; PROXY_GRID]; PROXY_GRID]) -> f32 {
+    let box_sizes: [usize; 5] = [2, 4, 8, 16, 32];
+    let mut log_inv_sizes = Vec::with_capacity(box_sizes.len());
+    let mut log_counts = Vec::with_capacity(box_sizes.len());
+
+    for &size in &box_sizes {
+        let mut count = 0u32;
+        let blocks = PROXY_GRID / size;
+        for by in 0..blocks {
+            for bx in 0..blocks {
+                let mut has_point = false;
+                'search: for dy in 0..size {
+                    for dx in 0..size {
+                        if grid[by * size + dy][bx * size + dx] {
+                            has_point = true;
+                            break 'search;
+                        }
+                    }
+                }
+                if has_point {
+                    count += 1;
+                }
+            }
+        }
+        if count > 0 {
+            log_inv_sizes.push((1.0 / size as f32).ln());
+            log_counts.push((count as f32).ln());
+        }
+    }
+
+    linear_regression_slope(&log_inv_sizes, &log_counts)
+}
+
+/// Shannon entropy of spatial block hit counts.
+/// Divides the grid into blocks_per_side x blocks_per_side blocks.
+pub fn spatial_entropy(grid: &[[bool; PROXY_GRID]; PROXY_GRID], blocks_per_side: usize) -> f32 {
+    let blocks_per_side = blocks_per_side.max(1);
+    let block_size = PROXY_GRID / blocks_per_side;
+    if block_size == 0 {
+        return 0.0;
+    }
+    let total_blocks = blocks_per_side * blocks_per_side;
+    let mut block_hits = vec![0u32; total_blocks];
+
+    for (y, row) in grid.iter().enumerate() {
+        for (x, &cell) in row.iter().enumerate() {
+            if cell {
+                let bx = (x / block_size).min(blocks_per_side - 1);
+                let by = (y / block_size).min(blocks_per_side - 1);
+                block_hits[by * blocks_per_side + bx] += 1;
+            }
+        }
+    }
+
+    let total_hits: u32 = block_hits.iter().sum();
+    if total_hits == 0 {
+        return 0.0;
+    }
+    let total_f = total_hits as f32;
+    let mut entropy = 0.0f32;
+    for &count in &block_hits {
+        if count > 0 {
+            let p = count as f32 / total_f;
+            entropy -= p * p.ln();
+        }
+    }
+    entropy
+}
+
+/// Fraction of 64x64 grid cells that are hit.
+pub fn coverage_ratio(grid: &[[bool; PROXY_GRID]; PROXY_GRID]) -> f32 {
+    let total = (PROXY_GRID * PROXY_GRID) as f32;
+    let hits: u32 = grid
+        .iter()
+        .map(|row| row.iter().filter(|&&c| c).count() as u32)
+        .sum();
+    hits as f32 / total
+}
+
+/// Lightweight CPU chaos game — affine-only (no variation functions).
+/// Renders into a 64x64 boolean grid. Skips warmup iterations.
+pub fn proxy_render(genome: &FlameGenome, cfg: &RuntimeConfig) -> [[bool; PROXY_GRID]; PROXY_GRID] {
+    let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+    if genome.transforms.is_empty() {
+        return grid;
+    }
+
+    let iterations = cfg.proxy_render_iterations as usize;
+    let warmup = cfg.proxy_render_warmup as usize;
+
+    // Build weight-based CDF for transform selection
+    let total_weight: f32 = genome.transforms.iter().map(|xf| xf.weight.max(0.0)).sum();
+    if total_weight <= 0.0 {
+        return grid;
+    }
+    let mut cdf = Vec::with_capacity(genome.transforms.len());
+    let mut accum = 0.0f32;
+    for xf in &genome.transforms {
+        accum += xf.weight.max(0.0) / total_weight;
+        cdf.push(accum);
+    }
+
+    // Simple LCG PRNG (deterministic, no external state needed)
+    let mut seed: u32 = 0xDEAD_BEEF;
+    let lcg_next = |s: &mut u32| -> f32 {
+        *s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        (*s as f32) / u32::MAX as f32
+    };
+
+    let mut x = 0.0f32;
+    let mut y = 0.0f32;
+
+    for i in 0..(warmup + iterations) {
+        // Pick transform by weight
+        let r = lcg_next(&mut seed);
+        let xf_idx = cdf.iter().position(|&c| r <= c).unwrap_or(cdf.len() - 1);
+        let xf = &genome.transforms[xf_idx];
+
+        // Apply affine: [a b; c d] * [x; y] + offset
+        let nx = xf.a() * x + xf.b() * y + xf.offset[0];
+        let ny = xf.c() * x + xf.d() * y + xf.offset[1];
+
+        // NaN/infinity escape check
+        if !nx.is_finite() || !ny.is_finite() {
+            x = 0.0;
+            y = 0.0;
+            continue;
+        }
+        x = nx;
+        y = ny;
+
+        // Plot after warmup
+        if i >= warmup {
+            // Map [-2, 2] to [0, 64)
+            let gx = ((x + 2.0) / 4.0 * PROXY_GRID as f32) as i32;
+            let gy = ((y + 2.0) / 4.0 * PROXY_GRID as f32) as i32;
+            if gx >= 0 && gx < PROXY_GRID as i32 && gy >= 0 && gy < PROXY_GRID as i32 {
+                grid[gy as usize][gx as usize] = true;
+            }
+        }
+    }
+
+    grid
+}
+
+// ── IGMM Taste Model ──
+
+/// A single cluster in the Incremental Gaussian Mixture Model.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TasteCluster {
+    pub mean: Vec<f32>,
+    pub variance: Vec<f32>,
+    pub weight: f32,
+    pub sample_count: u32,
+}
+
+impl TasteCluster {
+    /// Create a new cluster from an initial feature vector.
+    pub fn new(features: &[f32]) -> Self {
+        Self {
+            mean: features.to_vec(),
+            variance: vec![1.0; features.len()],
+            weight: 1.0,
+            sample_count: 1,
+        }
+    }
+
+    /// Mahalanobis distance (diagonal covariance) from features to this cluster.
+    pub fn mahalanobis_distance(&self, features: &[f32]) -> f32 {
+        self.mean
+            .iter()
+            .zip(self.variance.iter())
+            .zip(features.iter())
+            .map(|((m, v), f)| {
+                let diff = f - m;
+                diff * diff / v.max(1e-6)
+            })
+            .sum::<f32>()
+            .sqrt()
+    }
+
+    /// Update cluster mean and variance via exponential moving average.
+    pub fn update(&mut self, features: &[f32], learning_rate: f32) {
+        self.sample_count += 1;
+        for (m, (v, f)) in self
+            .mean
+            .iter_mut()
+            .zip(self.variance.iter_mut().zip(features.iter()))
+        {
+            let diff = f - *m;
+            *m += learning_rate * diff;
+            *v += learning_rate * (diff * diff - *v);
+        }
+    }
+}
+
+/// Incremental Gaussian Mixture Model for taste scoring.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IgmmModel {
+    pub clusters: Vec<TasteCluster>,
+}
+
+impl IgmmModel {
+    pub fn new() -> Self {
+        Self {
+            clusters: Vec::new(),
+        }
+    }
+
+    /// Process an upvoted genome's features.
+    /// Finds closest cluster and merges, or spawns a new one.
+    pub fn on_upvote(&mut self, features: &[f32], cfg: &RuntimeConfig) {
+        if self.clusters.is_empty() {
+            self.clusters.push(TasteCluster::new(features));
+            return;
+        }
+
+        // Find closest cluster
+        let (closest_idx, closest_dist) = self
+            .clusters
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (i, c.mahalanobis_distance(features)))
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
+
+        if closest_dist < cfg.igmm_activation_threshold {
+            // Merge into existing cluster
+            self.clusters[closest_idx].update(features, cfg.igmm_learning_rate);
+            self.clusters[closest_idx].weight += 1.0;
+        } else if (self.clusters.len() as u32) < cfg.igmm_max_clusters {
+            // Spawn new cluster
+            self.clusters.push(TasteCluster::new(features));
+        } else {
+            // At max clusters: merge into closest anyway
+            self.clusters[closest_idx].update(features, cfg.igmm_learning_rate);
+            self.clusters[closest_idx].weight += 1.0;
+        }
+
+        // Decay all cluster weights
+        for cluster in &mut self.clusters {
+            cluster.weight *= cfg.igmm_decay_rate;
+        }
+
+        // Prune clusters below minimum weight
+        self.clusters.retain(|c| c.weight >= cfg.igmm_min_weight);
+    }
+
+    /// Score features against the IGMM model.
+    /// Returns minimum Mahalanobis distance across all clusters (lower = better).
+    pub fn score(&self, features: &[f32]) -> f32 {
+        if self.clusters.is_empty() {
+            return f32::MAX;
+        }
+        self.clusters
+            .iter()
+            .map(|c| c.mahalanobis_distance(features))
+            .fold(f32::MAX, f32::min)
+    }
+
+    /// Save IGMM model to a JSON file.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| format!("serialize igmm: {e}"))?;
+        std::fs::write(path, json).map_err(|e| format!("write igmm: {e}"))?;
+        Ok(())
+    }
+
+    /// Load IGMM model from a JSON file.
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let json = std::fs::read_to_string(path).map_err(|e| format!("read igmm: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| format!("parse igmm: {e}"))
+    }
+}
+
+// ── Novelty Search ──
+
+/// Compute novelty score: average Euclidean distance to k nearest neighbors.
+/// Higher novelty = more different from archive contents = more novel.
+/// If archive_features has fewer than k entries, uses all available.
+pub fn novelty_score(features: &[f32], archive_features: &[&Vec<f32>], k: u32) -> f32 {
+    if archive_features.is_empty() {
+        return 0.0;
+    }
+
+    let k = (k as usize).min(archive_features.len());
+    let mut distances: Vec<f32> = archive_features
+        .iter()
+        .map(|af| euclidean_distance(features, af))
+        .collect();
+    distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let sum: f32 = distances[..k].iter().sum();
+    sum / k as f32
+}
+
+/// Euclidean distance between two feature vectors.
+fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y) * (x - y))
+        .sum::<f32>()
+        .sqrt()
 }
 
 /// Extract palette features from a raw palette (no genome wrapper needed).
@@ -1031,7 +1491,7 @@ mod tests {
             generation: 0,
         };
 
-        engine.rebuild(&[&genome], 10);
+        engine.rebuild_with_igmm_path(&[&genome], 10, None);
 
         let score = engine.score_transform(&genome.transforms[0], 1);
         assert!(score.is_some(), "should have a score after rebuild");
@@ -1060,5 +1520,328 @@ mod tests {
         // exploration_rate = 1.0 → always skip model
         let xf = engine.generate_biased_transform(10, 1.0, 1.0, 5);
         assert!(xf.weight > 0.0);
+    }
+
+    // --- Linear regression tests ---
+
+    #[test]
+    fn linear_regression_slope_perfect_line() {
+        let xs = vec![1.0, 2.0, 3.0, 4.0];
+        let ys = vec![2.0, 4.0, 6.0, 8.0]; // y = 2x
+        let slope = linear_regression_slope(&xs, &ys);
+        assert!(approx_eq(slope, 2.0), "slope was {slope}");
+    }
+
+    #[test]
+    fn linear_regression_slope_too_few_points() {
+        assert!(approx_eq(linear_regression_slope(&[1.0], &[1.0]), 0.0));
+        assert!(approx_eq(linear_regression_slope(&[], &[]), 0.0));
+    }
+
+    // --- Box-counting FD tests ---
+
+    #[test]
+    fn box_counting_fd_empty_grid() {
+        let grid = [[false; PROXY_GRID]; PROXY_GRID];
+        let fd = box_counting_fd(&grid);
+        // Empty grid: no occupied boxes at any scale → FD = 0
+        assert!(approx_eq(fd, 0.0), "FD was {fd}");
+    }
+
+    #[test]
+    fn box_counting_fd_full_grid() {
+        let grid = [[true; PROXY_GRID]; PROXY_GRID];
+        let fd = box_counting_fd(&grid);
+        // Full grid: FD should be close to 2.0 (fills 2D space)
+        assert!(fd > 1.8 && fd < 2.2, "FD was {fd}, expected ~2.0");
+    }
+
+    #[test]
+    fn box_counting_fd_diagonal_line() {
+        let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+        for i in 0..PROXY_GRID {
+            grid[i][i] = true;
+        }
+        let fd = box_counting_fd(&grid);
+        // Diagonal line: FD should be close to 1.0
+        assert!(fd > 0.7 && fd < 1.3, "FD was {fd}, expected ~1.0");
+    }
+
+    // --- Spatial entropy tests ---
+
+    #[test]
+    fn spatial_entropy_uniform_grid() {
+        // Every block has equal hits → maximum entropy
+        let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+        // Place one hit in each 8x8 block
+        for by in 0..8 {
+            for bx in 0..8 {
+                grid[by * 8][bx * 8] = true;
+            }
+        }
+        let entropy = spatial_entropy(&grid, 8);
+        // Maximum entropy for 64 equally-occupied blocks = ln(64) ≈ 4.16
+        let max_entropy = (64.0f32).ln();
+        assert!(
+            (entropy - max_entropy).abs() < 0.1,
+            "entropy was {entropy}, expected ~{max_entropy}"
+        );
+    }
+
+    #[test]
+    fn spatial_entropy_single_block() {
+        // All hits in a single block → zero entropy
+        let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+        for y in 0..8 {
+            for x in 0..8 {
+                grid[y][x] = true;
+            }
+        }
+        let entropy = spatial_entropy(&grid, 8);
+        assert!(
+            approx_eq(entropy, 0.0),
+            "entropy was {entropy}, expected 0.0"
+        );
+    }
+
+    #[test]
+    fn spatial_entropy_empty_grid() {
+        let grid = [[false; PROXY_GRID]; PROXY_GRID];
+        let entropy = spatial_entropy(&grid, 8);
+        assert!(approx_eq(entropy, 0.0), "entropy was {entropy}");
+    }
+
+    // --- Coverage ratio tests ---
+
+    #[test]
+    fn coverage_ratio_empty() {
+        let grid = [[false; PROXY_GRID]; PROXY_GRID];
+        assert!(approx_eq(coverage_ratio(&grid), 0.0));
+    }
+
+    #[test]
+    fn coverage_ratio_full() {
+        let grid = [[true; PROXY_GRID]; PROXY_GRID];
+        assert!(approx_eq(coverage_ratio(&grid), 1.0));
+    }
+
+    // --- Proxy render tests ---
+
+    #[test]
+    fn proxy_render_degenerate_genome_no_panic() {
+        // Genome with diverging transforms (large coefficients) should not panic
+        let mut xf = crate::genome::FlameTransform::default();
+        xf.affine = [[100.0, 100.0, 0.0], [100.0, 100.0, 0.0], [0.0, 0.0, 1.0]];
+        xf.offset = [50.0, 50.0, 0.0];
+        xf.weight = 1.0;
+        xf.linear = 1.0;
+        let genome = crate::genome::FlameGenome {
+            name: String::new(),
+            global: crate::genome::GlobalParams {
+                speed: 1.0,
+                zoom: 1.0,
+                trail: 0.9,
+                flame_brightness: 1.0,
+            },
+            kifs: crate::genome::KifsParams {
+                fold_angle: 0.0,
+                scale: 1.0,
+                brightness: 1.0,
+            },
+            transforms: vec![xf],
+            final_transform: None,
+            symmetry: 1,
+            palette: None,
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
+        };
+        let cfg = default_test_config();
+        let _grid = proxy_render(&genome, &cfg);
+        // Just checking it doesn't panic
+    }
+
+    #[test]
+    fn proxy_render_contractive_produces_hits() {
+        // Identity-ish transform with small contraction should produce hits
+        let mut xf = crate::genome::FlameTransform::default();
+        xf.affine = [[0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 1.0]];
+        xf.offset = [0.5, 0.5, 0.0];
+        xf.weight = 1.0;
+        xf.linear = 1.0;
+        let genome = crate::genome::FlameGenome {
+            name: String::new(),
+            global: crate::genome::GlobalParams {
+                speed: 1.0,
+                zoom: 1.0,
+                trail: 0.9,
+                flame_brightness: 1.0,
+            },
+            kifs: crate::genome::KifsParams {
+                fold_angle: 0.0,
+                scale: 1.0,
+                brightness: 1.0,
+            },
+            transforms: vec![xf],
+            final_transform: None,
+            symmetry: 1,
+            palette: None,
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
+        };
+        let cfg = default_test_config();
+        let grid = proxy_render(&genome, &cfg);
+        let hits: u32 = grid
+            .iter()
+            .map(|row| row.iter().filter(|&&c| c).count() as u32)
+            .sum();
+        assert!(hits > 0, "contractive transform should produce hits");
+    }
+
+    // --- PerceptualFeatures tests ---
+
+    #[test]
+    fn perceptual_features_vec_length() {
+        let genome = crate::genome::FlameGenome::default_genome();
+        let cfg = default_test_config();
+        let f = PerceptualFeatures::from_genome(&genome, &cfg);
+        assert_eq!(f.to_vec().len(), PERCEPTUAL_FEATURE_COUNT);
+    }
+
+    fn default_test_config() -> crate::weights::RuntimeConfig {
+        serde_json::from_str("{}").unwrap()
+    }
+
+    // --- TasteCluster tests ---
+
+    #[test]
+    fn taste_cluster_from_features() {
+        let features = vec![1.0, 2.0, 3.0];
+        let cluster = TasteCluster::new(&features);
+        assert_eq!(cluster.mean, vec![1.0, 2.0, 3.0]);
+        assert_eq!(cluster.sample_count, 1);
+        assert!(approx_eq(cluster.weight, 1.0));
+        // Distance from own mean should be 0
+        let dist = cluster.mahalanobis_distance(&features);
+        assert!(approx_eq(dist, 0.0), "dist was {dist}");
+    }
+
+    // --- IGMM tests ---
+
+    #[test]
+    fn igmm_update_merges_nearby_vote() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        let f1 = vec![1.0, 2.0, 3.0];
+        let f2 = vec![1.1, 2.1, 3.1]; // very close to f1
+        model.on_upvote(&f1, &cfg);
+        model.on_upvote(&f2, &cfg);
+        assert_eq!(
+            model.clusters.len(),
+            1,
+            "close features should merge into 1 cluster, got {}",
+            model.clusters.len()
+        );
+    }
+
+    #[test]
+    fn igmm_spawns_new_cluster_for_distant_vote() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        let f1 = vec![0.0, 0.0, 0.0];
+        let f2 = vec![100.0, 100.0, 100.0]; // very far from f1
+        model.on_upvote(&f1, &cfg);
+        model.on_upvote(&f2, &cfg);
+        assert_eq!(
+            model.clusters.len(),
+            2,
+            "distant features should spawn 2 clusters, got {}",
+            model.clusters.len()
+        );
+    }
+
+    #[test]
+    fn igmm_score_picks_closest_cluster() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        let f1 = vec![0.0, 0.0, 0.0];
+        let f2 = vec![100.0, 100.0, 100.0];
+        model.on_upvote(&f1, &cfg);
+        model.on_upvote(&f2, &cfg);
+
+        // Point near f1 should score lower than point far from both
+        let near_f1 = vec![0.1, 0.1, 0.1];
+        let far = vec![50.0, 50.0, 50.0];
+        let score_near = model.score(&near_f1);
+        let score_far = model.score(&far);
+        assert!(
+            score_near < score_far,
+            "near={score_near} should be < far={score_far}"
+        );
+    }
+
+    #[test]
+    fn igmm_persistence_roundtrip() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        model.on_upvote(&vec![1.0, 2.0, 3.0], &cfg);
+        model.on_upvote(&vec![100.0, 200.0, 300.0], &cfg);
+
+        let dir = std::env::temp_dir().join("taste_igmm_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("test_igmm.json");
+        model.save(&path).expect("save should succeed");
+
+        let loaded = IgmmModel::load(&path).expect("load should succeed");
+        assert_eq!(model.clusters.len(), loaded.clusters.len());
+        for (orig, load) in model.clusters.iter().zip(loaded.clusters.iter()) {
+            assert_eq!(orig.mean.len(), load.mean.len());
+            for (a, b) in orig.mean.iter().zip(load.mean.iter()) {
+                assert!(approx_eq(*a, *b), "mean mismatch: {a} vs {b}");
+            }
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    // --- Novelty search tests ---
+
+    #[test]
+    fn novelty_score_higher_for_distant_point() {
+        let archive_data = vec![
+            vec![0.0, 0.0, 0.0],
+            vec![1.0, 1.0, 1.0],
+            vec![2.0, 2.0, 2.0],
+        ];
+        let archive_refs: Vec<&Vec<f32>> = archive_data.iter().collect();
+
+        let near = vec![0.1, 0.1, 0.1]; // close to [0,0,0]
+        let far = vec![100.0, 100.0, 100.0]; // far from everything
+
+        let score_near = novelty_score(&near, &archive_refs, 3);
+        let score_far = novelty_score(&far, &archive_refs, 3);
+        assert!(
+            score_far > score_near,
+            "far novelty ({score_far}) should be > near novelty ({score_near})"
+        );
+    }
+
+    #[test]
+    fn novelty_score_empty_archive_returns_zero() {
+        let archive: Vec<&Vec<f32>> = vec![];
+        let score = novelty_score(&[1.0, 2.0], &archive, 5);
+        assert!(approx_eq(score, 0.0), "empty archive novelty was {score}");
+    }
+
+    #[test]
+    fn novelty_score_handles_small_k() {
+        let archive_data = vec![vec![1.0, 1.0]];
+        let archive_refs: Vec<&Vec<f32>> = archive_data.iter().collect();
+        // k=5 but archive only has 1 entry
+        let score = novelty_score(&[0.0, 0.0], &archive_refs, 5);
+        assert!(score > 0.0, "novelty should be positive, got {score}");
     }
 }
