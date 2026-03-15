@@ -460,10 +460,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     var rng = gid.x * 2654435761u + u.frame * 7919u + 12345u;
 
-    // Read persistent point state (survives across frames/genome changes)
-    let state_idx = gid.x * 3u;
-    var p = vec2(point_state[state_idx], point_state[state_idx + 1u]);
-    var color_idx = point_state[state_idx + 2u];
+    // Read persistent point state: 7 floats (x, y, z, prev_x, prev_y, prev_z, color_idx)
+    let state_idx = gid.x * 7u;
+    var p = vec3(point_state[state_idx], point_state[state_idx + 1u], point_state[state_idx + 2u]);
+    var prev_p3 = vec3(point_state[state_idx + 3u], point_state[state_idx + 4u], point_state[state_idx + 5u]);
+    var color_idx = point_state[state_idx + 6u];
 
     // Re-randomize if: first frame (all zeros), escaped, NaN, or periodic refresh
     // 5% of threads re-randomize each frame to maintain fresh attractor coverage
@@ -473,7 +474,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                    || p.x != p.x || p.y != p.y  // NaN check
                    || refresh;
     if (needs_init) {
-        p = vec2(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0);
+        p = vec3(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0, 0.0);
+        prev_p3 = p;
         color_idx = randf(&rng);
     }
 
@@ -488,7 +490,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (total_weight < 1e-6) { return; }
 
     let max_iters = max(u.has_final_xform >> 16u, 10u);  // unpack iteration count
-    var prev_p = p;
+    var prev_p = p.xy;
 
     for (var i = 0u; i < max_iters; i++) {
         // Weighted random transform selection
@@ -503,8 +505,18 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             }
         }
 
-        prev_p = p;
-        p = apply_xform(p, tidx, t, &rng);
+        prev_p = p.xy;
+        prev_p3 = p;
+        // Apply 2D variations (z passes through via affine z-row identity)
+        let p2d = apply_xform(p.xy, tidx, t, &rng);
+        // Apply z-component through the full 3x3 affine
+        let m20 = xf(tidx, 7u);   // z-row of affine
+        let m21 = xf(tidx, 8u);
+        let m22 = xf(tidx, 9u);
+        let oz  = xf(tidx, 12u);  // offset_z
+        let new_z = m20 * p.x + m21 * p.y + m22 * p.z + oz;
+        p = vec3(p2d.x, p2d.y, new_z);
+
         let cb = u.extra2.w;  // color_blend from weights
         // Blend toward transform color, but add position-based variation
         // so points at different positions get slightly different palette lookups
@@ -513,15 +525,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         if (i < u32(u.extra3.z)) { continue; }
 
-        // Velocity in screen space (for directional blur)
-        let vel = (p - prev_p) / zoom;
+        // 3D velocity for motion blur (project to 2D screen space)
+        let vel = (p.xy - prev_p) / zoom;
 
         // Final transform (if present)
-        var plot_p = p;
+        var plot_p = p.xy;
+        var plot_z = p.z;
         var plot_color = color_idx;
         if ((u.has_final_xform & 1u) == 1u) {
             let final_idx = u.transform_count;  // final xform is right after regular xforms
             plot_p = apply_xform(plot_p, final_idx, t, &rng);
+            // Apply z-component through final xform affine
+            let fm20 = xf(final_idx, 7u);
+            let fm21 = xf(final_idx, 8u);
+            let fm22 = xf(final_idx, 9u);
+            let foz  = xf(final_idx, 12u);
+            plot_z = fm20 * p.x + fm21 * p.y + fm22 * p.z + foz;
             plot_color = plot_color * 0.5 + xf(final_idx, 13u) * 0.5;  // blend with final xform's color
         }
 
@@ -566,7 +585,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let px_x = i32(screen.x);
             let px_y = i32(screen.y);
 
-            let point_depth = length(sym_p);
+            let point_depth = plot_z;  // use actual z-depth from 3D affine
 
             if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
                 let frac_x = screen.x - f32(px_x);
@@ -590,8 +609,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
     }
 
-    // Write back persistent point state for next frame
+    // Write back persistent point state for next frame (7 floats)
     point_state[state_idx] = p.x;
     point_state[state_idx + 1u] = p.y;
-    point_state[state_idx + 2u] = color_idx;
+    point_state[state_idx + 2u] = p.z;
+    point_state[state_idx + 3u] = prev_p3.x;
+    point_state[state_idx + 4u] = prev_p3.y;
+    point_state[state_idx + 5u] = prev_p3.z;
+    point_state[state_idx + 6u] = color_idx;
 }

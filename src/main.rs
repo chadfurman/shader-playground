@@ -191,12 +191,12 @@ impl Gpu {
             ..Default::default()
         });
 
-        // Persistent point state: 3 f32s per thread (x, y, color_idx)
+        // Persistent point state: 7 f32s per thread (x, y, z, prev_x, prev_y, prev_z, color_idx)
         // Max 8192 workgroups * 256 threads = 2M threads
         let max_threads: u64 = 8192 * 256;
         let point_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("point_state"),
-            size: max_threads * 12, // 3 f32s * 4 bytes
+            size: max_threads * 28, // 7 f32s * 4 bytes
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
