@@ -1,4 +1,7 @@
 use std::collections::VecDeque;
+use std::path::Path;
+
+use serde::{Deserialize, Serialize};
 
 use crate::genome::FlameGenome;
 use crate::weights::RuntimeConfig;
@@ -344,6 +347,8 @@ pub struct TasteEngine {
     model: Option<TasteModel>,
     /// Transform-level taste model (None if not enough data)
     transform_model: Option<TasteModel>,
+    /// IGMM model for multi-style taste learning
+    igmm: IgmmModel,
     /// Recent palette features for diversity nudge
     recent_palettes: VecDeque<PaletteFeatures>,
     /// All feature vectors from good genomes (for rebuilding model)
@@ -359,6 +364,7 @@ impl TasteEngine {
         Self {
             model: None,
             transform_model: None,
+            igmm: IgmmModel::new(),
             recent_palettes: VecDeque::new(),
             good_features: Vec::new(),
             config,
@@ -379,9 +385,14 @@ impl TasteEngine {
         Some(features_vec)
     }
 
-    /// Rebuild the model from all voted/imported genomes.
-    /// Call this on startup and whenever votes change.
-    pub fn rebuild(&mut self, good_genomes: &[&FlameGenome], recent_memory: usize) {
+    /// Rebuild with an explicit IGMM save path.
+    /// Tries loading from disk first; if missing, bootstraps from genomes.
+    pub fn rebuild_with_igmm_path(
+        &mut self,
+        good_genomes: &[&FlameGenome],
+        recent_memory: usize,
+        igmm_path: Option<&Path>,
+    ) {
         self.good_features.clear();
         let mut transform_features: Vec<Vec<f32>> = Vec::new();
 
@@ -396,6 +407,29 @@ impl TasteEngine {
 
         self.model = TasteModel::build(&self.good_features);
         self.transform_model = TasteModel::build(&transform_features);
+
+        // IGMM: try loading from disk, fall back to cold-start bootstrap
+        let loaded = igmm_path.and_then(|p| IgmmModel::load(p).ok());
+        if let Some(model) = loaded {
+            self.igmm = model;
+            eprintln!(
+                "[taste] IGMM loaded from disk: {} clusters",
+                self.igmm.clusters.len()
+            );
+        } else {
+            // Cold-start: feed all good features through on_upvote
+            self.igmm = IgmmModel::new();
+            for features in &self.good_features {
+                self.igmm.on_upvote(features, &self.config);
+            }
+            if !self.igmm.clusters.is_empty() {
+                eprintln!(
+                    "[taste] IGMM cold-start: {} clusters from {} genomes",
+                    self.igmm.clusters.len(),
+                    self.good_features.len()
+                );
+            }
+        }
 
         // Trim recent palette memory
         while self.recent_palettes.len() > recent_memory {
@@ -415,6 +449,29 @@ impl TasteEngine {
                 tm.sample_count,
                 tm.feature_means.len()
             );
+        }
+    }
+
+    /// Handle an upvote: extract features, update IGMM, save model.
+    pub fn on_upvote(&mut self, genome: &FlameGenome, save_path: Option<&Path>) {
+        if let Some(features) = self.extract_full_features(genome) {
+            self.igmm.on_upvote(&features, &self.config);
+            if let Some(path) = save_path
+                && let Err(e) = self.igmm.save(path)
+            {
+                eprintln!("[taste] IGMM save error: {e}");
+            }
+        }
+    }
+
+    /// Score a genome using the IGMM model (lower = better).
+    /// Falls back to Gaussian centroid if IGMM has no clusters.
+    pub fn score_genome(&self, genome: &FlameGenome) -> Option<f32> {
+        let features = self.extract_full_features(genome)?;
+        if !self.igmm.clusters.is_empty() {
+            Some(self.igmm.score(&features))
+        } else {
+            self.model.as_ref().map(|m| m.score(&features))
         }
     }
 
@@ -761,6 +818,136 @@ pub fn proxy_render(genome: &FlameGenome, cfg: &RuntimeConfig) -> [[bool; PROXY_
     }
 
     grid
+}
+
+// ── IGMM Taste Model ──
+
+/// A single cluster in the Incremental Gaussian Mixture Model.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TasteCluster {
+    pub mean: Vec<f32>,
+    pub variance: Vec<f32>,
+    pub weight: f32,
+    pub sample_count: u32,
+}
+
+impl TasteCluster {
+    /// Create a new cluster from an initial feature vector.
+    pub fn new(features: &[f32]) -> Self {
+        Self {
+            mean: features.to_vec(),
+            variance: vec![1.0; features.len()],
+            weight: 1.0,
+            sample_count: 1,
+        }
+    }
+
+    /// Mahalanobis distance (diagonal covariance) from features to this cluster.
+    pub fn mahalanobis_distance(&self, features: &[f32]) -> f32 {
+        self.mean
+            .iter()
+            .zip(self.variance.iter())
+            .zip(features.iter())
+            .map(|((m, v), f)| {
+                let diff = f - m;
+                diff * diff / v.max(1e-6)
+            })
+            .sum::<f32>()
+            .sqrt()
+    }
+
+    /// Update cluster mean and variance via exponential moving average.
+    pub fn update(&mut self, features: &[f32], learning_rate: f32) {
+        self.sample_count += 1;
+        for (m, (v, f)) in self
+            .mean
+            .iter_mut()
+            .zip(self.variance.iter_mut().zip(features.iter()))
+        {
+            let diff = f - *m;
+            *m += learning_rate * diff;
+            *v += learning_rate * (diff * diff - *v);
+        }
+    }
+}
+
+/// Incremental Gaussian Mixture Model for taste scoring.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IgmmModel {
+    pub clusters: Vec<TasteCluster>,
+}
+
+impl IgmmModel {
+    pub fn new() -> Self {
+        Self {
+            clusters: Vec::new(),
+        }
+    }
+
+    /// Process an upvoted genome's features.
+    /// Finds closest cluster and merges, or spawns a new one.
+    pub fn on_upvote(&mut self, features: &[f32], cfg: &RuntimeConfig) {
+        if self.clusters.is_empty() {
+            self.clusters.push(TasteCluster::new(features));
+            return;
+        }
+
+        // Find closest cluster
+        let (closest_idx, closest_dist) = self
+            .clusters
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (i, c.mahalanobis_distance(features)))
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap();
+
+        if closest_dist < cfg.igmm_activation_threshold {
+            // Merge into existing cluster
+            self.clusters[closest_idx].update(features, cfg.igmm_learning_rate);
+            self.clusters[closest_idx].weight += 1.0;
+        } else if (self.clusters.len() as u32) < cfg.igmm_max_clusters {
+            // Spawn new cluster
+            self.clusters.push(TasteCluster::new(features));
+        } else {
+            // At max clusters: merge into closest anyway
+            self.clusters[closest_idx].update(features, cfg.igmm_learning_rate);
+            self.clusters[closest_idx].weight += 1.0;
+        }
+
+        // Decay all cluster weights
+        for cluster in &mut self.clusters {
+            cluster.weight *= cfg.igmm_decay_rate;
+        }
+
+        // Prune clusters below minimum weight
+        self.clusters.retain(|c| c.weight >= cfg.igmm_min_weight);
+    }
+
+    /// Score features against the IGMM model.
+    /// Returns minimum Mahalanobis distance across all clusters (lower = better).
+    pub fn score(&self, features: &[f32]) -> f32 {
+        if self.clusters.is_empty() {
+            return f32::MAX;
+        }
+        self.clusters
+            .iter()
+            .map(|c| c.mahalanobis_distance(features))
+            .fold(f32::MAX, f32::min)
+    }
+
+    /// Save IGMM model to a JSON file.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let json =
+            serde_json::to_string_pretty(self).map_err(|e| format!("serialize igmm: {e}"))?;
+        std::fs::write(path, json).map_err(|e| format!("write igmm: {e}"))?;
+        Ok(())
+    }
+
+    /// Load IGMM model from a JSON file.
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let json = std::fs::read_to_string(path).map_err(|e| format!("read igmm: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| format!("parse igmm: {e}"))
+    }
 }
 
 /// Extract palette features from a raw palette (no genome wrapper needed).
@@ -1260,7 +1447,7 @@ mod tests {
             generation: 0,
         };
 
-        engine.rebuild(&[&genome], 10);
+        engine.rebuild_with_igmm_path(&[&genome], 10, None);
 
         let score = engine.score_transform(&genome.transforms[0], 1);
         assert!(score.is_some(), "should have a score after rebuild");
@@ -1486,5 +1673,99 @@ mod tests {
 
     fn default_test_config() -> crate::weights::RuntimeConfig {
         serde_json::from_str("{}").unwrap()
+    }
+
+    // --- TasteCluster tests ---
+
+    #[test]
+    fn taste_cluster_from_features() {
+        let features = vec![1.0, 2.0, 3.0];
+        let cluster = TasteCluster::new(&features);
+        assert_eq!(cluster.mean, vec![1.0, 2.0, 3.0]);
+        assert_eq!(cluster.sample_count, 1);
+        assert!(approx_eq(cluster.weight, 1.0));
+        // Distance from own mean should be 0
+        let dist = cluster.mahalanobis_distance(&features);
+        assert!(approx_eq(dist, 0.0), "dist was {dist}");
+    }
+
+    // --- IGMM tests ---
+
+    #[test]
+    fn igmm_update_merges_nearby_vote() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        let f1 = vec![1.0, 2.0, 3.0];
+        let f2 = vec![1.1, 2.1, 3.1]; // very close to f1
+        model.on_upvote(&f1, &cfg);
+        model.on_upvote(&f2, &cfg);
+        assert_eq!(
+            model.clusters.len(),
+            1,
+            "close features should merge into 1 cluster, got {}",
+            model.clusters.len()
+        );
+    }
+
+    #[test]
+    fn igmm_spawns_new_cluster_for_distant_vote() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        let f1 = vec![0.0, 0.0, 0.0];
+        let f2 = vec![100.0, 100.0, 100.0]; // very far from f1
+        model.on_upvote(&f1, &cfg);
+        model.on_upvote(&f2, &cfg);
+        assert_eq!(
+            model.clusters.len(),
+            2,
+            "distant features should spawn 2 clusters, got {}",
+            model.clusters.len()
+        );
+    }
+
+    #[test]
+    fn igmm_score_picks_closest_cluster() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        let f1 = vec![0.0, 0.0, 0.0];
+        let f2 = vec![100.0, 100.0, 100.0];
+        model.on_upvote(&f1, &cfg);
+        model.on_upvote(&f2, &cfg);
+
+        // Point near f1 should score lower than point far from both
+        let near_f1 = vec![0.1, 0.1, 0.1];
+        let far = vec![50.0, 50.0, 50.0];
+        let score_near = model.score(&near_f1);
+        let score_far = model.score(&far);
+        assert!(
+            score_near < score_far,
+            "near={score_near} should be < far={score_far}"
+        );
+    }
+
+    #[test]
+    fn igmm_persistence_roundtrip() {
+        let cfg = default_test_config();
+        let mut model = IgmmModel::new();
+        model.on_upvote(&vec![1.0, 2.0, 3.0], &cfg);
+        model.on_upvote(&vec![100.0, 200.0, 300.0], &cfg);
+
+        let dir = std::env::temp_dir().join("taste_igmm_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("test_igmm.json");
+        model.save(&path).expect("save should succeed");
+
+        let loaded = IgmmModel::load(&path).expect("load should succeed");
+        assert_eq!(model.clusters.len(), loaded.clusters.len());
+        for (orig, load) in model.clusters.iter().zip(loaded.clusters.iter()) {
+            assert_eq!(orig.mean.len(), load.mean.len());
+            for (a, b) in orig.mean.iter().zip(load.mean.iter()) {
+                assert!(approx_eq(*a, *b), "mean mismatch: {a} vs {b}");
+            }
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

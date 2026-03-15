@@ -224,6 +224,18 @@ pub struct RuntimeConfig {
     #[serde(default = "default_archive_on_startup")]
     pub archive_on_startup: bool,
 
+    // Taste engine
+    #[serde(default = "default_igmm_activation_threshold")]
+    pub igmm_activation_threshold: f32,
+    #[serde(default = "default_igmm_decay_rate")]
+    pub igmm_decay_rate: f32,
+    #[serde(default = "default_igmm_min_weight")]
+    pub igmm_min_weight: f32,
+    #[serde(default = "default_igmm_max_clusters")]
+    pub igmm_max_clusters: u32,
+    #[serde(default = "default_igmm_learning_rate")]
+    pub igmm_learning_rate: f32,
+
     // Proxy render (CPU chaos game for perceptual features)
     #[serde(default = "default_proxy_render_grid_size")]
     pub proxy_render_grid_size: u32,
@@ -392,6 +404,21 @@ fn default_archive_threshold_mb() -> u64 {
 }
 fn default_archive_on_startup() -> bool {
     true
+}
+fn default_igmm_activation_threshold() -> f32 {
+    2.0
+}
+fn default_igmm_decay_rate() -> f32 {
+    0.95
+}
+fn default_igmm_min_weight() -> f32 {
+    0.1
+}
+fn default_igmm_max_clusters() -> u32 {
+    8
+}
+fn default_igmm_learning_rate() -> f32 {
+    0.1
 }
 fn default_proxy_render_grid_size() -> u32 {
     64

@@ -1537,7 +1537,9 @@ impl App {
         let refs: Vec<&FlameGenome> = good_genomes.iter().collect();
         let recent_memory = self.weights._config.taste_recent_memory;
         self.taste_engine.set_config(&self.weights._config);
-        self.taste_engine.rebuild(&refs, recent_memory);
+        let igmm_path = genomes_dir.join("taste_model.json");
+        self.taste_engine
+            .rebuild_with_igmm_path(&refs, recent_memory, Some(&igmm_path));
 
         if self
             .taste_engine
@@ -1923,10 +1925,17 @@ impl ApplicationHandler for App {
                     }
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
-                    eprintln!(
-                        "[evolve] → {} (gen {})",
-                        self.genome.name, self.genome.generation
-                    );
+                    if let Some(taste_score) = self.taste_engine.score_genome(&self.genome) {
+                        eprintln!(
+                            "[evolve] → {} (gen {}, taste={:.2})",
+                            self.genome.name, self.genome.generation, taste_score
+                        );
+                    } else {
+                        eprintln!(
+                            "[evolve] → {} (gen {})",
+                            self.genome.name, self.genome.generation
+                        );
+                    }
                 }
                 Key::Named(NamedKey::Backspace) => {
                     if let Some(prev) = self.genome_history.pop() {
@@ -1939,6 +1948,8 @@ impl ApplicationHandler for App {
                     let dir = project_dir().join("genomes");
                     let score = self.vote_ledger.vote(&self.genome, 1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
+                    let igmm_path = dir.join("taste_model.json");
+                    self.taste_engine.on_upvote(&self.genome, Some(&igmm_path));
                     self.rebuild_taste_model();
                     eprintln!("[vote] {} → +1 (score: {})", self.genome.name, score);
                 }
