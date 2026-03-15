@@ -1521,22 +1521,58 @@ fn smoothstep(t: f32) -> f32 {
 impl App {
     fn new() -> Self {
         // Try loading a flame file first, then fall back to seeds, then default
+        let t = Instant::now();
         let weights = load_weights();
+        eprintln!(
+            "[boot] weights loaded ({:.0}ms)",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
+
+        let t = Instant::now();
         let favorite_profile = Self::scan_favorite_profile();
+        eprintln!(
+            "[boot] favorite profile scanned ({:.0}ms)",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
+
         let genomes_root = project_dir().join("genomes");
         // Ensure genome subdirectories exist
         let _ = std::fs::create_dir_all(genomes_root.join("voted"));
         let _ = std::fs::create_dir_all(genomes_root.join("history"));
         if weights._config.archive_on_startup {
+            let t = Instant::now();
             archive_history_if_needed(&genomes_root, weights._config.archive_threshold_mb);
+            eprintln!(
+                "[boot] archive check ({:.0}ms)",
+                t.elapsed().as_secs_f64() * 1000.0
+            );
         }
+
+        let t = Instant::now();
         let vote_ledger = VoteLedger::load(&genomes_root);
+        eprintln!(
+            "[boot] vote ledger loaded ({:.0}ms)",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
+
+        let t = Instant::now();
         let lineage_cache = crate::votes::LineageCache::load(&genomes_root);
+        eprintln!(
+            "[boot] lineage cache built ({:.0}ms)",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
+
+        let t = Instant::now();
         let flames_dir = project_dir().join("genomes").join("flames");
         let seeds_dir = project_dir().join("genomes").join("seeds");
         let genome = crate::flam3::load_random_flame(&flames_dir)
             .or_else(|_| FlameGenome::load_random(&seeds_dir))
             .unwrap_or_else(|_| FlameGenome::default_genome());
+        eprintln!(
+            "[boot] genome loaded: {} ({:.0}ms)",
+            genome.name,
+            t.elapsed().as_secs_f64() * 1000.0
+        );
         let initial_globals = genome.flatten_globals(&weights._config);
         let initial_xf = genome.flatten_transforms();
         let num_transforms = genome.total_buffer_transforms();
@@ -1913,7 +1949,12 @@ impl ApplicationHandler for App {
             let _: () = unsafe { msg_send![process_info, setProcessName: &*name] };
         }
 
+        let t = Instant::now();
         self.gpu = Some(Gpu::create(window.clone()));
+        eprintln!(
+            "[boot] GPU initialized ({:.0}ms)",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
         self.window = Some(window);
 
         // Watch all shader files + params
@@ -1960,8 +2001,17 @@ impl ApplicationHandler for App {
         }
 
         // Build initial taste model from voted/imported genomes
+        let t = Instant::now();
         self.rebuild_taste_model();
+        eprintln!(
+            "[boot] taste model rebuilt ({:.0}ms)",
+            t.elapsed().as_secs_f64() * 1000.0
+        );
 
+        eprintln!(
+            "[boot] total startup: {:.0}ms",
+            self.start.elapsed().as_secs_f64() * 1000.0
+        );
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
     }
 
