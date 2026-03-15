@@ -160,10 +160,16 @@ pub struct RuntimeConfig {
     pub trail: f32,
     #[serde(default = "default_accumulation_decay")]
     pub accumulation_decay: f32,
+    #[serde(default = "default_accumulation_cap")]
+    pub accumulation_cap: f32,
     #[serde(default = "default_jacobian_weight_strength")]
     pub jacobian_weight_strength: f32,
     #[serde(default = "default_min_genome_fps")]
     pub min_genome_fps: f32,
+    #[serde(default = "default_perf_good_fps")]
+    pub perf_good_fps: f32,
+    #[serde(default = "default_perf_weight")]
+    pub perf_weight: f32,
     #[serde(default = "default_samples_per_frame")]
     pub samples_per_frame: u32,
     #[serde(default = "default_bloom_radius")]
@@ -359,11 +365,20 @@ fn default_trail() -> f32 {
 fn default_accumulation_decay() -> f32 {
     0.9
 }
+fn default_accumulation_cap() -> f32 {
+    10_000_000.0
+}
 fn default_jacobian_weight_strength() -> f32 {
     0.0
 }
 fn default_min_genome_fps() -> f32 {
     15.0
+}
+fn default_perf_good_fps() -> f32 {
+    30.0
+}
+fn default_perf_weight() -> f32 {
+    0.2
 }
 fn default_samples_per_frame() -> u32 {
     256

@@ -6,7 +6,7 @@
 struct AccumUniforms {
     resolution: vec2<f32>,
     decay: f32,
-    _pad: f32,
+    accumulation_cap: f32,
 }
 
 @group(0) @binding(0) var<storage, read> histogram: array<u32>;
@@ -37,9 +37,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let depth = f32(histogram[hist_idx + 6u]);
 
     // Exponential decay blend: accum = accum * decay + new_frame
-    // Cap at 1M to prevent unbounded growth on dense/high-symmetry fractals
     let decay = params.decay;
-    let cap = 1000000.0;
+    let cap = params.accumulation_cap;
     accumulation[accum_idx]      = min(accumulation[accum_idx]      * decay + density, cap);
     accumulation[accum_idx + 1u] = min(accumulation[accum_idx + 1u] * decay + r, cap);
     accumulation[accum_idx + 2u] = min(accumulation[accum_idx + 2u] * decay + g, cap);

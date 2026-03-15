@@ -376,12 +376,20 @@ impl TasteEngine {
         self.config = cfg.clone();
     }
 
-    /// Build a full feature vector from a genome (palette + composition + perceptual).
+    /// Build a rich feature vector from a genome.
+    /// Includes palette (17) + composition (5) + perceptual (3) + per-transform (6×8=48, padded)
+    /// + symmetry (1) = 74 dims total. More features = better for future PCA/selection.
     pub fn extract_full_features(&self, genome: &FlameGenome) -> Option<Vec<f32>> {
         let palette_feats = PaletteFeatures::extract(genome)?;
-        let mut features_vec = palette_feats.to_vec();
-        features_vec.extend(CompositionFeatures::extract(genome).to_vec());
-        features_vec.extend(PerceptualFeatures::from_genome(genome, &self.config).to_vec());
+        let mut features_vec = palette_feats.to_vec(); // 17
+        features_vec.extend(CompositionFeatures::extract(genome).to_vec()); // +5
+        features_vec.extend(PerceptualFeatures::from_genome(genome, &self.config).to_vec()); // +3
+        // Per-transform features, padded to 6 transforms
+        for xf in &genome.transforms {
+            features_vec.extend(TransformFeatures::extract(xf).to_vec()); // +8 each
+        }
+        features_vec.resize(25 + 6 * 8, 0.0); // pad to 73
+        features_vec.push(genome.symmetry.unsigned_abs() as f32); // +1 = 74
         Some(features_vec)
     }
 
@@ -410,7 +418,15 @@ impl TasteEngine {
 
         // IGMM: try loading from disk, fall back to cold-start bootstrap
         let loaded = igmm_path.and_then(|p| IgmmModel::load(p).ok());
-        if let Some(model) = loaded {
+        let expected_dims = self.good_features.first().map(|f| f.len());
+        let dims_match = loaded.as_ref().is_some_and(|m| {
+            m.clusters
+                .first()
+                .map(|c| c.mean.len())
+                .zip(expected_dims)
+                .is_none_or(|(a, b)| a == b)
+        });
+        if let Some(model) = loaded.filter(|_| dims_match) {
             self.igmm = model;
             eprintln!(
                 "[taste] IGMM loaded from disk: {} clusters",
@@ -484,6 +500,8 @@ impl TasteEngine {
         archive_features: &[&Vec<f32>],
         novelty_weight: f32,
         novelty_k: u32,
+        perf_model: Option<&PerfModel>,
+        perf_weight: f32,
     ) -> Option<f32> {
         let features = self.extract_full_features(genome)?;
         let taste = if !self.igmm.clusters.is_empty() {
@@ -492,7 +510,15 @@ impl TasteEngine {
             self.model.as_ref()?.score(&features)
         };
         let novelty = novelty_score(&features, archive_features, novelty_k);
-        Some(taste - novelty_weight * novelty)
+        // Perf score: positive = predicted slow (bad), negative = predicted fast (good)
+        let perf_penalty = perf_model
+            .filter(|pm| pm.is_active())
+            .map(|pm| {
+                let comp = CompositionFeatures::extract(genome).to_vec();
+                pm.score(&comp) * perf_weight
+            })
+            .unwrap_or(0.0);
+        Some(taste - novelty_weight * novelty + perf_penalty)
     }
 
     /// Score a transform against the transform taste model.
@@ -998,6 +1024,85 @@ fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
         .map(|(x, y)| (x - y) * (x - y))
         .sum::<f32>()
         .sqrt()
+}
+
+// ── Performance Model ──
+// Learns which genome features correlate with fast/slow rendering.
+// Uses composition features (5 dims: transform_count, variation_diversity,
+// mean_determinant, determinant_contrast, color_spread) as predictors.
+
+/// Simple two-centroid model: tracks "fast" and "slow" genome profiles.
+#[derive(Clone, Serialize, Deserialize, Default)]
+pub struct PerfModel {
+    fast_mean: Vec<f32>,
+    fast_count: u32,
+    slow_mean: Vec<f32>,
+    slow_count: u32,
+}
+
+impl PerfModel {
+    /// Record a genome that performed well (above good FPS threshold).
+    pub fn record_fast(&mut self, features: &[f32], learning_rate: f32) {
+        if self.fast_mean.is_empty() {
+            self.fast_mean = features.to_vec();
+            self.fast_count = 1;
+        } else {
+            for (m, &f) in self.fast_mean.iter_mut().zip(features) {
+                *m += learning_rate * (f - *m);
+            }
+            self.fast_count += 1;
+        }
+    }
+
+    /// Record a genome that performed poorly (perf-skipped).
+    pub fn record_slow(&mut self, features: &[f32], learning_rate: f32) {
+        if self.slow_mean.is_empty() {
+            self.slow_mean = features.to_vec();
+            self.slow_count = 1;
+        } else {
+            for (m, &f) in self.slow_mean.iter_mut().zip(features) {
+                *m += learning_rate * (f - *m);
+            }
+            self.slow_count += 1;
+        }
+    }
+
+    /// Score a genome's predicted performance. Lower = predicted faster.
+    /// Returns 0.0 if no data yet.
+    pub fn score(&self, features: &[f32]) -> f32 {
+        let has_fast = self.fast_count >= 3;
+        let has_slow = self.slow_count >= 3;
+        if !has_fast && !has_slow {
+            return 0.0;
+        }
+        let dist_fast = if has_fast {
+            euclidean_distance(features, &self.fast_mean)
+        } else {
+            0.0
+        };
+        let dist_slow = if has_slow {
+            euclidean_distance(features, &self.slow_mean)
+        } else {
+            f32::MAX
+        };
+        // Positive = closer to slow (bad), negative = closer to fast (good)
+        dist_fast - dist_slow
+    }
+
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)
+    }
+
+    pub fn load(path: &std::path::Path) -> Option<Self> {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.fast_count >= 3 || self.slow_count >= 3
+    }
 }
 
 /// Extract palette features from a raw palette (no genome wrapper needed).

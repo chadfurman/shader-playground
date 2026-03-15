@@ -1509,6 +1509,7 @@ struct App {
     vote_ledger: VoteLedger,
     lineage_cache: crate::votes::LineageCache,
     taste_engine: crate::taste::TasteEngine,
+    perf_model: crate::taste::PerfModel,
     archive: crate::archive::MapElitesArchive,
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
@@ -1617,6 +1618,10 @@ impl App {
             vote_ledger,
             lineage_cache,
             taste_engine: crate::taste::TasteEngine::new(),
+            perf_model: crate::taste::PerfModel::load(
+                &project_dir().join("genomes").join("perf_model.json"),
+            )
+            .unwrap_or_default(),
             archive: {
                 let archive_path = genomes_root.join("archive.json");
                 crate::archive::MapElitesArchive::load(&archive_path)
@@ -1759,6 +1764,8 @@ impl App {
                 &archive_features,
                 cfg.novelty_weight,
                 cfg.novelty_k_neighbors,
+                Some(&self.perf_model),
+                cfg.perf_weight,
             )
             .unwrap_or(f32::MAX);
         let features = self
@@ -2705,7 +2712,7 @@ impl ApplicationHandler for App {
                     gpu.config.width as f32,
                     gpu.config.height as f32,
                     decay,
-                    0.0,
+                    self.weights._config.accumulation_cap,
                 ];
                 gpu.queue.write_buffer(
                     &gpu.accumulation_uniform_buffer,
@@ -2741,9 +2748,26 @@ impl ApplicationHandler for App {
                 if genome_elapsed > 3.0 && self.genome_frame_count > 30 {
                     let genome_fps = self.genome_frame_count as f32 / genome_elapsed;
                     let min_fps = self.weights._config.min_genome_fps;
-                    if min_fps > 0.0 && genome_fps < min_fps && !self.flame_locked {
+                    let good_fps = self.weights._config.perf_good_fps;
+
+                    // Feed performance model
+                    // Rich feature vector for perf model — throw everything in,
+                    // dimensionality reduction can sort it out later
+                    let comp = crate::taste::CompositionFeatures::extract(&self.genome);
+                    let mut perf_features = comp.to_vec(); // 5 dims
+                    // Add per-transform features (up to 6 transforms × 8 features = 48 dims)
+                    for xf in &self.genome.transforms {
+                        let tf = crate::taste::TransformFeatures::extract(xf);
+                        perf_features.extend(tf.to_vec());
+                    }
+                    // Pad to fixed length so model doesn't choke on varying transform counts
+                    perf_features.resize(5 + 6 * 8, 0.0); // 53 dims
+                    // Add symmetry as a raw feature
+                    perf_features.push(self.genome.symmetry.unsigned_abs() as f32);
+                    if genome_fps < min_fps && !self.flame_locked {
+                        self.perf_model.record_slow(&perf_features, 0.1);
                         eprintln!(
-                            "[perf-skip] {} avg {genome_fps:.1}fps < {min_fps}fps threshold \
+                            "[perf-skip] {} avg {genome_fps:.1}fps < {min_fps}fps \
                              (xf={}, sym={}, frames={})",
                             self.genome.name,
                             self.genome.transform_count(),
@@ -2751,6 +2775,15 @@ impl ApplicationHandler for App {
                             self.genome_frame_count,
                         );
                         perf_skip = true;
+                    } else if genome_fps >= good_fps {
+                        self.perf_model.record_fast(&perf_features, 0.1);
+                    }
+
+                    // Save perf model periodically (every 10 samples)
+                    if self.perf_model.is_active() && self.genome_frame_count.is_multiple_of(600) {
+                        let _ = self
+                            .perf_model
+                            .save(&project_dir().join("genomes").join("perf_model.json"));
                     }
                 }
 
