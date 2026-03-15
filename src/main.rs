@@ -1639,6 +1639,33 @@ impl App {
         }
     }
 
+    /// If mid-morph, snapshot the interpolated state as a new genome. Otherwise return current.
+    fn morph_snapshot_or_current(&self) -> FlameGenome {
+        if self.morph_progress >= 1.0 {
+            return self.genome.clone();
+        }
+        let mut snapshot = self.genome.clone();
+        snapshot.name = format!(
+            "captured-{}",
+            rand::Rng::random_range(&mut rand::rng(), 1000u32..9999)
+        );
+        let xf_data = &self.morph_base_xf;
+        for (i, xf) in snapshot.transforms.iter_mut().enumerate() {
+            let base = i * 42;
+            if base + 7 < xf_data.len() {
+                xf.weight = xf_data[base];
+                xf.a = xf_data[base + 1];
+                xf.b = xf_data[base + 2];
+                xf.c = xf_data[base + 3];
+                xf.d = xf_data[base + 4];
+                xf.offset[0] = xf_data[base + 5];
+                xf.offset[1] = xf_data[base + 6];
+                xf.color = xf_data[base + 7];
+            }
+        }
+        snapshot
+    }
+
     /// Rebuild the taste engine model from all positively-voted + imported genomes.
     fn rebuild_taste_model(&mut self) {
         let genomes_dir = project_dir().join("genomes");
@@ -2097,26 +2124,56 @@ impl ApplicationHandler for App {
                 }
                 Key::Named(NamedKey::ArrowUp) => {
                     let dir = project_dir().join("genomes");
-                    let score = self.vote_ledger.vote(&self.genome, 1, &dir);
+                    let vote_genome = self.morph_snapshot_or_current();
+                    let score = self.vote_ledger.vote(&vote_genome, 1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
                     self.rebuild_taste_model();
-                    eprintln!("[vote] {} → +1 (score: {})", self.genome.name, score);
+                    if vote_genome.name != self.genome.name {
+                        eprintln!(
+                            "[vote] captured morph {:.0}% → {} +1 (score: {})",
+                            self.morph_progress * 100.0,
+                            vote_genome.name,
+                            score
+                        );
+                    } else {
+                        eprintln!("[vote] {} → +1 (score: {})", self.genome.name, score);
+                    }
                 }
                 Key::Named(NamedKey::ArrowDown) => {
                     let dir = project_dir().join("genomes");
-                    let score = self.vote_ledger.vote(&self.genome, -1, &dir);
+                    let vote_genome = self.morph_snapshot_or_current();
+                    let score = self.vote_ledger.vote(&vote_genome, -1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
                     self.rebuild_taste_model();
-                    eprintln!("[vote] {} → -1 (score: {})", self.genome.name, score);
+                    if vote_genome.name != self.genome.name {
+                        eprintln!(
+                            "[vote] captured morph {:.0}% → {} -1 (score: {})",
+                            self.morph_progress * 100.0,
+                            vote_genome.name,
+                            score
+                        );
+                    } else {
+                        eprintln!("[vote] {} → -1 (score: {})", self.genome.name, score);
+                    }
                 }
                 Key::Character(ref c) => match c.as_str() {
                     "s" => {
+                        let save_genome = self.morph_snapshot_or_current();
                         let dir = project_dir().join("genomes");
-                        match self.genome.save(&dir) {
-                            Ok(p) => eprintln!("[save] {}", p.display()),
+                        match save_genome.save(&dir) {
+                            Ok(p) => {
+                                if save_genome.name != self.genome.name {
+                                    eprintln!(
+                                        "[save] morph snapshot at {:.0}% → {}",
+                                        self.morph_progress * 100.0,
+                                        p.display()
+                                    );
+                                } else {
+                                    eprintln!("[save] {}", p.display());
+                                }
+                            }
                             Err(e) => eprintln!("[save] error: {e}"),
                         }
-                        // Refresh favorite profile after saving
                         self.favorite_profile = Self::scan_favorite_profile();
                         self.last_profile_scan = self.start.elapsed().as_secs_f32();
                     }
