@@ -162,6 +162,8 @@ pub struct RuntimeConfig {
     pub accumulation_decay: f32,
     #[serde(default = "default_accumulation_cap")]
     pub accumulation_cap: f32,
+    #[serde(default = "default_morph_burst_decay")]
+    pub morph_burst_decay: f32,
     #[serde(default = "default_jacobian_weight_strength")]
     pub jacobian_weight_strength: f32,
     #[serde(default = "default_min_genome_fps")]
@@ -367,6 +369,9 @@ fn default_accumulation_decay() -> f32 {
 }
 fn default_accumulation_cap() -> f32 {
     10_000_000.0
+}
+fn default_morph_burst_decay() -> f32 {
+    0.85 // gentler than the old 0.7 — lets the old image persist during transition
 }
 fn default_jacobian_weight_strength() -> f32 {
     0.0

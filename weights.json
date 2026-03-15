@@ -184,7 +184,8 @@
     "window_width": 640,
     "window_height": 480,
     "jacobian_weight_strength": 0.1,
-    "min_genome_fps": 9.0
+    "min_genome_fps": 9.0,
+    "morph_burst_decay": 0.7
   },
   "bass": {
     "color_shift": -0.01,

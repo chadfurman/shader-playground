@@ -2701,10 +2701,11 @@ impl ApplicationHandler for App {
 
                 // Write accumulation uniforms — faster decay during morph transition
                 let base_decay = self.weights._config.accumulation_decay;
+                let morph_burst_decay = self.weights._config.morph_burst_decay;
                 let decay = if self.morph_burst_frames > 0 {
-                    // Lerp from fast decay (0.7) back to normal (0.95) over burst period
+                    // Gentle ramp from burst decay back to normal over burst period
                     let burst_t = self.morph_burst_frames as f32 / 60.0;
-                    0.95 + (0.7 - 0.95) * burst_t
+                    base_decay + (morph_burst_decay - base_decay) * burst_t
                 } else {
                     base_decay
                 };
