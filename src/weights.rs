@@ -224,6 +224,12 @@ pub struct RuntimeConfig {
     #[serde(default = "default_archive_on_startup")]
     pub archive_on_startup: bool,
 
+    // Interpolative crossover
+    #[serde(default = "default_interpolation_range_lo")]
+    pub interpolation_range_lo: f32,
+    #[serde(default = "default_interpolation_range_hi")]
+    pub interpolation_range_hi: f32,
+
     // Taste engine
     #[serde(default = "default_igmm_activation_threshold")]
     pub igmm_activation_threshold: f32,
@@ -404,6 +410,12 @@ fn default_archive_threshold_mb() -> u64 {
 }
 fn default_archive_on_startup() -> bool {
     true
+}
+fn default_interpolation_range_lo() -> f32 {
+    0.3
+}
+fn default_interpolation_range_hi() -> f32 {
+    0.7
 }
 fn default_igmm_activation_threshold() -> f32 {
     2.0
