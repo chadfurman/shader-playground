@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use crate::genome::FlameGenome;
+use crate::weights::RuntimeConfig;
 
 /// Number of hue histogram bins (one per 30 degrees of hue wheel).
 const HUE_BINS: usize = 12;
@@ -347,16 +348,35 @@ pub struct TasteEngine {
     recent_palettes: VecDeque<PaletteFeatures>,
     /// All feature vectors from good genomes (for rebuilding model)
     good_features: Vec<Vec<f32>>,
+    /// Config for proxy render parameters
+    config: RuntimeConfig,
 }
 
 impl TasteEngine {
     pub fn new() -> Self {
+        // Use serde defaults (not derive Default which zeros everything)
+        let config: RuntimeConfig = serde_json::from_str("{}").unwrap_or_default();
         Self {
             model: None,
             transform_model: None,
             recent_palettes: VecDeque::new(),
             good_features: Vec::new(),
+            config,
         }
+    }
+
+    /// Update the runtime config (called when weights are reloaded).
+    pub fn set_config(&mut self, cfg: &RuntimeConfig) {
+        self.config = cfg.clone();
+    }
+
+    /// Build a full feature vector from a genome (palette + composition + perceptual).
+    pub fn extract_full_features(&self, genome: &FlameGenome) -> Option<Vec<f32>> {
+        let palette_feats = PaletteFeatures::extract(genome)?;
+        let mut features_vec = palette_feats.to_vec();
+        features_vec.extend(CompositionFeatures::extract(genome).to_vec());
+        features_vec.extend(PerceptualFeatures::from_genome(genome, &self.config).to_vec());
+        Some(features_vec)
     }
 
     /// Rebuild the model from all voted/imported genomes.
@@ -366,10 +386,7 @@ impl TasteEngine {
         let mut transform_features: Vec<Vec<f32>> = Vec::new();
 
         for genome in good_genomes {
-            if let Some(palette_feats) = PaletteFeatures::extract(genome) {
-                let mut features_vec = palette_feats.to_vec();
-                let comp = CompositionFeatures::extract(genome);
-                features_vec.extend(comp.to_vec());
+            if let Some(features_vec) = self.extract_full_features(genome) {
                 self.good_features.push(features_vec);
             }
             for xf in &genome.transforms {
@@ -538,6 +555,212 @@ impl TasteEngine {
     pub fn sample_count(&self) -> u32 {
         self.model.as_ref().map_or(0, |m| m.sample_count)
     }
+}
+
+// ── Perceptual Features ──
+
+/// Grid size for proxy render (always 64x64 for box counting).
+const PROXY_GRID: usize = 64;
+
+/// Number of perceptual features.
+pub const PERCEPTUAL_FEATURE_COUNT: usize = 3;
+
+/// Perceptual features extracted from a CPU proxy render of a genome.
+#[derive(Clone, Debug)]
+pub struct PerceptualFeatures {
+    pub fractal_dimension: f32,
+    pub spatial_entropy: f32,
+    pub coverage_ratio: f32,
+}
+
+impl PerceptualFeatures {
+    /// Extract perceptual features from a genome using a CPU proxy render.
+    pub fn from_genome(genome: &FlameGenome, cfg: &RuntimeConfig) -> Self {
+        let grid = proxy_render(genome, cfg);
+        Self {
+            fractal_dimension: box_counting_fd(&grid),
+            spatial_entropy: spatial_entropy(&grid, cfg.spatial_entropy_blocks as usize),
+            coverage_ratio: coverage_ratio(&grid),
+        }
+    }
+
+    /// Convert to flat f32 vector.
+    pub fn to_vec(&self) -> Vec<f32> {
+        let v = vec![
+            self.fractal_dimension,
+            self.spatial_entropy,
+            self.coverage_ratio,
+        ];
+        debug_assert_eq!(v.len(), PERCEPTUAL_FEATURE_COUNT);
+        v
+    }
+}
+
+/// Compute the linear regression slope of y vs x.
+/// Returns 0.0 if fewer than 2 points.
+fn linear_regression_slope(xs: &[f32], ys: &[f32]) -> f32 {
+    let n = xs.len().min(ys.len());
+    if n < 2 {
+        return 0.0;
+    }
+    let n_f = n as f32;
+    let sum_x: f32 = xs[..n].iter().sum();
+    let sum_y: f32 = ys[..n].iter().sum();
+    let sum_xy: f32 = xs[..n].iter().zip(ys[..n].iter()).map(|(x, y)| x * y).sum();
+    let sum_xx: f32 = xs[..n].iter().map(|x| x * x).sum();
+    let denom = n_f * sum_xx - sum_x * sum_x;
+    if denom.abs() < 1e-12 {
+        return 0.0;
+    }
+    (n_f * sum_xy - sum_x * sum_y) / denom
+}
+
+/// Box-counting fractal dimension estimate.
+/// Uses box sizes [2, 4, 8, 16, 32] on a 64x64 boolean grid.
+/// Returns slope of log(count) vs log(1/size).
+pub fn box_counting_fd(grid: &[[bool; PROXY_GRID]; PROXY_GRID]) -> f32 {
+    let box_sizes: [usize; 5] = [2, 4, 8, 16, 32];
+    let mut log_inv_sizes = Vec::with_capacity(box_sizes.len());
+    let mut log_counts = Vec::with_capacity(box_sizes.len());
+
+    for &size in &box_sizes {
+        let mut count = 0u32;
+        let blocks = PROXY_GRID / size;
+        for by in 0..blocks {
+            for bx in 0..blocks {
+                let mut has_point = false;
+                'search: for dy in 0..size {
+                    for dx in 0..size {
+                        if grid[by * size + dy][bx * size + dx] {
+                            has_point = true;
+                            break 'search;
+                        }
+                    }
+                }
+                if has_point {
+                    count += 1;
+                }
+            }
+        }
+        if count > 0 {
+            log_inv_sizes.push((1.0 / size as f32).ln());
+            log_counts.push((count as f32).ln());
+        }
+    }
+
+    linear_regression_slope(&log_inv_sizes, &log_counts)
+}
+
+/// Shannon entropy of spatial block hit counts.
+/// Divides the grid into blocks_per_side x blocks_per_side blocks.
+pub fn spatial_entropy(grid: &[[bool; PROXY_GRID]; PROXY_GRID], blocks_per_side: usize) -> f32 {
+    let blocks_per_side = blocks_per_side.max(1);
+    let block_size = PROXY_GRID / blocks_per_side;
+    if block_size == 0 {
+        return 0.0;
+    }
+    let total_blocks = blocks_per_side * blocks_per_side;
+    let mut block_hits = vec![0u32; total_blocks];
+
+    for (y, row) in grid.iter().enumerate() {
+        for (x, &cell) in row.iter().enumerate() {
+            if cell {
+                let bx = (x / block_size).min(blocks_per_side - 1);
+                let by = (y / block_size).min(blocks_per_side - 1);
+                block_hits[by * blocks_per_side + bx] += 1;
+            }
+        }
+    }
+
+    let total_hits: u32 = block_hits.iter().sum();
+    if total_hits == 0 {
+        return 0.0;
+    }
+    let total_f = total_hits as f32;
+    let mut entropy = 0.0f32;
+    for &count in &block_hits {
+        if count > 0 {
+            let p = count as f32 / total_f;
+            entropy -= p * p.ln();
+        }
+    }
+    entropy
+}
+
+/// Fraction of 64x64 grid cells that are hit.
+pub fn coverage_ratio(grid: &[[bool; PROXY_GRID]; PROXY_GRID]) -> f32 {
+    let total = (PROXY_GRID * PROXY_GRID) as f32;
+    let hits: u32 = grid
+        .iter()
+        .map(|row| row.iter().filter(|&&c| c).count() as u32)
+        .sum();
+    hits as f32 / total
+}
+
+/// Lightweight CPU chaos game — affine-only (no variation functions).
+/// Renders into a 64x64 boolean grid. Skips warmup iterations.
+pub fn proxy_render(genome: &FlameGenome, cfg: &RuntimeConfig) -> [[bool; PROXY_GRID]; PROXY_GRID] {
+    let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+    if genome.transforms.is_empty() {
+        return grid;
+    }
+
+    let iterations = cfg.proxy_render_iterations as usize;
+    let warmup = cfg.proxy_render_warmup as usize;
+
+    // Build weight-based CDF for transform selection
+    let total_weight: f32 = genome.transforms.iter().map(|xf| xf.weight.max(0.0)).sum();
+    if total_weight <= 0.0 {
+        return grid;
+    }
+    let mut cdf = Vec::with_capacity(genome.transforms.len());
+    let mut accum = 0.0f32;
+    for xf in &genome.transforms {
+        accum += xf.weight.max(0.0) / total_weight;
+        cdf.push(accum);
+    }
+
+    // Simple LCG PRNG (deterministic, no external state needed)
+    let mut seed: u32 = 0xDEAD_BEEF;
+    let lcg_next = |s: &mut u32| -> f32 {
+        *s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        (*s as f32) / u32::MAX as f32
+    };
+
+    let mut x = 0.0f32;
+    let mut y = 0.0f32;
+
+    for i in 0..(warmup + iterations) {
+        // Pick transform by weight
+        let r = lcg_next(&mut seed);
+        let xf_idx = cdf.iter().position(|&c| r <= c).unwrap_or(cdf.len() - 1);
+        let xf = &genome.transforms[xf_idx];
+
+        // Apply affine: [a b; c d] * [x; y] + offset
+        let nx = xf.a * x + xf.b * y + xf.offset[0];
+        let ny = xf.c * x + xf.d * y + xf.offset[1];
+
+        // NaN/infinity escape check
+        if !nx.is_finite() || !ny.is_finite() {
+            x = 0.0;
+            y = 0.0;
+            continue;
+        }
+        x = nx;
+        y = ny;
+
+        // Plot after warmup
+        if i >= warmup {
+            // Map [-2, 2] to [0, 64)
+            let gx = ((x + 2.0) / 4.0 * PROXY_GRID as f32) as i32;
+            let gy = ((y + 2.0) / 4.0 * PROXY_GRID as f32) as i32;
+            if gx >= 0 && gx < PROXY_GRID as i32 && gy >= 0 && gy < PROXY_GRID as i32 {
+                grid[gy as usize][gx as usize] = true;
+            }
+        }
+    }
+
+    grid
 }
 
 /// Extract palette features from a raw palette (no genome wrapper needed).
@@ -1066,5 +1289,202 @@ mod tests {
         // exploration_rate = 1.0 → always skip model
         let xf = engine.generate_biased_transform(10, 1.0, 1.0, 5);
         assert!(xf.weight > 0.0);
+    }
+
+    // --- Linear regression tests ---
+
+    #[test]
+    fn linear_regression_slope_perfect_line() {
+        let xs = vec![1.0, 2.0, 3.0, 4.0];
+        let ys = vec![2.0, 4.0, 6.0, 8.0]; // y = 2x
+        let slope = linear_regression_slope(&xs, &ys);
+        assert!(approx_eq(slope, 2.0), "slope was {slope}");
+    }
+
+    #[test]
+    fn linear_regression_slope_too_few_points() {
+        assert!(approx_eq(linear_regression_slope(&[1.0], &[1.0]), 0.0));
+        assert!(approx_eq(linear_regression_slope(&[], &[]), 0.0));
+    }
+
+    // --- Box-counting FD tests ---
+
+    #[test]
+    fn box_counting_fd_empty_grid() {
+        let grid = [[false; PROXY_GRID]; PROXY_GRID];
+        let fd = box_counting_fd(&grid);
+        // Empty grid: no occupied boxes at any scale → FD = 0
+        assert!(approx_eq(fd, 0.0), "FD was {fd}");
+    }
+
+    #[test]
+    fn box_counting_fd_full_grid() {
+        let grid = [[true; PROXY_GRID]; PROXY_GRID];
+        let fd = box_counting_fd(&grid);
+        // Full grid: FD should be close to 2.0 (fills 2D space)
+        assert!(fd > 1.8 && fd < 2.2, "FD was {fd}, expected ~2.0");
+    }
+
+    #[test]
+    fn box_counting_fd_diagonal_line() {
+        let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+        for i in 0..PROXY_GRID {
+            grid[i][i] = true;
+        }
+        let fd = box_counting_fd(&grid);
+        // Diagonal line: FD should be close to 1.0
+        assert!(fd > 0.7 && fd < 1.3, "FD was {fd}, expected ~1.0");
+    }
+
+    // --- Spatial entropy tests ---
+
+    #[test]
+    fn spatial_entropy_uniform_grid() {
+        // Every block has equal hits → maximum entropy
+        let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+        // Place one hit in each 8x8 block
+        for by in 0..8 {
+            for bx in 0..8 {
+                grid[by * 8][bx * 8] = true;
+            }
+        }
+        let entropy = spatial_entropy(&grid, 8);
+        // Maximum entropy for 64 equally-occupied blocks = ln(64) ≈ 4.16
+        let max_entropy = (64.0f32).ln();
+        assert!(
+            (entropy - max_entropy).abs() < 0.1,
+            "entropy was {entropy}, expected ~{max_entropy}"
+        );
+    }
+
+    #[test]
+    fn spatial_entropy_single_block() {
+        // All hits in a single block → zero entropy
+        let mut grid = [[false; PROXY_GRID]; PROXY_GRID];
+        for y in 0..8 {
+            for x in 0..8 {
+                grid[y][x] = true;
+            }
+        }
+        let entropy = spatial_entropy(&grid, 8);
+        assert!(
+            approx_eq(entropy, 0.0),
+            "entropy was {entropy}, expected 0.0"
+        );
+    }
+
+    #[test]
+    fn spatial_entropy_empty_grid() {
+        let grid = [[false; PROXY_GRID]; PROXY_GRID];
+        let entropy = spatial_entropy(&grid, 8);
+        assert!(approx_eq(entropy, 0.0), "entropy was {entropy}");
+    }
+
+    // --- Coverage ratio tests ---
+
+    #[test]
+    fn coverage_ratio_empty() {
+        let grid = [[false; PROXY_GRID]; PROXY_GRID];
+        assert!(approx_eq(coverage_ratio(&grid), 0.0));
+    }
+
+    #[test]
+    fn coverage_ratio_full() {
+        let grid = [[true; PROXY_GRID]; PROXY_GRID];
+        assert!(approx_eq(coverage_ratio(&grid), 1.0));
+    }
+
+    // --- Proxy render tests ---
+
+    #[test]
+    fn proxy_render_degenerate_genome_no_panic() {
+        // Genome with diverging transforms (large coefficients) should not panic
+        let mut xf = crate::genome::FlameTransform::default();
+        xf.a = 100.0;
+        xf.b = 100.0;
+        xf.c = 100.0;
+        xf.d = 100.0;
+        xf.offset = [50.0, 50.0];
+        xf.weight = 1.0;
+        xf.linear = 1.0;
+        let genome = crate::genome::FlameGenome {
+            name: String::new(),
+            global: crate::genome::GlobalParams {
+                speed: 1.0,
+                zoom: 1.0,
+                trail: 0.9,
+                flame_brightness: 1.0,
+            },
+            kifs: crate::genome::KifsParams {
+                fold_angle: 0.0,
+                scale: 1.0,
+                brightness: 1.0,
+            },
+            transforms: vec![xf],
+            final_transform: None,
+            symmetry: 1,
+            palette: None,
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
+        };
+        let cfg = default_test_config();
+        let _grid = proxy_render(&genome, &cfg);
+        // Just checking it doesn't panic
+    }
+
+    #[test]
+    fn proxy_render_contractive_produces_hits() {
+        // Identity-ish transform with small contraction should produce hits
+        let mut xf = crate::genome::FlameTransform::default();
+        xf.a = 0.5;
+        xf.b = 0.0;
+        xf.c = 0.0;
+        xf.d = 0.5;
+        xf.offset = [0.5, 0.5];
+        xf.weight = 1.0;
+        xf.linear = 1.0;
+        let genome = crate::genome::FlameGenome {
+            name: String::new(),
+            global: crate::genome::GlobalParams {
+                speed: 1.0,
+                zoom: 1.0,
+                trail: 0.9,
+                flame_brightness: 1.0,
+            },
+            kifs: crate::genome::KifsParams {
+                fold_angle: 0.0,
+                scale: 1.0,
+                brightness: 1.0,
+            },
+            transforms: vec![xf],
+            final_transform: None,
+            symmetry: 1,
+            palette: None,
+            parent_a: None,
+            parent_b: None,
+            generation: 0,
+        };
+        let cfg = default_test_config();
+        let grid = proxy_render(&genome, &cfg);
+        let hits: u32 = grid
+            .iter()
+            .map(|row| row.iter().filter(|&&c| c).count() as u32)
+            .sum();
+        assert!(hits > 0, "contractive transform should produce hits");
+    }
+
+    // --- PerceptualFeatures tests ---
+
+    #[test]
+    fn perceptual_features_vec_length() {
+        let genome = crate::genome::FlameGenome::default_genome();
+        let cfg = default_test_config();
+        let f = PerceptualFeatures::from_genome(&genome, &cfg);
+        assert_eq!(f.to_vec().len(), PERCEPTUAL_FEATURE_COUNT);
+    }
+
+    fn default_test_config() -> crate::weights::RuntimeConfig {
+        serde_json::from_str("{}").unwrap()
     }
 }

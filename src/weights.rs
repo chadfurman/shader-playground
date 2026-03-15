@@ -223,6 +223,16 @@ pub struct RuntimeConfig {
     pub archive_threshold_mb: u64,
     #[serde(default = "default_archive_on_startup")]
     pub archive_on_startup: bool,
+
+    // Proxy render (CPU chaos game for perceptual features)
+    #[serde(default = "default_proxy_render_grid_size")]
+    pub proxy_render_grid_size: u32,
+    #[serde(default = "default_proxy_render_iterations")]
+    pub proxy_render_iterations: u32,
+    #[serde(default = "default_proxy_render_warmup")]
+    pub proxy_render_warmup: u32,
+    #[serde(default = "default_spatial_entropy_blocks")]
+    pub spatial_entropy_blocks: u32,
     #[serde(default)]
     pub dist_lum_strength: f32,
     #[serde(default = "default_iter_lum_range")]
@@ -382,6 +392,18 @@ fn default_archive_threshold_mb() -> u64 {
 }
 fn default_archive_on_startup() -> bool {
     true
+}
+fn default_proxy_render_grid_size() -> u32 {
+    64
+}
+fn default_proxy_render_iterations() -> u32 {
+    500
+}
+fn default_proxy_render_warmup() -> u32 {
+    50
+}
+fn default_spatial_entropy_blocks() -> u32 {
+    8
 }
 fn default_iter_lum_range() -> f32 {
     0.5
