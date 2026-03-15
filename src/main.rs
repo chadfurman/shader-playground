@@ -883,12 +883,12 @@ impl Gpu {
 
 pub fn project_dir() -> PathBuf {
     // When running as a .app bundle, use Contents/Resources
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(macos_dir) = exe.parent() {
-            let resources = macos_dir.with_file_name("Resources");
-            if resources.join("weights.json").exists() {
-                return resources;
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(macos_dir) = exe.parent()
+    {
+        let resources = macos_dir.with_file_name("Resources");
+        if resources.join("weights.json").exists() {
+            return resources;
         }
     }
     // Development mode: walk up from cwd looking for Cargo.toml

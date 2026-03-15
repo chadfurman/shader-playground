@@ -176,8 +176,10 @@ impl FlameBuilder {
 }
 
 fn parse_xform(e: &quick_xml::events::BytesStart) -> FlameTransform {
-    let mut xf = FlameTransform::default();
-    xf.weight = 0.0; // will be set from attribute
+    let mut xf = FlameTransform {
+        weight: 0.0, // will be set from attribute
+        ..Default::default()
+    };
 
     for attr in e.attributes().flatten() {
         let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
@@ -194,10 +196,10 @@ fn parse_xform(e: &quick_xml::events::BytesStart) -> FlameTransform {
                 if nums.len() >= 6 {
                     // Flam3 coefs="a d b e c f" (column-major)
                     // Map to our row-major: a=coefs[0], b=coefs[2], c=coefs[1], d=coefs[3]
-                    xf.a = nums[0]; // flam3 a
-                    xf.b = nums[2]; // flam3 b
-                    xf.c = nums[1]; // flam3 d
-                    xf.d = nums[3]; // flam3 e
+                    xf.affine[0][0] = nums[0]; // flam3 a
+                    xf.affine[0][1] = nums[2]; // flam3 b
+                    xf.affine[1][0] = nums[1]; // flam3 d
+                    xf.affine[1][1] = nums[3]; // flam3 e
                     xf.offset[0] = nums[4]; // flam3 c (translation x)
                     xf.offset[1] = nums[5]; // flam3 f (translation y)
                 }
@@ -360,11 +362,11 @@ mod tests {
         let xf = &file.flames[0].transforms[0];
         // coefs="1 0 0 1 0 0" → identity affine
         // flam3 layout: a d b e c f (column-major)
-        // Mapped: xf.a = nums[0]=1, xf.d = nums[3]=1
-        assert!((xf.a - 1.0).abs() < 0.01);
-        assert!((xf.d - 1.0).abs() < 0.01);
-        assert!((xf.b - 0.0).abs() < 0.01);
-        assert!((xf.c - 0.0).abs() < 0.01);
+        // Mapped: xf.a() = nums[0]=1, xf.d() = nums[3]=1
+        assert!((xf.a() - 1.0).abs() < 0.01);
+        assert!((xf.d() - 1.0).abs() < 0.01);
+        assert!((xf.b() - 0.0).abs() < 0.01);
+        assert!((xf.c() - 0.0).abs() < 0.01);
     }
 
     #[test]

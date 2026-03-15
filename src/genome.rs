@@ -145,24 +145,17 @@ const MIDS_VARIATIONS: [usize; 4] = [1, 16, 22, 5]; // sinusoidal, waves, cosine
 const HIGHS_VARIATIONS: [usize; 5] = [6, 8, 20, 21, 14]; // julia, disc, cross, tangent, diamond
 const BEAT_VARIATIONS: [usize; 3] = [13, 3, 7]; // spiral, swirl, polar
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug)]
 pub struct FlameTransform {
     pub weight: f32,
+    /// 3x3 affine matrix: [[m00,m01,m02],[m10,m11,m12],[m20,m21,m22]]
+    /// For 2D-only genomes, z-row and z-column are identity: affine[2][2]=1, rest of z=0.
+    #[serde(default = "default_affine")]
+    pub affine: [[f32; 3]; 3],
+    /// 3D offset (translation). Third component is z-offset for 3D rendering.
     #[serde(default)]
-    pub a: f32,
-    #[serde(default)]
-    pub b: f32,
-    #[serde(default)]
-    pub c: f32,
-    #[serde(default)]
-    pub d: f32,
-    pub offset: [f32; 2],
+    pub offset: [f32; 3],
     pub color: f32,
-    // Legacy fields — read from old JSON, never written
-    #[serde(default, skip_serializing)]
-    angle: Option<f32>,
-    #[serde(default, skip_serializing)]
-    scale: Option<f32>,
     // Original 6 variations
     pub linear: f32,
     pub sinusoidal: f32,
@@ -216,18 +209,186 @@ pub struct FlameTransform {
     pub variation_params: HashMap<String, f32>,
 }
 
+fn default_affine() -> [[f32; 3]; 3] {
+    [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+}
+
+/// Custom deserializer: handles both old format (a,b,c,d + offset:[f32;2])
+/// and new format (affine:[[f32;3];3] + offset:[f32;3]).
+impl<'de> Deserialize<'de> for FlameTransform {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct RawTransform {
+            weight: f32,
+            // New format
+            #[serde(default)]
+            affine: Option<[[f32; 3]; 3]>,
+            // Old format fields
+            #[serde(default)]
+            a: Option<f32>,
+            #[serde(default)]
+            b: Option<f32>,
+            #[serde(default)]
+            c: Option<f32>,
+            #[serde(default)]
+            d: Option<f32>,
+            // Legacy angle/scale
+            #[serde(default)]
+            angle: Option<f32>,
+            #[serde(default)]
+            scale: Option<f32>,
+            // Offset can be 2 or 3 elements
+            #[serde(default, deserialize_with = "deserialize_offset")]
+            offset: [f32; 3],
+            color: f32,
+            #[serde(default)]
+            linear: f32,
+            #[serde(default)]
+            sinusoidal: f32,
+            #[serde(default)]
+            spherical: f32,
+            #[serde(default)]
+            swirl: f32,
+            #[serde(default)]
+            horseshoe: f32,
+            #[serde(default)]
+            handkerchief: f32,
+            #[serde(default)]
+            julia: f32,
+            #[serde(default)]
+            polar: f32,
+            #[serde(default)]
+            disc: f32,
+            #[serde(default)]
+            rings: f32,
+            #[serde(default)]
+            bubble: f32,
+            #[serde(default)]
+            fisheye: f32,
+            #[serde(default)]
+            exponential: f32,
+            #[serde(default)]
+            spiral: f32,
+            #[serde(default)]
+            diamond: f32,
+            #[serde(default)]
+            bent: f32,
+            #[serde(default)]
+            waves: f32,
+            #[serde(default)]
+            popcorn: f32,
+            #[serde(default)]
+            fan: f32,
+            #[serde(default)]
+            eyefish: f32,
+            #[serde(default)]
+            cross: f32,
+            #[serde(default)]
+            tangent: f32,
+            #[serde(default)]
+            cosine: f32,
+            #[serde(default)]
+            blob: f32,
+            #[serde(default)]
+            noise: f32,
+            #[serde(default)]
+            curl: f32,
+            #[serde(default)]
+            variation_params: HashMap<String, f32>,
+        }
+
+        let raw = RawTransform::deserialize(deserializer)?;
+
+        // Determine affine matrix: prefer new format, fall back to old a,b,c,d
+        let affine = if let Some(aff) = raw.affine {
+            aff
+        } else {
+            let mut a = raw.a.unwrap_or(1.0);
+            let mut b = raw.b.unwrap_or(0.0);
+            let mut c = raw.c.unwrap_or(0.0);
+            let mut d = raw.d.unwrap_or(1.0);
+
+            // Handle legacy angle/scale → a,b,c,d conversion
+            if let (Some(angle), Some(scale)) = (raw.angle, raw.scale)
+                && a == 1.0
+                && b == 0.0
+                && c == 0.0
+                && d == 1.0
+            {
+                let (s, cos_a) = angle.sin_cos();
+                a = cos_a * scale;
+                b = -s * scale;
+                c = s * scale;
+                d = cos_a * scale;
+            }
+
+            [[a, b, 0.0], [c, d, 0.0], [0.0, 0.0, 1.0]]
+        };
+
+        Ok(FlameTransform {
+            weight: raw.weight,
+            affine,
+            offset: raw.offset,
+            color: raw.color,
+            linear: raw.linear,
+            sinusoidal: raw.sinusoidal,
+            spherical: raw.spherical,
+            swirl: raw.swirl,
+            horseshoe: raw.horseshoe,
+            handkerchief: raw.handkerchief,
+            julia: raw.julia,
+            polar: raw.polar,
+            disc: raw.disc,
+            rings: raw.rings,
+            bubble: raw.bubble,
+            fisheye: raw.fisheye,
+            exponential: raw.exponential,
+            spiral: raw.spiral,
+            diamond: raw.diamond,
+            bent: raw.bent,
+            waves: raw.waves,
+            popcorn: raw.popcorn,
+            fan: raw.fan,
+            eyefish: raw.eyefish,
+            cross: raw.cross,
+            tangent: raw.tangent,
+            cosine: raw.cosine,
+            blob: raw.blob,
+            noise: raw.noise,
+            curl: raw.curl,
+            variation_params: raw.variation_params,
+        })
+    }
+}
+
+/// Deserialize offset as either [f32; 2] (old) or [f32; 3] (new).
+fn deserialize_offset<'de, D>(deserializer: D) -> Result<[f32; 3], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: Vec<f32> = Vec::deserialize(deserializer)?;
+    match v.len() {
+        0 => Ok([0.0, 0.0, 0.0]),
+        2 => Ok([v[0], v[1], 0.0]),
+        3 => Ok([v[0], v[1], v[2]]),
+        _ => Ok([
+            v.first().copied().unwrap_or(0.0),
+            v.get(1).copied().unwrap_or(0.0),
+            v.get(2).copied().unwrap_or(0.0),
+        ]),
+    }
+}
+
 impl Default for FlameTransform {
     fn default() -> Self {
         Self {
             weight: 0.0,
-            a: 1.0,
-            b: 0.0,
-            c: 0.0,
-            d: 1.0,
-            offset: [0.0, 0.0],
+            affine: default_affine(),
+            offset: [0.0, 0.0, 0.0],
             color: 0.0,
-            angle: None,
-            scale: None,
             linear: 0.0,
             sinusoidal: 0.0,
             spherical: 0.0,
@@ -260,22 +421,24 @@ impl Default for FlameTransform {
 }
 
 impl FlameTransform {
-    /// Convert legacy angle/scale fields into a/b/c/d affine coefficients.
+    // ── 2D affine accessors (row-major: affine[row][col]) ──
+    pub fn a(&self) -> f32 {
+        self.affine[0][0]
+    }
+    pub fn b(&self) -> f32 {
+        self.affine[0][1]
+    }
+    pub fn c(&self) -> f32 {
+        self.affine[1][0]
+    }
+    pub fn d(&self) -> f32 {
+        self.affine[1][1]
+    }
+
+    /// Legacy fixup is now handled by the custom deserializer.
+    /// This is a no-op kept for API compatibility with load().
     pub fn fixup_legacy(&mut self) {
-        if let (Some(angle), Some(scale)) = (self.angle, self.scale)
-            && self.a == 0.0
-            && self.b == 0.0
-            && self.c == 0.0
-            && self.d == 0.0
-        {
-            let (s, cos_a) = angle.sin_cos();
-            self.a = cos_a * scale;
-            self.b = -s * scale;
-            self.c = s * scale;
-            self.d = cos_a * scale;
-        }
-        self.angle = None;
-        self.scale = None;
+        // No-op: angle/scale migration is handled during deserialization
     }
 
     pub fn get_variation(&self, idx: usize) -> f32 {
@@ -349,15 +512,17 @@ impl FlameTransform {
     }
 
     pub fn random_transform(rng: &mut impl Rng) -> Self {
+        let a = rng.random::<f32>() * 2.0 - 1.0;
+        let b = rng.random::<f32>() * 2.0 - 1.0;
+        let c = rng.random::<f32>() * 2.0 - 1.0;
+        let d = rng.random::<f32>() * 2.0 - 1.0;
         let mut xf = Self {
             weight: rng.random::<f32>() * 0.5 + 0.1,
-            a: rng.random::<f32>() * 2.0 - 1.0,
-            b: rng.random::<f32>() * 2.0 - 1.0,
-            c: rng.random::<f32>() * 2.0 - 1.0,
-            d: rng.random::<f32>() * 2.0 - 1.0,
+            affine: [[a, b, 0.0], [c, d, 0.0], [0.0, 0.0, 1.0]],
             offset: [
                 rng.random::<f32>() * 2.0 - 1.0,
                 rng.random::<f32>() * 2.0 - 1.0,
+                0.0,
             ],
             color: rng.random::<f32>(),
             ..Default::default()
@@ -471,7 +636,7 @@ impl FlameGenome {
 
         let mut xf_descs = Vec::new();
         for (i, xf) in self.transforms.iter().enumerate() {
-            let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
+            let det2d = (xf.a() * xf.d() - xf.b() * xf.c()).abs().sqrt();
             let mut active_vars = Vec::new();
             for (vi, &vname) in variation_names.iter().enumerate() {
                 let v = xf.get_variation(vi);
@@ -484,7 +649,10 @@ impl FlameGenome {
             } else {
                 &active_vars.join("+")
             };
-            xf_descs.push(format!("xf{}({:.2}s{:.2}|{})", i, xf.weight, det, vars_str));
+            xf_descs.push(format!(
+                "xf{}({:.2}s{:.2}|{})",
+                i, xf.weight, det2d, vars_str
+            ));
         }
 
         format!(
@@ -549,10 +717,10 @@ impl FlameGenome {
 
     fn push_transform(t: &mut Vec<f32>, xf: &FlameTransform) {
         t.push(xf.weight); // 0
-        t.push(xf.a); // 1
-        t.push(xf.b); // 2
-        t.push(xf.c); // 3
-        t.push(xf.d); // 4
+        t.push(xf.a()); // 1
+        t.push(xf.b()); // 2
+        t.push(xf.c()); // 3
+        t.push(xf.d()); // 4
         t.push(xf.offset[0]); // 5
         t.push(xf.offset[1]); // 6
         t.push(xf.color); // 7
@@ -652,11 +820,12 @@ impl FlameGenome {
                 FlameTransform {
                     // spherical inversion — Draves classic
                     weight: 0.25,
-                    a: -0.681206,
-                    b: 0.207690,
-                    c: -0.077946,
-                    d: 0.755065,
-                    offset: [-0.041613, -0.262334],
+                    affine: [
+                        [-0.681206, 0.207690, 0.0],
+                        [-0.077946, 0.755065, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    offset: [-0.041613, -0.262334, 0.0],
                     color: 0.0,
                     spherical: 1.0,
                     ..Default::default()
@@ -664,11 +833,12 @@ impl FlameGenome {
                 FlameTransform {
                     // julia branching
                     weight: 0.25,
-                    a: 0.953766,
-                    b: 0.432680,
-                    c: 0.483960,
-                    d: -0.054248,
-                    offset: [0.642503, -0.995898],
+                    affine: [
+                        [0.953766, 0.432680, 0.0],
+                        [0.483960, -0.054248, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    offset: [0.642503, -0.995898, 0.0],
                     color: 0.33,
                     julia: 1.0,
                     ..Default::default()
@@ -676,11 +846,12 @@ impl FlameGenome {
                 FlameTransform {
                     // sinusoidal + swirl texture
                     weight: 0.25,
-                    a: 0.840613,
-                    b: 0.318971,
-                    c: -0.816191,
-                    d: -0.430402,
-                    offset: [0.905589, 0.909402],
+                    affine: [
+                        [0.840613, 0.318971, 0.0],
+                        [-0.816191, -0.430402, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    offset: [0.905589, 0.909402, 0.0],
                     color: 0.66,
                     sinusoidal: 0.6,
                     swirl: 0.4,
@@ -689,11 +860,12 @@ impl FlameGenome {
                 FlameTransform {
                     // polar mapping
                     weight: 0.25,
-                    a: 0.960492,
-                    b: 0.215383,
-                    c: -0.466555,
-                    d: -0.727377,
-                    offset: [-0.126074, 0.253509],
+                    affine: [
+                        [0.960492, 0.215383, 0.0],
+                        [-0.466555, -0.727377, 0.0],
+                        [0.0, 0.0, 1.0],
+                    ],
+                    offset: [-0.126074, 0.253509, 0.0],
                     color: 1.0,
                     polar: 1.0,
                     ..Default::default()
@@ -751,8 +923,8 @@ impl FlameGenome {
 
     /// Apply a single transform on CPU (simplified variations for attractor estimation).
     fn apply_xform_cpu(p: (f32, f32), xf: &FlameTransform) -> (f32, f32) {
-        let ax = xf.a * p.0 + xf.b * p.1 + xf.offset[0];
-        let ay = xf.c * p.0 + xf.d * p.1 + xf.offset[1];
+        let ax = xf.a() * p.0 + xf.b() * p.1 + xf.offset[0];
+        let ay = xf.c() * p.0 + xf.d() * p.1 + xf.offset[1];
 
         let mut vx = 0.0f32;
         let mut vy = 0.0f32;
@@ -1268,44 +1440,30 @@ impl FlameGenome {
             0 => {
                 // Rotate — wider range for more dramatic angle changes
                 let angle = rng.random_range(-0.8..0.8);
-                rotate_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, angle);
+                rotate_affine(&mut xf.affine, angle);
             }
             1 => {
                 // Scale — wider range so transforms differ in magnification
                 let factor = rng.random_range(0.6..1.5);
-                scale_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, factor);
-                // Clamp overall scale to keep things stable
-                let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
-                if !(0.2..=0.95).contains(&det) {
-                    let fix = rng.random_range(0.4..0.85) / det.max(0.01);
-                    xf.a *= fix;
-                    xf.b *= fix;
-                    xf.c *= fix;
-                    xf.d *= fix;
-                }
+                scale_affine(&mut xf.affine, factor);
+                // Clamp determinant to keep things stable (0.04..0.9025 for det matches 0.2..0.95 for sqrt)
+                clamp_determinant(&mut xf.affine, 0.04, 0.9);
             }
             2 => {
                 // Shear — breaks rotation symmetry, creates asymmetric shapes
                 let shear = rng.random_range(-0.4..0.4);
-                shear_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, shear);
+                shear_affine(&mut xf.affine, shear);
             }
             3 => {
                 // Anisotropic scale — stretch in one axis, compress in another
                 let sx = rng.random_range(0.5..1.5);
                 let sy = rng.random_range(0.5..1.5);
-                xf.a *= sx;
-                xf.b *= sy;
-                xf.c *= sx;
-                xf.d *= sy;
+                xf.affine[0][0] *= sx;
+                xf.affine[0][1] *= sy;
+                xf.affine[1][0] *= sx;
+                xf.affine[1][1] *= sy;
                 // Keep contractive
-                let det = (xf.a * xf.d - xf.b * xf.c).abs().sqrt();
-                if det > 0.95 {
-                    let fix = rng.random_range(0.4..0.85) / det;
-                    xf.a *= fix;
-                    xf.b *= fix;
-                    xf.c *= fix;
-                    xf.d *= fix;
-                }
+                clamp_determinant(&mut xf.affine, 0.0, 0.9);
             }
             4 => {
                 // Position — larger range for more spread-out transforms
@@ -1321,14 +1479,14 @@ impl FlameGenome {
                 let s = rng.random_range(0.2..0.9);
                 let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
                 let (sin_a, cos_a) = angle.sin_cos();
-                xf.a = s * cos_a;
-                xf.b = -s * sin_a;
-                xf.c = s * sin_a;
-                xf.d = s * cos_a;
+                xf.affine[0][0] = s * cos_a;
+                xf.affine[0][1] = -s * sin_a;
+                xf.affine[1][0] = s * sin_a;
+                xf.affine[1][1] = s * cos_a;
                 // Add some asymmetry 50% of the time
                 if rng.random::<f32>() < 0.5 {
                     let shear = rng.random_range(-0.3..0.3);
-                    shear_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, shear);
+                    shear_affine(&mut xf.affine, shear);
                 }
             }
             _ => {
@@ -1424,9 +1582,9 @@ impl FlameGenome {
             Some(fxf) => {
                 // Perturb existing final transform
                 let angle = rng.random_range(-0.5..0.5);
-                rotate_affine(&mut fxf.a, &mut fxf.b, &mut fxf.c, &mut fxf.d, angle);
+                rotate_affine(&mut fxf.affine, angle);
                 let factor = rng.random_range(0.85..1.18);
-                scale_affine(&mut fxf.a, &mut fxf.b, &mut fxf.c, &mut fxf.d, factor);
+                scale_affine(&mut fxf.affine, factor);
                 // Occasionally reinvent its variations
                 if rng.random_range(0.0..1.0) < 0.3 {
                     for vi in 0..VARIATION_COUNT {
@@ -1442,8 +1600,8 @@ impl FlameGenome {
                     let mut fxf = FlameTransform::default();
                     let s = rng.random_range(0.5..1.5);
                     let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
-                    scale_affine(&mut fxf.a, &mut fxf.b, &mut fxf.c, &mut fxf.d, s);
-                    rotate_affine(&mut fxf.a, &mut fxf.b, &mut fxf.c, &mut fxf.d, angle);
+                    scale_affine(&mut fxf.affine, s);
+                    rotate_affine(&mut fxf.affine, angle);
                     let dominant = Self::pick_variation(rng, audio, cfg, profile);
                     fxf.set_variation(dominant, rng.random_range(0.5..1.0));
                     fxf.color = rng.random_range(0.0..1.0);
@@ -1491,9 +1649,9 @@ impl FlameGenome {
             xf.weight = 1.0 / (self.transforms.len() + 1) as f32;
             // Dramatic changes so the clone is actually different
             let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
-            rotate_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, angle);
+            rotate_affine(&mut xf.affine, angle);
             let scale_factor = rng.random_range(0.5..1.5);
-            scale_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, scale_factor);
+            scale_affine(&mut xf.affine, scale_factor);
             xf.offset[0] = rng.random_range(-1.5..1.5);
             xf.offset[1] = rng.random_range(-1.5..1.5);
             xf.color = rng.random_range(0.0..1.0);
@@ -1510,7 +1668,7 @@ impl FlameGenome {
             let existing_scales: Vec<f32> = self
                 .transforms
                 .iter()
-                .map(|t| (t.a * t.d - t.b * t.c).abs().sqrt())
+                .map(|t| det_2d(&t.affine).abs().sqrt())
                 .collect();
             let avg_scale = existing_scales.iter().sum::<f32>() / existing_scales.len() as f32;
             // If existing are large, make this one small (detail), and vice versa
@@ -1520,21 +1678,26 @@ impl FlameGenome {
                 rng.random_range(0.6..0.9) // broad sweep transform
             };
             let angle = rng.random_range(-std::f32::consts::PI..std::f32::consts::PI);
+            let (sin_a, cos_a) = angle.sin_cos();
             let mut xf = FlameTransform {
                 weight: 1.0 / (self.transforms.len() + 1) as f32,
-                offset: [rng.random_range(-1.5..1.5), rng.random_range(-1.5..1.5)],
+                affine: [
+                    [s * cos_a, -s * sin_a, 0.0],
+                    [s * sin_a, s * cos_a, 0.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                offset: [
+                    rng.random_range(-1.5..1.5),
+                    rng.random_range(-1.5..1.5),
+                    0.0,
+                ],
                 color: rng.random_range(0.0..1.0),
                 ..Default::default()
             };
-            let (sin_a, cos_a) = angle.sin_cos();
-            xf.a = s * cos_a;
-            xf.b = -s * sin_a;
-            xf.c = s * sin_a;
-            xf.d = s * cos_a;
             // Add shear/asymmetry 40% of the time
             if rng.random::<f32>() < 0.4 {
                 let shear = rng.random_range(-0.3..0.3);
-                shear_affine(&mut xf.a, &mut xf.b, &mut xf.c, &mut xf.d, shear);
+                shear_affine(&mut xf.affine, shear);
             }
             // Pick a variation that's NOT already dominant in other transforms
             let mut used_variations: Vec<usize> = Vec::new();
@@ -1637,29 +1800,64 @@ impl FlameGenome {
 }
 
 // ── Affine matrix helpers for mutation ──
+// Operate on 3x3 affine matrix directly. Z-row/col preserved (only 2x2 upper-left mutated).
 
-fn rotate_affine(a: &mut f32, b: &mut f32, c: &mut f32, d: &mut f32, angle: f32) {
+fn rotate_affine(m: &mut [[f32; 3]; 3], angle: f32) {
     let (s, cos_a) = angle.sin_cos();
-    let na = *a * cos_a - *c * s;
-    let nb = *b * cos_a - *d * s;
-    let nc = *a * s + *c * cos_a;
-    let nd = *b * s + *d * cos_a;
-    *a = na;
-    *b = nb;
-    *c = nc;
-    *d = nd;
+    let na = m[0][0] * cos_a - m[1][0] * s;
+    let nb = m[0][1] * cos_a - m[1][1] * s;
+    let nc = m[0][0] * s + m[1][0] * cos_a;
+    let nd = m[0][1] * s + m[1][1] * cos_a;
+    m[0][0] = na;
+    m[0][1] = nb;
+    m[1][0] = nc;
+    m[1][1] = nd;
 }
 
-fn scale_affine(a: &mut f32, b: &mut f32, c: &mut f32, d: &mut f32, factor: f32) {
-    *a *= factor;
-    *b *= factor;
-    *c *= factor;
-    *d *= factor;
+fn scale_affine(m: &mut [[f32; 3]; 3], factor: f32) {
+    for row in m.iter_mut() {
+        for val in row.iter_mut() {
+            *val *= factor;
+        }
+    }
 }
 
-fn shear_affine(a: &mut f32, b: &mut f32, c: &mut f32, d: &mut f32, shear: f32) {
-    *b += shear * *a;
-    *d += shear * *c;
+fn shear_affine(m: &mut [[f32; 3]; 3], shear: f32) {
+    m[0][1] += shear * m[0][0];
+    m[1][1] += shear * m[1][0];
+}
+
+/// Clamp 3x3 determinant: uniform scale all 9 entries by (target/|det|)^(1/3).
+fn clamp_determinant(m: &mut [[f32; 3]; 3], min_det: f32, max_det: f32) {
+    let det = determinant_3x3(m);
+    let abs_det = det.abs();
+    if abs_det < min_det {
+        let fix = (min_det / abs_det.max(1e-10)).cbrt();
+        scale_entries(m, fix);
+    } else if abs_det > max_det {
+        let fix = (max_det / abs_det).cbrt();
+        scale_entries(m, fix);
+    }
+}
+
+fn determinant_3x3(m: &[[f32; 3]; 3]) -> f32 {
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+}
+
+/// Scale all 9 entries by a factor (used by clamp_determinant).
+fn scale_entries(m: &mut [[f32; 3]; 3], factor: f32) {
+    for row in m.iter_mut() {
+        for val in row.iter_mut() {
+            *val *= factor;
+        }
+    }
+}
+
+/// 2D determinant of the upper-left 2x2 submatrix (for backward compat).
+fn det_2d(m: &[[f32; 3]; 3]) -> f32 {
+    m[0][0] * m[1][1] - m[0][1] * m[1][0]
 }
 
 // ── Palette generation ──
@@ -1950,5 +2148,112 @@ mod tests {
         assert_eq!(g.transforms.len(), g2.transforms.len());
         assert_eq!(g.symmetry, g2.symmetry);
         assert_eq!(g.generation, g2.generation);
+    }
+
+    // ── T1.1: 3x3 affine tests ──
+
+    #[test]
+    fn default_transform_has_3x3_identity_z() {
+        let xf = FlameTransform::default();
+        // Z-row and z-column should be identity
+        assert_eq!(xf.affine[2][2], 1.0, "affine[2][2] should be 1.0");
+        assert_eq!(xf.affine[2][0], 0.0, "affine[2][0] should be 0.0");
+        assert_eq!(xf.affine[2][1], 0.0, "affine[2][1] should be 0.0");
+        assert_eq!(xf.affine[0][2], 0.0, "affine[0][2] should be 0.0");
+        assert_eq!(xf.affine[1][2], 0.0, "affine[1][2] should be 0.0");
+        // 2D part should be identity
+        assert_eq!(xf.a(), 1.0);
+        assert_eq!(xf.b(), 0.0);
+        assert_eq!(xf.c(), 0.0);
+        assert_eq!(xf.d(), 1.0);
+        // Offset z should be 0
+        assert_eq!(xf.offset[2], 0.0);
+    }
+
+    #[test]
+    fn old_genome_json_migration() {
+        // Simulate old JSON format with a, b, c, d fields and 2-element offset
+        let old_json = r#"{
+            "weight": 0.5,
+            "a": 0.8, "b": -0.3, "c": 0.3, "d": 0.8,
+            "offset": [0.1, 0.2],
+            "color": 0.5,
+            "linear": 1.0, "sinusoidal": 0.0, "spherical": 0.0,
+            "swirl": 0.0, "horseshoe": 0.0, "handkerchief": 0.0
+        }"#;
+        let xf: FlameTransform = serde_json::from_str(old_json).unwrap();
+        assert!((xf.a() - 0.8).abs() < 1e-6, "a() = {}", xf.a());
+        assert!((xf.b() - -0.3).abs() < 1e-6, "b() = {}", xf.b());
+        assert!((xf.c() - 0.3).abs() < 1e-6, "c() = {}", xf.c());
+        assert!((xf.d() - 0.8).abs() < 1e-6, "d() = {}", xf.d());
+        // Z-entries should be identity
+        assert_eq!(xf.affine[2][2], 1.0);
+        assert_eq!(xf.affine[0][2], 0.0);
+        assert_eq!(xf.affine[1][2], 0.0);
+        // Offset should have z=0
+        assert!((xf.offset[0] - 0.1).abs() < 1e-6);
+        assert!((xf.offset[1] - 0.2).abs() < 1e-6);
+        assert_eq!(xf.offset[2], 0.0);
+    }
+
+    #[test]
+    fn new_genome_json_roundtrip() {
+        // New format with explicit affine and 3-element offset
+        let xf = FlameTransform {
+            weight: 0.5,
+            affine: [[0.8, -0.3, 0.1], [0.3, 0.8, 0.2], [0.05, 0.0, 0.9]],
+            offset: [0.1, 0.2, 0.3],
+            color: 0.5,
+            linear: 1.0,
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&xf).unwrap();
+        let xf2: FlameTransform = serde_json::from_str(&json).unwrap();
+        for r in 0..3 {
+            for c in 0..3 {
+                assert!(
+                    (xf.affine[r][c] - xf2.affine[r][c]).abs() < 1e-6,
+                    "affine[{r}][{c}] mismatch: {} vs {}",
+                    xf.affine[r][c],
+                    xf2.affine[r][c],
+                );
+            }
+        }
+        assert!((xf2.offset[2] - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clamp_determinant_too_small() {
+        let mut m = [[0.01, 0.0, 0.0], [0.0, 0.01, 0.0], [0.0, 0.0, 1.0]];
+        // det = 0.01 * 0.01 * 1.0 = 0.0001, way below min
+        clamp_determinant(&mut m, 0.04, 0.9);
+        let det = determinant_3x3(&m).abs();
+        assert!(det >= 0.039, "det should be clamped up to ~0.04, got {det}");
+    }
+
+    #[test]
+    fn clamp_determinant_too_large() {
+        let mut m = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 1.0]];
+        // det = 4.0, above max
+        clamp_determinant(&mut m, 0.04, 0.9);
+        let det = determinant_3x3(&m).abs();
+        assert!(det <= 0.91, "det should be clamped down to ~0.9, got {det}");
+    }
+
+    #[test]
+    fn clamp_determinant_in_range() {
+        let original = [[0.5, 0.1, 0.0], [0.1, 0.5, 0.0], [0.0, 0.0, 1.0]];
+        let mut m = original;
+        // det = 0.5*0.5 - 0.1*0.1 = 0.24, within [0.04, 0.9]
+        clamp_determinant(&mut m, 0.04, 0.9);
+        // Should be unchanged
+        for r in 0..3 {
+            for c in 0..3 {
+                assert!(
+                    (m[r][c] - original[r][c]).abs() < 1e-6,
+                    "in-range det should not be modified"
+                );
+            }
+        }
     }
 }

@@ -159,8 +159,8 @@ impl TransformFeatures {
             0.0
         };
 
-        let affine_determinant = (xf.a * xf.d - xf.b * xf.c).abs();
-        let affine_asymmetry = (xf.a - xf.d).abs() + (xf.b + xf.c).abs();
+        let affine_determinant = (xf.a() * xf.d() - xf.b() * xf.c()).abs();
+        let affine_asymmetry = (xf.a() - xf.d()).abs() + (xf.b() + xf.c()).abs();
         let offset_magnitude = (xf.offset[0].powi(2) + xf.offset[1].powi(2)).sqrt();
 
         Self {
@@ -238,7 +238,7 @@ impl CompositionFeatures {
         let dets: Vec<f32> = genome
             .transforms
             .iter()
-            .map(|xf| (xf.a * xf.d - xf.b * xf.c).abs())
+            .map(|xf| (xf.a() * xf.d() - xf.b() * xf.c()).abs())
             .collect();
         let mean_det = dets.iter().sum::<f32>() / n as f32;
         let det_variance = dets.iter().map(|d| (d - mean_det).powi(2)).sum::<f32>() / n as f32;
@@ -899,11 +899,8 @@ mod tests {
     fn transform_features_identity_affine() {
         let mut xf = crate::genome::FlameTransform::default();
         xf.weight = 0.5;
-        xf.a = 1.0;
-        xf.b = 0.0;
-        xf.c = 0.0;
-        xf.d = 1.0;
-        xf.offset = [0.0, 0.0];
+        xf.affine = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        xf.offset = [0.0, 0.0, 0.0];
         xf.color = 0.3;
         xf.linear = 1.0;
         let f = TransformFeatures::extract(&xf);
@@ -928,11 +925,8 @@ mod tests {
     fn transform_features_two_variations() {
         let mut xf = crate::genome::FlameTransform::default();
         xf.weight = 1.0;
-        xf.a = 0.5;
-        xf.b = -0.5;
-        xf.c = 0.5;
-        xf.d = 0.5;
-        xf.offset = [0.3, 0.4];
+        xf.affine = [[0.5, -0.5, 0.0], [0.5, 0.5, 0.0], [0.0, 0.0, 1.0]];
+        xf.offset = [0.3, 0.4, 0.0];
         xf.color = 0.0;
         xf.spherical = 0.7;
         xf.julia = 0.3;
