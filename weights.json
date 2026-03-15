@@ -178,6 +178,7 @@
     "camera_pitch": 0.0,
     "camera_yaw": 0.0,
     "camera_focal": 2.0,
+    "z_mutation_rate": 0.05,
     "window_width": 640,
     "window_height": 480
   },

@@ -241,6 +241,8 @@ pub struct RuntimeConfig {
     pub camera_yaw: f32,
     #[serde(default = "default_camera_focal")]
     pub camera_focal: f32,
+    #[serde(default = "default_z_mutation_rate")]
+    pub z_mutation_rate: f32,
     #[serde(default = "default_window_width")]
     pub window_width: u32,
     #[serde(default = "default_window_height")]
@@ -400,6 +402,9 @@ fn default_archive_on_startup() -> bool {
 fn default_iter_lum_range() -> f32 {
     0.5
 } // 0.0 = uniform brightness, 0.5 = early iters 2x brighter than late
+fn default_z_mutation_rate() -> f32 {
+    0.05
+}
 fn default_camera_yaw() -> f32 {
     0.0
 }

@@ -1374,14 +1374,23 @@ impl FlameGenome {
         let mut rng = rand::rng();
 
         // Single mutation per evolve — preserves the backbone, changes one thing at a time
-        match rng.random_range(0..8) {
-            0 | 1 => child.mutate_perturb(&mut rng, audio, cfg, profile), // most common
-            2 => child.mutate_swap_variations(&mut rng),
-            3 => child.mutate_rotate_colors(&mut rng),
-            4 => child.mutate_shuffle_transforms(&mut rng),
-            5 => child.mutate_global_params(&mut rng),
-            6 => child.mutate_final_transform(&mut rng, audio, cfg, profile),
-            _ => child.mutate_symmetry(&mut rng, audio),
+        // z-mutation fires with probability z_mutation_rate before the normal table
+        if cfg.z_mutation_rate > 0.0 && rng.random::<f32>() < cfg.z_mutation_rate {
+            if rng.random::<bool>() {
+                child.mutate_z_tilt(&mut rng);
+            } else {
+                child.mutate_z_scale(&mut rng);
+            }
+        } else {
+            match rng.random_range(0..8) {
+                0 | 1 => child.mutate_perturb(&mut rng, audio, cfg, profile), // most common
+                2 => child.mutate_swap_variations(&mut rng),
+                3 => child.mutate_rotate_colors(&mut rng),
+                4 => child.mutate_shuffle_transforms(&mut rng),
+                5 => child.mutate_global_params(&mut rng),
+                6 => child.mutate_final_transform(&mut rng, audio, cfg, profile),
+                _ => child.mutate_symmetry(&mut rng, audio),
+            }
         }
 
         // Add/remove transforms — biased toward 3-5 (Electric Sheep sweet spot)
@@ -1637,6 +1646,45 @@ impl FlameGenome {
         } else {
             self.symmetry = new_val;
         }
+    }
+
+    /// Mutate z-tilt: rotate the z-row to couple z with x or y.
+    fn mutate_z_tilt(&mut self, rng: &mut impl Rng) {
+        if self.transforms.is_empty() {
+            return;
+        }
+        let idx = rng.random_range(0..self.transforms.len());
+        let xf = &mut self.transforms[idx];
+        let angle: f32 = rng.random_range(-0.5..0.5);
+        let (s, c) = angle.sin_cos();
+        // Rotate z-row: couple z with either x (50%) or y (50%)
+        if rng.random::<bool>() {
+            // Tilt z ↔ x
+            let old_20 = xf.affine[2][0];
+            let old_22 = xf.affine[2][2];
+            xf.affine[2][0] = old_20 * c - old_22 * s;
+            xf.affine[2][2] = old_20 * s + old_22 * c;
+        } else {
+            // Tilt z ↔ y
+            let old_21 = xf.affine[2][1];
+            let old_22 = xf.affine[2][2];
+            xf.affine[2][1] = old_21 * c - old_22 * s;
+            xf.affine[2][2] = old_21 * s + old_22 * c;
+        }
+        clamp_determinant(&mut xf.affine, 0.04, 0.9);
+    }
+
+    /// Mutate z-scale: scale the z component and add random z-offset.
+    fn mutate_z_scale(&mut self, rng: &mut impl Rng) {
+        if self.transforms.is_empty() {
+            return;
+        }
+        let idx = rng.random_range(0..self.transforms.len());
+        let xf = &mut self.transforms[idx];
+        let scale = rng.random_range(0.5..1.5);
+        xf.affine[2][2] *= scale;
+        xf.offset[2] += rng.random_range(-0.5..0.5);
+        clamp_determinant(&mut xf.affine, 0.04, 0.9);
     }
 
     fn mutate_add_transform(
@@ -2285,5 +2333,47 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn mutate_z_tilt_changes_z_row() {
+        let mut g = make_test_genome(3);
+        // Ensure z-row starts as identity
+        for xf in &mut g.transforms {
+            xf.affine[2] = [0.0, 0.0, 1.0];
+        }
+        let mut rng = rand::rng();
+        g.mutate_z_tilt(&mut rng);
+        // At least one transform should have changed z-row
+        let any_changed = g.transforms.iter().any(|xf| {
+            (xf.affine[2][0]).abs() > 1e-6
+                || (xf.affine[2][1]).abs() > 1e-6
+                || (xf.affine[2][2] - 1.0).abs() > 1e-6
+        });
+        assert!(
+            any_changed,
+            "z-tilt should modify the z-row of at least one transform"
+        );
+        // Determinant should still be valid after clamping
+        for xf in &g.transforms {
+            let det = determinant_3x3(&xf.affine).abs();
+            assert!(det < 1.0, "det should be clamped after z-tilt, got {det}");
+        }
+    }
+
+    #[test]
+    fn mutate_z_scale_modifies_z() {
+        let mut g = make_test_genome(3);
+        let mut rng = rand::rng();
+        g.mutate_z_scale(&mut rng);
+        // At least one transform should have z-offset or non-1 z-scale
+        let any_changed = g
+            .transforms
+            .iter()
+            .any(|xf| xf.offset[2].abs() > 1e-6 || (xf.affine[2][2] - 1.0).abs() > 1e-6);
+        assert!(
+            any_changed,
+            "z-scale should modify z-offset or z-scale of at least one transform"
+        );
     }
 }
