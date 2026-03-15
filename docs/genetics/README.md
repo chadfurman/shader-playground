@@ -17,17 +17,23 @@ parents plus environmental noise.
      └───────────── upvote ──────────────────────────┘
 ```
 
-1. **Parent selection** -- Two parents are drawn from the voted pool,
-   history, seeds, or imported flames. A lineage cache enforces minimum
+1. **Parent selection** -- Two parents drawn from the MAP-Elites archive
+   (50% chance, uniform across occupied cells) or voted pool / history /
+   seeds / imported flames (50% chance). Lineage cache enforces minimum
    genetic distance to prevent inbreeding.
 
-2. **Breeding** -- Child transforms are assembled from four sources:
+2. **Breeding** -- Child transforms assembled from four sources:
    parent A, parent B, a community genome, and audio-biased random
-   transforms. A wildcard slot adds fresh genetic material.
+   transforms. When parents share a variation type, **interpolative
+   crossover** smoothly blends affine parameters instead of slot-swapping.
+   A wildcard slot adds fresh genetic material.
 
-3. **Mutation** -- One mutation operator fires per cycle (affine
-   perturbation, variation swap, color rotation, symmetry nudge, etc.).
-   The attractor is estimated on CPU; degenerate offspring are retried.
+3. **Mutation** -- Z-mutations fire first (5% probability: z-tilt or
+   z-scale for 3D depth). Then one standard mutation operator fires
+   (weighted: perturb 30%, final_xf 20%, swap_var 12%, symmetry 10%,
+   rotate_colors 10%, shuffle 8%, globals 10%). High-symmetry genomes
+   (4+ fold) force a final transform. The attractor is estimated on CPU;
+   degenerate offspring are retried.
 
 4. **Rendering + voting** -- The child is rendered via the chaos-game
    compute shader. Users upvote or downvote. Positive-score genomes
@@ -44,7 +50,8 @@ parents plus environmental noise.
 
 ## Key Source Files
 
-- `src/genome.rs` -- `FlameGenome`, `FlameTransform`, `breed()`, mutation operators
+- `src/genome.rs` -- `FlameGenome`, `FlameTransform` (3x3 affine), `breed()`, `lerp_with()`, mutation operators (including z-tilt/z-scale)
+- `src/archive.rs` -- `MapElitesArchive`, `GridCoords` (diversity-preserving parent selection)
 - `src/votes.rs` -- `VoteLedger`, `LineageCache`, genetic distance
 - `src/weights.rs` -- `RuntimeConfig` (all tunable breeding/mutation params)
-- `src/main.rs` -- `pick_breeding_parents()`, `archive_history_if_needed()`
+- `src/main.rs` -- `pick_breeding_parents()`, `archive_genome()`, `morph_snapshot_or_current()`
