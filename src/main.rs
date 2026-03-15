@@ -44,6 +44,8 @@ struct Uniforms {
     extra4: [f32; 4],     // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
     extra5: [f32; 4], // dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
     extra6: [f32; 4], // dist_lum_strength, iter_lum_range, _reserved, _reserved
+    extra7: [f32; 4], // camera_pitch, camera_yaw, camera_focal, dof_focal_distance
+    extra8: [f32; 4], // dof_strength, _reserved, _reserved, _reserved
 }
 
 // ── File Watcher ──
@@ -202,12 +204,12 @@ impl Gpu {
             ..Default::default()
         });
 
-        // Persistent point state: 3 f32s per thread (x, y, color_idx)
+        // Persistent point state: 7 f32s per thread (x, y, z, prev_x, prev_y, prev_z, color_idx)
         // Max 8192 workgroups * 256 threads = 2M threads
         let max_threads: u64 = 8192 * 256;
         let point_state_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("point_state"),
-            size: max_threads * 12, // 3 f32s * 4 bytes
+            size: max_threads * 28, // 7 f32s * 4 bytes
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -215,10 +217,10 @@ impl Gpu {
         // Histogram buffer: 6 u32s per pixel (density + R + G + B + vx + vy)
         let histogram_buffer = create_histogram_buffer(&device, config.width, config.height);
 
-        // Initial transform buffer (6 transforms * 42 floats * 4 bytes)
+        // Initial transform buffer (6 transforms * 48 floats * 4 bytes)
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
-            size: (6 * 42 * 4) as u64,
+            size: (6 * 48 * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -712,7 +714,7 @@ impl Gpu {
     }
 
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
-        let size = (num_transforms.max(1) * 42 * 4) as u64;
+        let size = (num_transforms.max(1) * 48 * 4) as u64;
         self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
             size,
@@ -1651,16 +1653,19 @@ impl App {
         );
         let xf_data = &self.morph_base_xf;
         for (i, xf) in snapshot.transforms.iter_mut().enumerate() {
-            let base = i * 42;
-            if base + 7 < xf_data.len() {
+            let base = i * 48;
+            if base + 13 < xf_data.len() {
                 xf.weight = xf_data[base];
-                xf.a = xf_data[base + 1];
-                xf.b = xf_data[base + 2];
-                xf.c = xf_data[base + 3];
-                xf.d = xf_data[base + 4];
-                xf.offset[0] = xf_data[base + 5];
-                xf.offset[1] = xf_data[base + 6];
-                xf.color = xf_data[base + 7];
+                // 3x3 affine: 9 values at base+1..base+9
+                for r in 0..3 {
+                    for c in 0..3 {
+                        xf.affine[r][c] = xf_data[base + 1 + r * 3 + c];
+                    }
+                }
+                xf.offset[0] = xf_data[base + 10];
+                xf.offset[1] = xf_data[base + 11];
+                xf.offset[2] = xf_data[base + 12];
+                xf.color = xf_data[base + 13];
             }
         }
         snapshot
@@ -1819,7 +1824,7 @@ impl App {
 
         // Ensure buffers can hold max of current and target transforms
         let target_xf = self.genome.flatten_transforms();
-        let max_xf = (self.xf_params.len().max(target_xf.len())) / 42;
+        let max_xf = (self.xf_params.len().max(target_xf.len())) / 48;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(gpu) = &mut self.gpu {
@@ -1827,7 +1832,7 @@ impl App {
             }
         }
         // Pad start vectors to match
-        self.morph_start_xf.resize(max_xf * 42, 0.0);
+        self.morph_start_xf.resize(max_xf * 48, 0.0);
 
         // Generate per-transform morph rates: some fast (2x), some slow (0.4x)
         // This makes transforms arrive at different times for organic transitions.
@@ -2195,7 +2200,7 @@ impl ApplicationHandler for App {
                     "1" | "2" | "3" | "4" => {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
                         if idx < self.num_transforms {
-                            let base = idx * 42; // weight is first field
+                            let base = idx * 48; // weight is first field
                             if base < self.xf_params.len() {
                                 if self.xf_params[base] < 0.01 {
                                     self.xf_params[base] = 0.25;
@@ -2320,13 +2325,13 @@ impl ApplicationHandler for App {
                     padded_start.resize(max_len, 0.0);
                     let mut padded_genome = genome_xf;
                     padded_genome.resize(max_len, 0.0);
-                    let num_xf = max_len / 42;
+                    let num_xf = max_len / 48;
                     for xi in 0..num_xf {
                         // Each transform morphs at its own rate
                         let rate = self.morph_xf_rates.get(xi).copied().unwrap_or(1.0);
                         let xf_t = smoothstep((self.morph_progress * rate).min(1.0));
-                        let base = xi * 42;
-                        for j in 0..42 {
+                        let base = xi * 48;
+                        for j in 0..48 {
                             let idx = base + j;
                             if idx < max_len {
                                 self.morph_base_xf[idx] = padded_start[idx]
@@ -2503,6 +2508,13 @@ impl ApplicationHandler for App {
                         0.0,
                         0.0,
                     ],
+                    extra7: [
+                        self.weights._config.camera_pitch,
+                        self.weights._config.camera_yaw,
+                        self.weights._config.camera_focal,
+                        self.weights._config.dof_focal_distance,
+                    ],
+                    extra8: [self.weights._config.dof_strength, 0.0, 0.0, 0.0],
                 };
 
                 gpu.queue
@@ -2543,29 +2555,30 @@ impl ApplicationHandler for App {
                     gpu.workgroups = base_wg;
                 };
 
-                let xf_write_len = self.num_transforms * 42;
+                let xf_write_len = self.num_transforms * 48;
                 let xf_len = xf_write_len.min(self.xf_params.len());
 
                 // Jacobian importance sampling: blend |a*d - b*c| with genetic weight
+                // 3x3 layout: field 0=weight, 1=m00, 2=m01, 4=m10, 5=m11
                 let jac_strength = self.weights._config.jacobian_weight_strength;
                 if jac_strength > 0.001 && self.num_transforms > 0 {
                     let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
                     let n = self.num_transforms;
                     let mut weights: Vec<f32> = Vec::with_capacity(n);
                     for i in 0..n {
-                        let base = i * 42;
+                        let base = i * 48;
                         let w = adjusted[base]; // field 0 = weight
-                        let a = adjusted[base + 1];
-                        let b = adjusted[base + 2];
-                        let c = adjusted[base + 3];
-                        let d = adjusted[base + 4];
+                        let a = adjusted[base + 1]; // m00
+                        let b = adjusted[base + 2]; // m01
+                        let c = adjusted[base + 4]; // m10
+                        let d = adjusted[base + 5]; // m11
                         let det = (a * d - b * c).abs();
                         weights.push(w * (1.0 - jac_strength) + det * jac_strength);
                     }
                     let total: f32 = weights.iter().sum();
                     if total > 0.0 {
                         for (i, jw) in weights.iter().enumerate() {
-                            adjusted[i * 42] = jw / total;
+                            adjusted[i * 48] = jw / total;
                         }
                     }
                     gpu.queue.write_buffer(

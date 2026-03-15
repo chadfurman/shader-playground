@@ -1,192 +1,7 @@
 {
-  "mutant-1106": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1106.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-1440": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1440.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9964": {
+  "mutant-8358": {
     "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-9964.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-1509": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1509.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-6254": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-6254.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9760": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9760.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9139": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9139.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5165": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5165.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-3968": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3968.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-5779": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5779.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9692": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9692.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-4445": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-4445.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-1059": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1059.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-4767": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4767.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9010": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9010.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-6571": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6571.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5042": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5042.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-8553": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8553.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9866": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9866.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-6314": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-6314.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-1799": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1799.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-2399": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2399.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-3410": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3410.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5719": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5719.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5942": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5942.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-8195": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8195.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-4104": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4104.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-6027": {
-    "score": 0,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6027.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-1471": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1471.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-5921": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5921.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9732": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9732.json",
-    "last_seen": "2026-03-23"
-  },
-  "mutant-3531": {
-    "score": 0,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3531.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-8715": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8715.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9712": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9712.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-5564": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5564.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-2018": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2018.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5211": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5211.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-1921": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1921.json",
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8358.json",
     "last_seen": "2026-03-27"
   },
   "mutant-3580": {
@@ -194,404 +9,24 @@
     "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3580.json",
     "last_seen": "2026-03-27"
   },
-  "mutant-3578": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-3578.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-9165": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9165.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-1587": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1587.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-2601": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2601.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-5079": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5079.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-2237": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-2237.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-7883": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-7883.json",
-    "last_seen": "2026-03-21"
-  },
-  "mutant-9651": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-9651.json",
-    "last_seen": "2026-03-21"
-  },
-  "mutant-4324": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4324.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9222": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9222.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-7987": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-7987.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5901": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-5901.json",
-    "last_seen": "2026-03-22"
-  },
   "mutant-8150": {
     "score": 1,
     "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8150.json",
     "last_seen": "2026-03-27"
-  },
-  "mutant-3856": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-3856.json",
-    "last_seen": "2026-03-21"
-  },
-  "mutant-2074": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2074.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-8300": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8300.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-6124": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6124.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-3038": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3038.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-9958": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9958.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-3020": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-3020.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-3667": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3667.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-8089": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-8089.json",
-    "last_seen": "2026-03-21"
-  },
-  "mutant-8358": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8358.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-2692": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2692.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-8977": {
-    "score": -2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8977.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9308": {
-    "score": 5,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9308.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-4113": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-4113.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-6048": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6048.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-2284": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-2284.json",
-    "last_seen": "2026-03-21"
-  },
-  "mutant-4642": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4642.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-6369": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6369.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-9721": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9721.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-3155": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3155.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-6149": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6149.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-9158": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-9158.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-7881": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-7881.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-6623": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6623.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-6979": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6979.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-7903": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7903.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-3985": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3985.json",
-    "last_seen": "2026-03-26"
   },
   "mutant-9231": {
     "score": 2,
     "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9231.json",
     "last_seen": "2026-03-24"
   },
-  "mutant-5863": {
-    "score": -4,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5863.json",
+  "mutant-3155": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3155.json",
     "last_seen": "2026-03-27"
   },
-  "mutant-5254": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5254.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-1045": {
+  "mutant-7903": {
     "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1045.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-7941": {
-    "score": 0,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7941.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-6646": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6646.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-7742": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7742.json",
-    "last_seen": "2026-03-23"
-  },
-  "mutant-4326": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4326.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-5749": {
-    "score": 4,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5749.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-9249": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9249.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-3083": {
-    "score": 5,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3083.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-2130": {
-    "score": 4,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2130.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-4753": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4753.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-3511": {
-    "score": 3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3511.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-9399": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9399.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-3485": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3485.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9200": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9200.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5203": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5203.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-3795": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3795.json",
-    "last_seen": "2026-03-23"
-  },
-  "mutant-8342": {
-    "score": 0,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8342.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-9233": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9233.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-3300": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3300.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-8627": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8627.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-4936": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-4936.json",
-    "last_seen": "2026-03-21"
-  },
-  "mutant-5223": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5223.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9776": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-9776.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9006": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9006.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-8895": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8895.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-7469": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7469.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-7725": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7725.json",
-    "last_seen": "2026-03-24"
-  },
-  "mutant-3864": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3864.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-5744": {
-    "score": 2,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5744.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-8454": {
-    "score": -5,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8454.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-9148": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9148.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-5871": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5871.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-1789": {
-    "score": -3,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1789.json",
-    "last_seen": "2026-03-26"
-  },
-  "mutant-3669": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-3669.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-2327": {
-    "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2327.json",
-    "last_seen": "2026-03-22"
-  },
-  "mutant-2354": {
-    "score": -5,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-2354.json",
-    "last_seen": "2026-03-27"
-  },
-  "mutant-2779": {
-    "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-2779.json",
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7903.json",
     "last_seen": "2026-03-27"
   },
   "mutant-5226": {
@@ -599,9 +34,14 @@
     "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5226.json",
     "last_seen": "2026-03-24"
   },
-  "mutant-8434": {
+  "mutant-4712": {
+    "score": 9,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4712.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7742": {
     "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8434.json",
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7742.json",
     "last_seen": "2026-03-23"
   },
   "mutant-9963": {
@@ -609,14 +49,579 @@
     "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9963.json",
     "last_seen": "2026-03-22"
   },
+  "mutant-5901": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-5901.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-5564": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5564.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-9006": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9006.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7725": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7725.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-3020": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-3020.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-6884": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-6884.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-9692": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9692.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5223": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5223.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-9010": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9010.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-1106": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1106.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-8895": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8895.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-6254": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-6254.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-9200": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9200.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-8977": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8977.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-6623": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6623.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4104": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4104.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-3038": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3038.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-4326": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4326.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-9760": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9760.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5871": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5871.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-1799": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1799.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3761": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3761.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7509": {
+    "score": 5,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7509.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-2284": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-2284.json",
+    "last_seen": "2026-03-21"
+  },
+  "mutant-9308": {
+    "score": 5,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9308.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5444": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5444.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-9958": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9958.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-9249": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9249.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-6314": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-6314.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-8195": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8195.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-1045": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1045.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5211": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5211.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2033": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2033.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-1789": {
+    "score": -3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1789.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-9139": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9139.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3968": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3968.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-3669": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-3669.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-3531": {
+    "score": 0,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3531.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4113": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-4113.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2769": {
+    "score": -3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2769.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3083": {
+    "score": 5,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3083.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-8553": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8553.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2327": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2327.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-9374": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9374.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-1587": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1587.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5863": {
+    "score": -4,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5863.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5942": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5942.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-9730": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9730.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4324": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4324.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4767": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4767.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-9712": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9712.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-1461": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1461.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-1440": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1440.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2692": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2692.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4753": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4753.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-5079": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5079.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-3511": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3511.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-8089": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-8089.json",
+    "last_seen": "2026-03-21"
+  },
+  "mutant-5919": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5919.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-1355": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1355.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-9721": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9721.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4936": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-4936.json",
+    "last_seen": "2026-03-21"
+  },
+  "mutant-3528": {
+    "score": 8,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3528.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-8715": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8715.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2354": {
+    "score": -5,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-2354.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3300": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3300.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-6369": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6369.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-6571": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6571.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3578": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-3578.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-9964": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-9964.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3410": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3410.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-1605": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1605.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-6048": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6048.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-6149": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6149.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-6646": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6646.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-7941": {
+    "score": 0,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7941.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-2018": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2018.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2237": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-2237.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-3795": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3795.json",
+    "last_seen": "2026-03-23"
+  },
+  "mutant-9931": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9931.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-3985": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3985.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-1206": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1206.json",
+    "last_seen": "2026-03-23"
+  },
+  "mutant-5719": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5719.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5042": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5042.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-9222": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9222.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-4563": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4563.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7883": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-7883.json",
+    "last_seen": "2026-03-21"
+  },
+  "mutant-1059": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1059.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7881": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-7881.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-9233": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9233.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-9651": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-9651.json",
+    "last_seen": "2026-03-21"
+  },
+  "mutant-2779": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-2779.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2399": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2399.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-7469": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7469.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3073": {
+    "score": 0,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3073.json",
+    "last_seen": "2026-03-28"
+  },
   "mutant-7101": {
     "score": 2,
     "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-7101.json",
     "last_seen": "2026-03-26"
   },
+  "mutant-9732": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9732.json",
+    "last_seen": "2026-03-23"
+  },
+  "mutant-9866": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9866.json",
+    "last_seen": "2026-03-22"
+  },
   "mutant-1849": {
     "score": 1,
     "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1849.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7768": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-7768.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-9399": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9399.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-9202": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9202.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-8627": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8627.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-1471": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1471.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-9158": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-9158.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7987": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-7987.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-7387": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-7387.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-1459": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1459.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-5749": {
+    "score": 4,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5749.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-3864": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3864.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-6027": {
+    "score": 0,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6027.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-9165": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9165.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-2130": {
+    "score": 4,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2130.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-6124": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6124.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-3485": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3485.json",
     "last_seen": "2026-03-27"
   },
   "mutant-8017": {
@@ -624,14 +629,139 @@
     "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8017.json",
     "last_seen": "2026-03-23"
   },
-  "mutant-9202": {
+  "mutant-1080": {
     "score": 1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9202.json",
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1080.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5165": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5165.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-6098": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-6098.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4498": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4498.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-8934": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8934.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5744": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5744.json",
+    "last_seen": "2026-03-26"
+  },
+  "mutant-3856": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/mutant-3856.json",
+    "last_seen": "2026-03-21"
+  },
+  "mutant-5254": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5254.json",
     "last_seen": "2026-03-22"
   },
-  "mutant-1206": {
+  "mutant-2074": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2074.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-8454": {
+    "score": -5,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8454.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-8300": {
     "score": -1,
-    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-1206.json",
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-8300.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-8342": {
+    "score": 0,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8342.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-3667": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3667.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-4642": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-4642.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-9776": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-9776.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5779": {
+    "score": -2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-5779.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-1921": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1921.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-5921": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5921.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-1509": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-1509.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-8434": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-8434.json",
     "last_seen": "2026-03-23"
+  },
+  "mutant-9148": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9148.json",
+    "last_seen": "2026-03-27"
+  },
+  "mutant-2601": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-2601.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-4445": {
+    "score": -1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/history/mutant-4445.json",
+    "last_seen": "2026-03-22"
+  },
+  "mutant-5203": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-5203.json",
+    "last_seen": "2026-03-24"
+  },
+  "mutant-9019": {
+    "score": 1,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-9019.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-3423": {
+    "score": 2,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-3423.json",
+    "last_seen": "2026-03-28"
+  },
+  "mutant-6979": {
+    "score": 3,
+    "file": "/Users/chadfurman/projects/shader-playground/genomes/voted/mutant-6979.json",
+    "last_seen": "2026-03-26"
   }
 }

@@ -15,6 +15,8 @@ struct Uniforms {
     extra4: vec4<f32>,   // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
     extra5: vec4<f32>,   // dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
     extra6: vec4<f32>,   // dist_lum_strength, iter_lum_range, reserved, reserved
+    extra7: vec4<f32>,   // camera_pitch, camera_yaw, camera_focal, dof_focal_distance
+    extra8: vec4<f32>,   // dof_strength, reserved, reserved, reserved
 }
 
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;
@@ -27,10 +29,10 @@ struct Uniforms {
 // Unique thread ID for subgroup leader election (set from gid.x in main)
 var<private> sg_thread_id: u32;
 
-fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 42u + field]; }
+fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 48u + field]; }
 
 fn xf_param(idx: u32, param_offset: u32) -> f32 {
-    return transforms[idx * 42u + 34u + param_offset];
+    return transforms[idx * 48u + 40u + param_offset];
 }
 
 const PI: f32 = 3.14159265;
@@ -260,12 +262,13 @@ fn V_curl(p: vec2<f32>, seed: u32) -> vec2<f32> {
 // ── IFS Transform (reads from storage buffer) ──
 
 fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<f32> {
-    let af_a   = xf(idx, 1u);
-    let af_b   = xf(idx, 2u);
-    let af_c   = xf(idx, 3u);
-    let af_d   = xf(idx, 4u);
-    let ox     = xf(idx, 5u);
-    let oy     = xf(idx, 6u);
+    // 3x3 affine: m00(1), m01(2), m02(3), m10(4), m11(5), m12(6), m20(7), m21(8), m22(9)
+    let af_a   = xf(idx, 1u);   // m00
+    let af_b   = xf(idx, 2u);   // m01
+    let af_c   = xf(idx, 4u);   // m10
+    let af_d   = xf(idx, 5u);   // m11
+    let ox     = xf(idx, 10u);  // offset_x
+    let oy     = xf(idx, 11u);  // offset_y
 
     let drift = u.kifs.w; // drift_speed
 
@@ -300,14 +303,14 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
                  c2 * p.x + d2 * p.y + oy + oy_drift);
 
     // ── Tier 1: cheap variations (always check) ──
-    let w_lin  = xf(idx, 8u);
+    let w_lin  = xf(idx, 14u);
     var v = q * w_lin;
 
-    let w_sin  = xf(idx, 9u);
-    let w_sph  = xf(idx, 10u);
-    let w_swi  = xf(idx, 11u);
-    let w_hor  = xf(idx, 12u);
-    let w_han  = xf(idx, 13u);
+    let w_sin  = xf(idx, 15u);
+    let w_sph  = xf(idx, 16u);
+    let w_swi  = xf(idx, 17u);
+    let w_hor  = xf(idx, 18u);
+    let w_han  = xf(idx, 19u);
 
     if (w_sin > 0.0) { v += V_sinusoidal(q)    * w_sin; }
     if (w_sph > 0.0) { v += V_spherical(q)     * w_sph; }
@@ -316,12 +319,12 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     if (w_han > 0.0) { v += V_handkerchief(q)  * w_han; }
 
     // ── Tier 2: moderate cost (atan2-based) — only load if any are active ──
-    let w_jul  = xf(idx, 14u);
-    let w_pol  = xf(idx, 15u);
-    let w_dsc  = xf(idx, 16u);
-    let w_rng  = xf(idx, 17u);
-    let w_bub  = xf(idx, 18u);
-    let w_fsh  = xf(idx, 19u);
+    let w_jul  = xf(idx, 20u);
+    let w_pol  = xf(idx, 21u);
+    let w_dsc  = xf(idx, 22u);
+    let w_rng  = xf(idx, 23u);
+    let w_bub  = xf(idx, 24u);
+    let w_fsh  = xf(idx, 25u);
 
     if (w_jul > 0.0) { v += V_julia(q, rng)    * w_jul; }
     if (w_pol > 0.0) { v += V_polar(q)          * w_pol; }
@@ -331,20 +334,20 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     if (w_fsh > 0.0) { v += V_fisheye(q)        * w_fsh; }
 
     // ── Tier 3: expensive or scatter-prone — guard with a quick sum check ──
-    let w_exp  = xf(idx, 20u);
-    let w_spi  = xf(idx, 21u);
-    let w_dia  = xf(idx, 22u);
-    let w_bnt  = xf(idx, 23u);
-    let w_wav  = xf(idx, 24u);
-    let w_pop  = xf(idx, 25u);
-    let w_fan  = xf(idx, 26u);
-    let w_eye  = xf(idx, 27u);
-    let w_crs  = xf(idx, 28u);
-    let w_tan  = xf(idx, 29u);
-    let w_cos  = xf(idx, 30u);
-    let w_blb  = xf(idx, 31u);
-    let w_noi  = xf(idx, 32u);
-    let w_crl  = xf(idx, 33u);
+    let w_exp  = xf(idx, 26u);
+    let w_spi  = xf(idx, 27u);
+    let w_dia  = xf(idx, 28u);
+    let w_bnt  = xf(idx, 29u);
+    let w_wav  = xf(idx, 30u);
+    let w_pop  = xf(idx, 31u);
+    let w_fan  = xf(idx, 32u);
+    let w_eye  = xf(idx, 33u);
+    let w_crs  = xf(idx, 34u);
+    let w_tan  = xf(idx, 35u);
+    let w_cos  = xf(idx, 36u);
+    let w_blb  = xf(idx, 37u);
+    let w_noi  = xf(idx, 38u);
+    let w_crl  = xf(idx, 39u);
 
     let tier3_sum = w_exp + w_spi + w_dia + w_bnt + w_wav + w_pop + w_fan
                   + w_eye + w_crs + w_tan + w_cos + w_blb + w_noi + w_crl;
@@ -370,7 +373,7 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
 }
 
 fn xform_color(idx: u32) -> f32 {
-    return xf(idx, 7u);
+    return xf(idx, 13u);
 }
 
 // Splat helper — writes density + color + velocity + depth to one pixel.
@@ -504,10 +507,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
     var rng = gid.x * 2654435761u + u.frame * 7919u + 12345u;
 
-    // Read persistent point state (survives across frames/genome changes)
-    let state_idx = gid.x * 3u;
-    var p = vec2(point_state[state_idx], point_state[state_idx + 1u]);
-    var color_idx = point_state[state_idx + 2u];
+    // Read persistent point state: 7 floats (x, y, z, prev_x, prev_y, prev_z, color_idx)
+    let state_idx = gid.x * 7u;
+    var p = vec3(point_state[state_idx], point_state[state_idx + 1u], point_state[state_idx + 2u]);
+    var prev_p3 = vec3(point_state[state_idx + 3u], point_state[state_idx + 4u], point_state[state_idx + 5u]);
+    var color_idx = point_state[state_idx + 6u];
 
     // Re-randomize if: first frame (all zeros), escaped, NaN, or periodic refresh
     // 5% of threads re-randomize each frame to maintain fresh attractor coverage
@@ -517,7 +521,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                    || p.x != p.x || p.y != p.y  // NaN check
                    || refresh;
     if (needs_init) {
-        p = vec2(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0);
+        p = vec3(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0, 0.0);
+        prev_p3 = p;
         color_idx = randf(&rng);
     }
 
@@ -532,7 +537,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (total_weight < 1e-6) { return; }
 
     let max_iters = max(u.has_final_xform >> 16u, 10u);  // unpack iteration count
-    var prev_p = p;
+    var prev_p = p.xy;
 
     for (var i = 0u; i < max_iters; i++) {
         // Weighted random transform selection
@@ -547,19 +552,27 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             }
         }
 
-        prev_p = p;
-        p = apply_xform(p, tidx, t, &rng);
+        prev_p = p.xy;
+        prev_p3 = p;
+        // Apply 2D variations (z passes through via affine z-row identity)
+        let p2d = apply_xform(p.xy, tidx, t, &rng);
+        // Apply z-component through the full 3x3 affine
+        let m20 = xf(tidx, 7u);   // z-row of affine
+        let m21 = xf(tidx, 8u);
+        let m22 = xf(tidx, 9u);
+        let oz  = xf(tidx, 12u);  // offset_z
+        let new_z = m20 * p.x + m21 * p.y + m22 * p.z + oz;
+        p = vec3(p2d.x, p2d.y, new_z);
 
         // Wavefront regeneration: immediately recycle escaped/dead points
-        // instead of waiting for the next frame's 5% random refresh.
-        // This ensures 100% of iterations produce visible pixels.
         let escaped = abs(p.x) > 10.0 || abs(p.y) > 10.0
                     || p.x != p.x || p.y != p.y;  // NaN
         if (escaped) {
-            p = vec2(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0);
+            p = vec3(randf(&rng) * 4.0 - 2.0, randf(&rng) * 4.0 - 2.0, 0.0);
+            prev_p3 = p;
             color_idx = randf(&rng);
-            prev_p = p;
-            continue;  // skip splatting this iteration — warmup the new point
+            prev_p = p.xy;
+            continue;
         }
 
         let cb = u.extra2.w;  // color_blend from weights
@@ -570,16 +583,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
         if (i < u32(u.extra3.z)) { continue; }
 
-        // Velocity in screen space (for directional blur)
-        let vel = (p - prev_p) / zoom;
+        // 3D velocity for motion blur (project to 2D screen space)
+        let vel = (p.xy - prev_p) / zoom;
 
         // Final transform (if present)
-        var plot_p = p;
+        var plot_p = p.xy;
+        var plot_z = p.z;
         var plot_color = color_idx;
         if ((u.has_final_xform & 1u) == 1u) {
             let final_idx = u.transform_count;  // final xform is right after regular xforms
             plot_p = apply_xform(plot_p, final_idx, t, &rng);
-            plot_color = plot_color * 0.5 + xf(final_idx, 7u) * 0.5;  // blend with final xform's color
+            // Apply z-component through final xform affine
+            let fm20 = xf(final_idx, 7u);
+            let fm21 = xf(final_idx, 8u);
+            let fm22 = xf(final_idx, 9u);
+            let foz  = xf(final_idx, 12u);
+            plot_z = fm20 * p.x + fm21 * p.y + fm22 * p.z + foz;
+            plot_color = plot_color * 0.5 + xf(final_idx, 13u) * 0.5;  // blend with final xform's color
         }
 
         // Per-point luminosity variation:
@@ -601,6 +621,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             base_col = palette(plot_color + u.extra.x) * lum;
         }
 
+        // ── Camera transform (pitch/yaw rotation + perspective divide) ──
+        let cam_pitch = u.extra7.x;
+        let cam_yaw = u.extra7.y;
+        let cam_focal = u.extra7.z;
+
         // Symmetry: plot rotated/mirrored copies
         let sym = i32(u.extra.w);
         let abs_sym = max(abs(sym), 1);
@@ -612,6 +637,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let sp = sin(sym_angle);
             let sym_p = vec2(plot_p.x * cp - plot_p.y * sp, plot_p.x * sp + plot_p.y * cp);
 
+            // Apply 3D camera rotation (pitch around X, yaw around Y)
+            var cam_p = vec3(sym_p.x, sym_p.y, plot_z);
+            if (abs(cam_pitch) > 0.001 || abs(cam_yaw) > 0.001) {
+                // Pitch rotation (around X axis)
+                let cp_a = cos(cam_pitch);
+                let sp_a = sin(cam_pitch);
+                cam_p = vec3(cam_p.x, cam_p.y * cp_a - cam_p.z * sp_a, cam_p.y * sp_a + cam_p.z * cp_a);
+                // Yaw rotation (around Y axis)
+                let cy_a = cos(cam_yaw);
+                let sy_a = sin(cam_yaw);
+                cam_p = vec3(cam_p.x * cy_a + cam_p.z * sy_a, cam_p.y, -cam_p.x * sy_a + cam_p.z * cy_a);
+            }
+
+            // Perspective divide: project 3D to 2D screen coords
+            let proj_p = cam_p.xy / (cam_p.z / cam_focal + 1.0);
+
             // Sub-pixel jitter for free supersampling via accumulation averaging
             let jitter_amount = u.extra4.x;
             let jitter_seed = gid.x * 3u + u.frame * 17u + u32(si) * 7u;
@@ -619,36 +660,43 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let jx = (f32(pcg(&jitter_rng)) / 4294967295.0 - 0.5) * jitter_amount;
             let jy = (f32(pcg(&jitter_rng)) / 4294967295.0 - 0.5) * jitter_amount;
 
-            let screen = (sym_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
+            let screen = (proj_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
             let px_x = i32(screen.x);
             let px_y = i32(screen.y);
 
-            let point_depth = length(sym_p);
+            let point_depth = cam_p.z;  // use camera-space z for depth
 
             if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
                 let frac_x = screen.x - f32(px_x);
                 let frac_y = screen.y - f32(px_y);
-                splat_point(px_x, px_y, frac_x, frac_y, base_col, vel, point_depth, w, h);
+                // Project velocity through same perspective
+                let proj_vel = vel / (cam_p.z / cam_focal + 1.0);
+                splat_point(px_x, px_y, frac_x, frac_y, base_col, proj_vel, point_depth, w, h);
             }
 
             // Bilateral mirror
             if (bilateral) {
-                let mir_p = vec2(-sym_p.x, sym_p.y);
-                let mscreen = (mir_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
+                let mir_cam = vec3(-cam_p.x, cam_p.y, cam_p.z);
+                let mir_proj = mir_cam.xy / (mir_cam.z / cam_focal + 1.0);
+                let mscreen = (mir_proj / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
                 let mpx_x = i32(mscreen.x);
                 let mpx_y = i32(mscreen.y);
                 if (mpx_x >= 0 && mpx_x < i32(w) && mpx_y >= 0 && mpx_y < i32(h)) {
                     let mfrac_x = mscreen.x - f32(mpx_x);
                     let mfrac_y = mscreen.y - f32(mpx_y);
-                    let mvel = vec2(-vel.x, vel.y);
+                    let mvel = vec2(-vel.x, vel.y) / (mir_cam.z / cam_focal + 1.0);
                     splat_point(mpx_x, mpx_y, mfrac_x, mfrac_y, base_col, mvel, point_depth, w, h);
                 }
             }
         }
     }
 
-    // Write back persistent point state for next frame
+    // Write back persistent point state for next frame (7 floats)
     point_state[state_idx] = p.x;
     point_state[state_idx + 1u] = p.y;
-    point_state[state_idx + 2u] = color_idx;
+    point_state[state_idx + 2u] = p.z;
+    point_state[state_idx + 3u] = prev_p3.x;
+    point_state[state_idx + 4u] = prev_p3.y;
+    point_state[state_idx + 5u] = prev_p3.z;
+    point_state[state_idx + 6u] = color_idx;
 }
