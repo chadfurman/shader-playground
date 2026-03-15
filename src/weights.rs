@@ -234,6 +234,13 @@ pub struct RuntimeConfig {
     pub dist_lum_strength: f32,
     #[serde(default = "default_iter_lum_range")]
     pub iter_lum_range: f32,
+    // 3D rendering
+    #[serde(default)]
+    pub camera_pitch: f32,
+    #[serde(default = "default_camera_yaw")]
+    pub camera_yaw: f32,
+    #[serde(default = "default_camera_focal")]
+    pub camera_focal: f32,
     #[serde(default = "default_window_width")]
     pub window_width: u32,
     #[serde(default = "default_window_height")]
@@ -393,6 +400,12 @@ fn default_archive_on_startup() -> bool {
 fn default_iter_lum_range() -> f32 {
     0.5
 } // 0.0 = uniform brightness, 0.5 = early iters 2x brighter than late
+fn default_camera_yaw() -> f32 {
+    0.0
+}
+fn default_camera_focal() -> f32 {
+    2.0
+}
 fn default_window_width() -> u32 {
     640
 }

@@ -15,6 +15,8 @@ struct Uniforms {
     extra4: vec4<f32>,   // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
     extra5: vec4<f32>,   // dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
     extra6: vec4<f32>,   // dist_lum_strength, iter_lum_range, reserved, reserved
+    extra7: vec4<f32>,   // camera_pitch, camera_yaw, camera_focal, dof_focal_distance
+    extra8: vec4<f32>,   // dof_strength, reserved, reserved, reserved
 }
 
 @group(0) @binding(0) var<storage, read_write> histogram: array<atomic<u32>>;
@@ -563,6 +565,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             base_col = palette(plot_color + u.extra.x) * lum;
         }
 
+        // ── Camera transform (pitch/yaw rotation + perspective divide) ──
+        let cam_pitch = u.extra7.x;
+        let cam_yaw = u.extra7.y;
+        let cam_focal = u.extra7.z;
+
         // Symmetry: plot rotated/mirrored copies
         let sym = i32(u.extra.w);
         let abs_sym = max(abs(sym), 1);
@@ -574,6 +581,22 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let sp = sin(sym_angle);
             let sym_p = vec2(plot_p.x * cp - plot_p.y * sp, plot_p.x * sp + plot_p.y * cp);
 
+            // Apply 3D camera rotation (pitch around X, yaw around Y)
+            var cam_p = vec3(sym_p.x, sym_p.y, plot_z);
+            if (abs(cam_pitch) > 0.001 || abs(cam_yaw) > 0.001) {
+                // Pitch rotation (around X axis)
+                let cp_a = cos(cam_pitch);
+                let sp_a = sin(cam_pitch);
+                cam_p = vec3(cam_p.x, cam_p.y * cp_a - cam_p.z * sp_a, cam_p.y * sp_a + cam_p.z * cp_a);
+                // Yaw rotation (around Y axis)
+                let cy_a = cos(cam_yaw);
+                let sy_a = sin(cam_yaw);
+                cam_p = vec3(cam_p.x * cy_a + cam_p.z * sy_a, cam_p.y, -cam_p.x * sy_a + cam_p.z * cy_a);
+            }
+
+            // Perspective divide: project 3D to 2D screen coords
+            let proj_p = cam_p.xy / (cam_p.z / cam_focal + 1.0);
+
             // Sub-pixel jitter for free supersampling via accumulation averaging
             let jitter_amount = u.extra4.x;
             let jitter_seed = gid.x * 3u + u.frame * 17u + u32(si) * 7u;
@@ -581,28 +604,31 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             let jx = (f32(pcg(&jitter_rng)) / 4294967295.0 - 0.5) * jitter_amount;
             let jy = (f32(pcg(&jitter_rng)) / 4294967295.0 - 0.5) * jitter_amount;
 
-            let screen = (sym_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
+            let screen = (proj_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
             let px_x = i32(screen.x);
             let px_y = i32(screen.y);
 
-            let point_depth = plot_z;  // use actual z-depth from 3D affine
+            let point_depth = cam_p.z;  // use camera-space z for depth
 
             if (px_x >= 0 && px_x < i32(w) && px_y >= 0 && px_y < i32(h)) {
                 let frac_x = screen.x - f32(px_x);
                 let frac_y = screen.y - f32(px_y);
-                splat_point(px_x, px_y, frac_x, frac_y, base_col, vel, point_depth, w, h);
+                // Project velocity through same perspective
+                let proj_vel = vel / (cam_p.z / cam_focal + 1.0);
+                splat_point(px_x, px_y, frac_x, frac_y, base_col, proj_vel, point_depth, w, h);
             }
 
             // Bilateral mirror
             if (bilateral) {
-                let mir_p = vec2(-sym_p.x, sym_p.y);
-                let mscreen = (mir_p / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
+                let mir_cam = vec3(-cam_p.x, cam_p.y, cam_p.z);
+                let mir_proj = mir_cam.xy / (mir_cam.z / cam_focal + 1.0);
+                let mscreen = (mir_proj / zoom + vec2(0.5, 0.5)) * vec2<f32>(f32(w), f32(h)) + vec2(jx, jy);
                 let mpx_x = i32(mscreen.x);
                 let mpx_y = i32(mscreen.y);
                 if (mpx_x >= 0 && mpx_x < i32(w) && mpx_y >= 0 && mpx_y < i32(h)) {
                     let mfrac_x = mscreen.x - f32(mpx_x);
                     let mfrac_y = mscreen.y - f32(mpx_y);
-                    let mvel = vec2(-vel.x, vel.y);
+                    let mvel = vec2(-vel.x, vel.y) / (mir_cam.z / cam_focal + 1.0);
                     splat_point(mpx_x, mpx_y, mfrac_x, mfrac_y, base_col, mvel, point_depth, w, h);
                 }
             }

@@ -175,6 +175,9 @@
     "archive_on_startup": true,
     "dist_lum_strength": 0.0,
     "iter_lum_range": 0.5,
+    "camera_pitch": 0.0,
+    "camera_yaw": 0.0,
+    "camera_focal": 2.0,
     "window_width": 640,
     "window_height": 480
   },

@@ -44,6 +44,8 @@ struct Uniforms {
     extra4: [f32; 4],     // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
     extra5: [f32; 4], // dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
     extra6: [f32; 4], // dist_lum_strength, iter_lum_range, _reserved, _reserved
+    extra7: [f32; 4], // camera_pitch, camera_yaw, camera_focal, dof_focal_distance
+    extra8: [f32; 4], // dof_strength, _reserved, _reserved, _reserved
 }
 
 // ── File Watcher ──
@@ -2283,6 +2285,13 @@ impl ApplicationHandler for App {
                         0.0,
                         0.0,
                     ],
+                    extra7: [
+                        self.weights._config.camera_pitch,
+                        self.weights._config.camera_yaw,
+                        self.weights._config.camera_focal,
+                        self.weights._config.dof_focal_distance,
+                    ],
+                    extra8: [self.weights._config.dof_strength, 0.0, 0.0, 0.0],
                 };
 
                 gpu.queue

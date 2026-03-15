@@ -21,6 +21,8 @@ struct Uniforms {
     extra4: vec4<f32>,   // jitter_amount, tonemap_mode, histogram_equalization, dof_strength
     extra5: vec4<f32>,   // dof_focal_distance, spectral_rendering, temporal_reprojection, prev_zoom
     extra6: vec4<f32>,   // dist_lum_strength, iter_lum_range, reserved, reserved
+    extra7: vec4<f32>,   // camera_pitch, camera_yaw, camera_focal, dof_focal_distance
+    extra8: vec4<f32>,   // dof_strength, reserved, reserved, reserved
 }
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
