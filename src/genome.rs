@@ -700,12 +700,12 @@ impl FlameGenome {
     }
 
     /// Pack all transforms into a flat Vec<f32> for the storage buffer.
-    /// Each transform = 42 floats: weight, a, b, c, d, offset_x, offset_y,
+    /// Each transform = 48 floats: weight, 9 affine, 3 offset,
     /// color, 26 variations, 8 parametric variation params.
     /// If a final_transform is present, it is appended after the regular transforms.
     pub fn flatten_transforms(&self) -> Vec<f32> {
         let total = self.transforms.len() + if self.final_transform.is_some() { 1 } else { 0 };
-        let mut t = Vec::with_capacity(total * 42);
+        let mut t = Vec::with_capacity(total * 48);
         for xf in &self.transforms {
             Self::push_transform(&mut t, xf);
         }
@@ -717,40 +717,47 @@ impl FlameGenome {
 
     fn push_transform(t: &mut Vec<f32>, xf: &FlameTransform) {
         t.push(xf.weight); // 0
-        t.push(xf.a()); // 1
-        t.push(xf.b()); // 2
-        t.push(xf.c()); // 3
-        t.push(xf.d()); // 4
-        t.push(xf.offset[0]); // 5
-        t.push(xf.offset[1]); // 6
-        t.push(xf.color); // 7
-        t.push(xf.linear); // 8
-        t.push(xf.sinusoidal); // 9
-        t.push(xf.spherical); // 10
-        t.push(xf.swirl); // 11
-        t.push(xf.horseshoe); // 12
-        t.push(xf.handkerchief); // 13
-        t.push(xf.julia); // 14
-        t.push(xf.polar); // 15
-        t.push(xf.disc); // 16
-        t.push(xf.rings); // 17
-        t.push(xf.bubble); // 18
-        t.push(xf.fisheye); // 19
-        t.push(xf.exponential); // 20
-        t.push(xf.spiral); // 21
-        t.push(xf.diamond); // 22
-        t.push(xf.bent); // 23
-        t.push(xf.waves); // 24
-        t.push(xf.popcorn); // 25
-        t.push(xf.fan); // 26
-        t.push(xf.eyefish); // 27
-        t.push(xf.cross); // 28
-        t.push(xf.tangent); // 29
-        t.push(xf.cosine); // 30
-        t.push(xf.blob); // 31
-        t.push(xf.noise); // 32
-        t.push(xf.curl); // 33
-        // 8 parametric variation params [34-41]
+        // 9 affine entries (row-major: m00, m01, m02, m10, m11, m12, m20, m21, m22)
+        t.push(xf.affine[0][0]); // 1  m00
+        t.push(xf.affine[0][1]); // 2  m01
+        t.push(xf.affine[0][2]); // 3  m02
+        t.push(xf.affine[1][0]); // 4  m10
+        t.push(xf.affine[1][1]); // 5  m11
+        t.push(xf.affine[1][2]); // 6  m12
+        t.push(xf.affine[2][0]); // 7  m20
+        t.push(xf.affine[2][1]); // 8  m21
+        t.push(xf.affine[2][2]); // 9  m22
+        t.push(xf.offset[0]); // 10 offset_x
+        t.push(xf.offset[1]); // 11 offset_y
+        t.push(xf.offset[2]); // 12 offset_z
+        t.push(xf.color); // 13
+        t.push(xf.linear); // 14
+        t.push(xf.sinusoidal); // 15
+        t.push(xf.spherical); // 16
+        t.push(xf.swirl); // 17
+        t.push(xf.horseshoe); // 18
+        t.push(xf.handkerchief); // 19
+        t.push(xf.julia); // 20
+        t.push(xf.polar); // 21
+        t.push(xf.disc); // 22
+        t.push(xf.rings); // 23
+        t.push(xf.bubble); // 24
+        t.push(xf.fisheye); // 25
+        t.push(xf.exponential); // 26
+        t.push(xf.spiral); // 27
+        t.push(xf.diamond); // 28
+        t.push(xf.bent); // 29
+        t.push(xf.waves); // 30
+        t.push(xf.popcorn); // 31
+        t.push(xf.fan); // 32
+        t.push(xf.eyefish); // 33
+        t.push(xf.cross); // 34
+        t.push(xf.tangent); // 35
+        t.push(xf.cosine); // 36
+        t.push(xf.blob); // 37
+        t.push(xf.noise); // 38
+        t.push(xf.curl); // 39
+        // 8 parametric variation params [40-47]
         t.push(
             xf.variation_params
                 .get("rings2_val")
@@ -2238,6 +2245,29 @@ mod tests {
         clamp_determinant(&mut m, 0.04, 0.9);
         let det = determinant_3x3(&m).abs();
         assert!(det <= 0.91, "det should be clamped down to ~0.9, got {det}");
+    }
+
+    #[test]
+    fn flatten_produces_48_floats_per_transform() {
+        let g = FlameGenome::default_genome();
+        let flat = g.flatten_transforms();
+        let expected = g.transforms.len() * 48;
+        assert_eq!(
+            flat.len(),
+            expected,
+            "expected {} floats for {} transforms, got {}",
+            expected,
+            g.transforms.len(),
+            flat.len()
+        );
+        // Verify the first transform's weight is at position 0
+        assert!((flat[0] - g.transforms[0].weight).abs() < 1e-6);
+        // Verify affine m00 is at position 1
+        assert!((flat[1] - g.transforms[0].a()).abs() < 1e-6);
+        // Verify color is at position 13
+        assert!((flat[13] - g.transforms[0].color).abs() < 1e-6);
+        // Verify second transform starts at position 48
+        assert!((flat[48] - g.transforms[1].weight).abs() < 1e-6);
     }
 
     #[test]

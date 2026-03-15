@@ -55,52 +55,59 @@ pub fn value_noise_pub(t: f32) -> f32 {
 
 const AUDIO_SIGNAL_COUNT: f32 = 6.0; // bass, mids, highs, energy, beat, beat_accum
 const TIME_SIGNAL_COUNT: f32 = 9.0; // time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
-const PARAMS_PER_XF: usize = 42;
+const PARAMS_PER_XF: usize = 48;
 
 /// Per-transform field names in order (matching genome flatten layout).
+/// Layout: weight, m00..m22 (9 affine), offset_x/y/z (3), color, 26 variations, 8 var params
 const XF_FIELDS: [&str; PARAMS_PER_XF] = [
-    "weight",
-    "a",
-    "b",
-    "c",
-    "d",
-    "offset_x",
-    "offset_y",
-    "color",
-    "linear",
-    "sinusoidal",
-    "spherical",
-    "swirl",
-    "horseshoe",
-    "handkerchief",
-    "julia",
-    "polar",
-    "disc",
-    "rings",
-    "bubble",
-    "fisheye",
-    "exponential",
-    "spiral",
-    "diamond",
-    "bent",
-    "waves",
-    "popcorn",
-    "fan",
-    "eyefish",
-    "cross",
-    "tangent",
-    "cosine",
-    "blob",
-    "noise",
-    "curl",
-    "rings2_val",
-    "blob_low",
-    "blob_high",
-    "blob_waves",
-    "julian_power",
-    "julian_dist",
-    "ngon_sides",
-    "ngon_corners",
+    "weight",       // 0
+    "m00",          // 1
+    "m01",          // 2
+    "m02",          // 3
+    "m10",          // 4
+    "m11",          // 5
+    "m12",          // 6
+    "m20",          // 7
+    "m21",          // 8
+    "m22",          // 9
+    "offset_x",     // 10
+    "offset_y",     // 11
+    "offset_z",     // 12
+    "color",        // 13
+    "linear",       // 14
+    "sinusoidal",   // 15
+    "spherical",    // 16
+    "swirl",        // 17
+    "horseshoe",    // 18
+    "handkerchief", // 19
+    "julia",        // 20
+    "polar",        // 21
+    "disc",         // 22
+    "rings",        // 23
+    "bubble",       // 24
+    "fisheye",      // 25
+    "exponential",  // 26
+    "spiral",       // 27
+    "diamond",      // 28
+    "bent",         // 29
+    "waves",        // 30
+    "popcorn",      // 31
+    "fan",          // 32
+    "eyefish",      // 33
+    "cross",        // 34
+    "tangent",      // 35
+    "cosine",       // 36
+    "blob",         // 37
+    "noise",        // 38
+    "curl",         // 39
+    "rings2_val",   // 40
+    "blob_low",     // 41
+    "blob_high",    // 42
+    "blob_waves",   // 43
+    "julian_power", // 44
+    "julian_dist",  // 45
+    "ngon_sides",   // 46
+    "ngon_corners", // 47
 ];
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -393,7 +400,7 @@ fn default_window_height() -> u32 {
     480
 }
 
-const VARIATION_START: usize = 8; // first variation field index in each 42-float transform block
+const VARIATION_START: usize = 14; // first variation field index in each 48-float transform block
 
 impl RuntimeConfig {
     /// Apply variation_scales to a flattened transform buffer.
@@ -687,16 +694,16 @@ mod tests {
     #[test]
     fn xf_field_index_known_fields() {
         assert_eq!(xf_field_index("weight"), Some(0));
-        assert_eq!(xf_field_index("linear"), Some(8));
-        assert_eq!(xf_field_index("spherical"), Some(10));
+        assert_eq!(xf_field_index("linear"), Some(14));
+        assert_eq!(xf_field_index("spherical"), Some(16));
         assert_eq!(xf_field_index("fake_field"), None);
     }
 
     #[test]
     fn try_parse_xf_valid() {
         assert_eq!(try_parse_xf("xf0_weight"), Some((0, 0)));
-        assert_eq!(try_parse_xf("xf3_linear"), Some((3, 8)));
-        assert_eq!(try_parse_xf("xf10_spherical"), Some((10, 10)));
+        assert_eq!(try_parse_xf("xf3_linear"), Some((3, 14)));
+        assert_eq!(try_parse_xf("xf10_spherical"), Some((10, 16)));
     }
 
     #[test]

@@ -24,10 +24,10 @@ struct Uniforms {
 @group(0) @binding(4) var palette_sampler: sampler;
 @group(0) @binding(5) var<storage, read_write> point_state: array<f32>;
 
-fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 42u + field]; }
+fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 48u + field]; }
 
 fn xf_param(idx: u32, param_offset: u32) -> f32 {
-    return transforms[idx * 42u + 34u + param_offset];
+    return transforms[idx * 48u + 40u + param_offset];
 }
 
 const PI: f32 = 3.14159265;
@@ -256,12 +256,13 @@ fn V_curl(p: vec2<f32>, seed: u32) -> vec2<f32> {
 // ── IFS Transform (reads from storage buffer) ──
 
 fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<f32> {
-    let af_a   = xf(idx, 1u);
-    let af_b   = xf(idx, 2u);
-    let af_c   = xf(idx, 3u);
-    let af_d   = xf(idx, 4u);
-    let ox     = xf(idx, 5u);
-    let oy     = xf(idx, 6u);
+    // 3x3 affine: m00(1), m01(2), m02(3), m10(4), m11(5), m12(6), m20(7), m21(8), m22(9)
+    let af_a   = xf(idx, 1u);   // m00
+    let af_b   = xf(idx, 2u);   // m01
+    let af_c   = xf(idx, 4u);   // m10
+    let af_d   = xf(idx, 5u);   // m11
+    let ox     = xf(idx, 10u);  // offset_x
+    let oy     = xf(idx, 11u);  // offset_y
 
     let drift = u.kifs.w; // drift_speed
 
@@ -296,14 +297,14 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
                  c2 * p.x + d2 * p.y + oy + oy_drift);
 
     // ── Tier 1: cheap variations (always check) ──
-    let w_lin  = xf(idx, 8u);
+    let w_lin  = xf(idx, 14u);
     var v = q * w_lin;
 
-    let w_sin  = xf(idx, 9u);
-    let w_sph  = xf(idx, 10u);
-    let w_swi  = xf(idx, 11u);
-    let w_hor  = xf(idx, 12u);
-    let w_han  = xf(idx, 13u);
+    let w_sin  = xf(idx, 15u);
+    let w_sph  = xf(idx, 16u);
+    let w_swi  = xf(idx, 17u);
+    let w_hor  = xf(idx, 18u);
+    let w_han  = xf(idx, 19u);
 
     if (w_sin > 0.0) { v += V_sinusoidal(q)    * w_sin; }
     if (w_sph > 0.0) { v += V_spherical(q)     * w_sph; }
@@ -312,12 +313,12 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     if (w_han > 0.0) { v += V_handkerchief(q)  * w_han; }
 
     // ── Tier 2: moderate cost (atan2-based) — only load if any are active ──
-    let w_jul  = xf(idx, 14u);
-    let w_pol  = xf(idx, 15u);
-    let w_dsc  = xf(idx, 16u);
-    let w_rng  = xf(idx, 17u);
-    let w_bub  = xf(idx, 18u);
-    let w_fsh  = xf(idx, 19u);
+    let w_jul  = xf(idx, 20u);
+    let w_pol  = xf(idx, 21u);
+    let w_dsc  = xf(idx, 22u);
+    let w_rng  = xf(idx, 23u);
+    let w_bub  = xf(idx, 24u);
+    let w_fsh  = xf(idx, 25u);
 
     if (w_jul > 0.0) { v += V_julia(q, rng)    * w_jul; }
     if (w_pol > 0.0) { v += V_polar(q)          * w_pol; }
@@ -327,20 +328,20 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
     if (w_fsh > 0.0) { v += V_fisheye(q)        * w_fsh; }
 
     // ── Tier 3: expensive or scatter-prone — guard with a quick sum check ──
-    let w_exp  = xf(idx, 20u);
-    let w_spi  = xf(idx, 21u);
-    let w_dia  = xf(idx, 22u);
-    let w_bnt  = xf(idx, 23u);
-    let w_wav  = xf(idx, 24u);
-    let w_pop  = xf(idx, 25u);
-    let w_fan  = xf(idx, 26u);
-    let w_eye  = xf(idx, 27u);
-    let w_crs  = xf(idx, 28u);
-    let w_tan  = xf(idx, 29u);
-    let w_cos  = xf(idx, 30u);
-    let w_blb  = xf(idx, 31u);
-    let w_noi  = xf(idx, 32u);
-    let w_crl  = xf(idx, 33u);
+    let w_exp  = xf(idx, 26u);
+    let w_spi  = xf(idx, 27u);
+    let w_dia  = xf(idx, 28u);
+    let w_bnt  = xf(idx, 29u);
+    let w_wav  = xf(idx, 30u);
+    let w_pop  = xf(idx, 31u);
+    let w_fan  = xf(idx, 32u);
+    let w_eye  = xf(idx, 33u);
+    let w_crs  = xf(idx, 34u);
+    let w_tan  = xf(idx, 35u);
+    let w_cos  = xf(idx, 36u);
+    let w_blb  = xf(idx, 37u);
+    let w_noi  = xf(idx, 38u);
+    let w_crl  = xf(idx, 39u);
 
     let tier3_sum = w_exp + w_spi + w_dia + w_bnt + w_wav + w_pop + w_fan
                   + w_eye + w_crs + w_tan + w_cos + w_blb + w_noi + w_crl;
@@ -366,7 +367,7 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
 }
 
 fn xform_color(idx: u32) -> f32 {
-    return xf(idx, 7u);
+    return xf(idx, 13u);
 }
 
 // Splat helper — writes density + color + velocity + depth to one pixel
@@ -521,7 +522,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         if ((u.has_final_xform & 1u) == 1u) {
             let final_idx = u.transform_count;  // final xform is right after regular xforms
             plot_p = apply_xform(plot_p, final_idx, t, &rng);
-            plot_color = plot_color * 0.5 + xf(final_idx, 7u) * 0.5;  // blend with final xform's color
+            plot_color = plot_color * 0.5 + xf(final_idx, 13u) * 0.5;  // blend with final xform's color
         }
 
         // Per-point luminosity variation:

@@ -204,10 +204,10 @@ impl Gpu {
         // Histogram buffer: 6 u32s per pixel (density + R + G + B + vx + vy)
         let histogram_buffer = create_histogram_buffer(&device, config.width, config.height);
 
-        // Initial transform buffer (6 transforms * 42 floats * 4 bytes)
+        // Initial transform buffer (6 transforms * 48 floats * 4 bytes)
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
-            size: (6 * 42 * 4) as u64,
+            size: (6 * 48 * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -701,7 +701,7 @@ impl Gpu {
     }
 
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
-        let size = (num_transforms.max(1) * 42 * 4) as u64;
+        let size = (num_transforms.max(1) * 48 * 4) as u64;
         self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
             size,
@@ -1647,7 +1647,7 @@ impl App {
 
         // Ensure buffers can hold max of current and target transforms
         let target_xf = self.genome.flatten_transforms();
-        let max_xf = (self.xf_params.len().max(target_xf.len())) / 42;
+        let max_xf = (self.xf_params.len().max(target_xf.len())) / 48;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(gpu) = &mut self.gpu {
@@ -1655,7 +1655,7 @@ impl App {
             }
         }
         // Pad start vectors to match
-        self.morph_start_xf.resize(max_xf * 42, 0.0);
+        self.morph_start_xf.resize(max_xf * 48, 0.0);
 
         // Generate per-transform morph rates: some fast (2x), some slow (0.4x)
         // This makes transforms arrive at different times for organic transitions.
@@ -1977,7 +1977,7 @@ impl ApplicationHandler for App {
                     "1" | "2" | "3" | "4" => {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
                         if idx < self.num_transforms {
-                            let base = idx * 42; // weight is first field
+                            let base = idx * 48; // weight is first field
                             if base < self.xf_params.len() {
                                 if self.xf_params[base] < 0.01 {
                                     self.xf_params[base] = 0.25;
@@ -2102,13 +2102,13 @@ impl ApplicationHandler for App {
                     padded_start.resize(max_len, 0.0);
                     let mut padded_genome = genome_xf;
                     padded_genome.resize(max_len, 0.0);
-                    let num_xf = max_len / 42;
+                    let num_xf = max_len / 48;
                     for xi in 0..num_xf {
                         // Each transform morphs at its own rate
                         let rate = self.morph_xf_rates.get(xi).copied().unwrap_or(1.0);
                         let xf_t = smoothstep((self.morph_progress * rate).min(1.0));
-                        let base = xi * 42;
-                        for j in 0..42 {
+                        let base = xi * 48;
+                        for j in 0..48 {
                             let idx = base + j;
                             if idx < max_len {
                                 self.morph_base_xf[idx] = padded_start[idx]
@@ -2323,7 +2323,7 @@ impl ApplicationHandler for App {
                     gpu.workgroups = base_wg;
                 };
 
-                let xf_write_len = self.num_transforms * 42;
+                let xf_write_len = self.num_transforms * 48;
                 let xf_slice = &self.xf_params[..xf_write_len.min(self.xf_params.len())];
                 gpu.queue
                     .write_buffer(&gpu.transform_buffer, 0, bytemuck::cast_slice(xf_slice));
