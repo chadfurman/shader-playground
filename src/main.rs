@@ -1578,9 +1578,15 @@ impl App {
             color_entropy,
         );
 
+        let archive_features = self.archive.all_features();
         let score = self
             .taste_engine
-            .score_genome(&self.genome)
+            .score_genome_with_novelty(
+                &self.genome,
+                &archive_features,
+                cfg.novelty_weight,
+                cfg.novelty_k_neighbors,
+            )
             .unwrap_or(f32::MAX);
         let features = self
             .taste_engine

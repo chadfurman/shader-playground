@@ -475,6 +475,26 @@ impl TasteEngine {
         }
     }
 
+    /// Score a genome with novelty bonus from the archive.
+    /// fitness = taste_score - novelty_weight * novelty_score
+    /// Lower fitness = better. Subtracting novelty rewards novel genomes.
+    pub fn score_genome_with_novelty(
+        &self,
+        genome: &FlameGenome,
+        archive_features: &[&Vec<f32>],
+        novelty_weight: f32,
+        novelty_k: u32,
+    ) -> Option<f32> {
+        let features = self.extract_full_features(genome)?;
+        let taste = if !self.igmm.clusters.is_empty() {
+            self.igmm.score(&features)
+        } else {
+            self.model.as_ref()?.score(&features)
+        };
+        let novelty = novelty_score(&features, archive_features, novelty_k);
+        Some(taste - novelty_weight * novelty)
+    }
+
     /// Score a transform against the transform taste model.
     /// Returns None if the model isn't ready.
     pub fn score_transform(
@@ -948,6 +968,36 @@ impl IgmmModel {
         let json = std::fs::read_to_string(path).map_err(|e| format!("read igmm: {e}"))?;
         serde_json::from_str(&json).map_err(|e| format!("parse igmm: {e}"))
     }
+}
+
+// ── Novelty Search ──
+
+/// Compute novelty score: average Euclidean distance to k nearest neighbors.
+/// Higher novelty = more different from archive contents = more novel.
+/// If archive_features has fewer than k entries, uses all available.
+pub fn novelty_score(features: &[f32], archive_features: &[&Vec<f32>], k: u32) -> f32 {
+    if archive_features.is_empty() {
+        return 0.0;
+    }
+
+    let k = (k as usize).min(archive_features.len());
+    let mut distances: Vec<f32> = archive_features
+        .iter()
+        .map(|af| euclidean_distance(features, af))
+        .collect();
+    distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let sum: f32 = distances[..k].iter().sum();
+    sum / k as f32
+}
+
+/// Euclidean distance between two feature vectors.
+fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y) * (x - y))
+        .sum::<f32>()
+        .sqrt()
 }
 
 /// Extract palette features from a raw palette (no genome wrapper needed).
@@ -1767,5 +1817,43 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    // --- Novelty search tests ---
+
+    #[test]
+    fn novelty_score_higher_for_distant_point() {
+        let archive_data = vec![
+            vec![0.0, 0.0, 0.0],
+            vec![1.0, 1.0, 1.0],
+            vec![2.0, 2.0, 2.0],
+        ];
+        let archive_refs: Vec<&Vec<f32>> = archive_data.iter().collect();
+
+        let near = vec![0.1, 0.1, 0.1]; // close to [0,0,0]
+        let far = vec![100.0, 100.0, 100.0]; // far from everything
+
+        let score_near = novelty_score(&near, &archive_refs, 3);
+        let score_far = novelty_score(&far, &archive_refs, 3);
+        assert!(
+            score_far > score_near,
+            "far novelty ({score_far}) should be > near novelty ({score_near})"
+        );
+    }
+
+    #[test]
+    fn novelty_score_empty_archive_returns_zero() {
+        let archive: Vec<&Vec<f32>> = vec![];
+        let score = novelty_score(&[1.0, 2.0], &archive, 5);
+        assert!(approx_eq(score, 0.0), "empty archive novelty was {score}");
+    }
+
+    #[test]
+    fn novelty_score_handles_small_k() {
+        let archive_data = vec![vec![1.0, 1.0]];
+        let archive_refs: Vec<&Vec<f32>> = archive_data.iter().collect();
+        // k=5 but archive only has 1 entry
+        let score = novelty_score(&[0.0, 0.0], &archive_refs, 5);
+        assert!(score > 0.0, "novelty should be positive, got {score}");
     }
 }

@@ -224,6 +224,12 @@ pub struct RuntimeConfig {
     #[serde(default = "default_archive_on_startup")]
     pub archive_on_startup: bool,
 
+    // Novelty search
+    #[serde(default = "default_novelty_weight")]
+    pub novelty_weight: f32,
+    #[serde(default = "default_novelty_k_neighbors")]
+    pub novelty_k_neighbors: u32,
+
     // Interpolative crossover
     #[serde(default = "default_interpolation_range_lo")]
     pub interpolation_range_lo: f32,
@@ -410,6 +416,12 @@ fn default_archive_threshold_mb() -> u64 {
 }
 fn default_archive_on_startup() -> bool {
     true
+}
+fn default_novelty_weight() -> f32 {
+    0.3
+}
+fn default_novelty_k_neighbors() -> u32 {
+    5
 }
 fn default_interpolation_range_lo() -> f32 {
     0.3
