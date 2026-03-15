@@ -12,6 +12,7 @@ use winit::event_loop::EventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowAttributes};
 
+mod archive;
 mod audio;
 mod device_picker;
 mod flam3;
@@ -1407,6 +1408,7 @@ struct App {
     vote_ledger: VoteLedger,
     lineage_cache: crate::votes::LineageCache,
     taste_engine: crate::taste::TasteEngine,
+    archive: crate::archive::MapElitesArchive,
     last_profile_scan: f32,
     perf_log: Option<std::fs::File>,
     prev_zoom: f32,
@@ -1474,6 +1476,11 @@ impl App {
             vote_ledger,
             lineage_cache,
             taste_engine: crate::taste::TasteEngine::new(),
+            archive: {
+                let archive_path = genomes_root.join("archive.json");
+                crate::archive::MapElitesArchive::load(&archive_path)
+                    .unwrap_or_else(|_| crate::archive::MapElitesArchive::new())
+            },
             last_profile_scan: 0.0,
             perf_log: std::fs::OpenOptions::new()
                 .create(true)
@@ -1552,19 +1559,86 @@ impl App {
         }
     }
 
+    /// Insert the current genome into the MAP-Elites archive.
+    /// Computes behavioral traits from the genome and proxy render.
+    fn archive_genome(&mut self) {
+        let cfg = &self.weights._config;
+        let perceptual = crate::taste::PerceptualFeatures::from_genome(&self.genome, cfg);
+        let color_entropy = if let Some(palette) = &self.genome.palette {
+            let pf = crate::taste::palette_features(palette);
+            // Normalize hue cluster count to [0, 1] range (max ~6 clusters)
+            (pf.hue_cluster_count / 6.0).min(1.0)
+        } else {
+            0.0
+        };
+
+        let coords = crate::archive::GridCoords::from_traits(
+            self.genome.symmetry,
+            perceptual.fractal_dimension,
+            color_entropy,
+        );
+
+        let score = self
+            .taste_engine
+            .score_genome(&self.genome)
+            .unwrap_or(f32::MAX);
+        let features = self
+            .taste_engine
+            .extract_full_features(&self.genome)
+            .unwrap_or_default();
+
+        if self
+            .archive
+            .insert(&coords, self.genome.name.clone(), score, features)
+        {
+            eprintln!(
+                "[archive] inserted {} ({} cells occupied, {} feature vecs)",
+                self.genome.name,
+                self.archive.occupied_count(),
+                self.archive.all_features().len()
+            );
+            let archive_path = project_dir().join("genomes").join("archive.json");
+            if let Err(e) = self.archive.save(&archive_path) {
+                eprintln!("[archive] save error: {e}");
+            }
+        }
+    }
+
     /// Pick two parents for breeding + a community genome.
     /// Uses lineage cache to enforce minimum genetic distance between parents.
     fn pick_breeding_parents(&self) -> (FlameGenome, FlameGenome, Option<FlameGenome>) {
+        use rand::Rng;
+        let mut rng = rand::rng();
+
         let genomes_dir = project_dir().join("genomes");
         let threshold = self.weights._config.vote_blacklist_threshold;
         let min_distance = self.weights._config.min_breeding_distance;
         let max_depth = self.weights._config.max_lineage_depth;
 
-        // Parent A: prefer voted genome, fallback to random saved
-        let parent_a = self
-            .vote_ledger
-            .pick_voted(threshold)
-            .and_then(|p| FlameGenome::load(&p).ok())
+        // 50% chance: pick parent A from MAP-Elites archive (uniform across occupied cells)
+        let archive_pick = if rng.random::<f32>() < 0.5 {
+            self.archive.pick_random(&mut rng).and_then(|entry| {
+                let path = genomes_dir
+                    .join("history")
+                    .join(format!("{}.json", entry.genome_name));
+                FlameGenome::load(&path).ok().or_else(|| {
+                    let voted = genomes_dir
+                        .join("voted")
+                        .join(format!("{}.json", entry.genome_name));
+                    FlameGenome::load(&voted).ok()
+                })
+            })
+        } else {
+            None
+        };
+
+        // Parent A: archive pick, or vote-weighted, or random saved
+        let parent_a = archive_pick
+            .or_else(|| {
+                self.vote_ledger
+                    .pick_voted(threshold)
+                    .and_then(|p| FlameGenome::load(&p).ok())
+            })
             .or_else(|| {
                 VoteLedger::pick_random_saved(&genomes_dir, threshold, &self.vote_ledger)
                     .and_then(|p| FlameGenome::load(&p).ok())
@@ -1923,6 +1997,7 @@ impl ApplicationHandler for App {
                     if let Err(e) = self.genome.save(&history_dir) {
                         eprintln!("[history] save error: {e}");
                     }
+                    self.archive_genome();
                     self.last_mutation_time = self.start.elapsed().as_secs_f32();
                     self.begin_morph();
                     if let Some(taste_score) = self.taste_engine.score_genome(&self.genome) {
@@ -2190,6 +2265,7 @@ impl ApplicationHandler for App {
                             if let Err(e) = self.genome.save(&history_dir) {
                                 eprintln!("[history] save error: {e}");
                             }
+                            self.archive_genome();
                             self.last_mutation_time = self.start.elapsed().as_secs_f32();
                             self.begin_morph();
                             eprintln!(
