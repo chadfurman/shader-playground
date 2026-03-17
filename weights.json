@@ -147,7 +147,7 @@
     "drift_speed": 3.0,
     "velocity_blur_max": 24.0,
     "iterations_per_thread": 400,
-    "morph_speed": .7,
+    "morph_speed": 0.7,
     "morph_stagger_count": 2,
     "morph_stagger_min": 0.3,
     "morph_stagger_max": 0.6,
@@ -213,7 +213,7 @@
   },
   "energy": {
     "flame_brightness": 0.03,
-    "drift_speed": 0.05,
+    "drift_speed": 1.05,
     "mutation_rate": 0.08,
     "bloom_intensity": 0.02
   },

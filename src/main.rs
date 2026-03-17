@@ -917,6 +917,14 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
+                if gpu.render_frame_count < 3 {
+                    eprintln!(
+                        "[debug] render thread got frame {}, wg={}, xf_len={}",
+                        gpu.render_frame_count,
+                        data.workgroups,
+                        data.xf_params.len()
+                    );
+                }
                 gpu.queue
                     .write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&data.uniforms));
                 gpu.queue.write_buffer(
@@ -1128,7 +1136,13 @@ fn audio_features_path() -> PathBuf {
 }
 
 fn load_weights() -> Weights {
-    Weights::load(&weights_path()).unwrap_or_default()
+    match Weights::load(&weights_path()) {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("[weights] ERROR: {e} — using defaults");
+            Weights::default()
+        }
+    }
 }
 
 /// Archive old genomes from history/ when size exceeds threshold.
@@ -2096,13 +2110,20 @@ impl App {
             eprintln!("[params] reloaded (overriding globals)");
         }
         if reload_weights {
-            self.weights = load_weights();
-            eprintln!(
-                "[weights] reloaded (samples_per_frame={}, morph={}s, cooldown={}s)",
-                self.weights._config.samples_per_frame,
-                self.weights._config.morph_duration,
-                self.weights._config.mutation_cooldown
-            );
+            match Weights::load(&weights_path()) {
+                Ok(w) => {
+                    self.weights = w;
+                    eprintln!(
+                        "[weights] reloaded (samples_per_frame={}, morph={}s, cooldown={}s)",
+                        self.weights._config.samples_per_frame,
+                        self.weights._config.morph_duration,
+                        self.weights._config.mutation_cooldown
+                    );
+                }
+                Err(e) => {
+                    eprintln!("[weights] ERROR: {e} — keeping current config");
+                }
+            }
         }
         if reload_features
             && let Ok(json) = fs::read_to_string(audio_features_path())
@@ -2211,9 +2232,22 @@ impl ApplicationHandler for App {
             .expect("failed to spawn render thread");
 
         self.render_tx = Some(tx);
-        self.gpu_width = initial_width;
-        self.gpu_height = initial_height;
-        self.window = Some(window);
+        // Use configured dimensions — inner_size() returns 0×0 on macOS before window is shown
+        self.gpu_width = self.weights._config.window_width.max(1);
+        self.gpu_height = self.weights._config.window_height.max(1);
+        self.window = Some(window.clone());
+        eprintln!(
+            "[debug] window surface={}x{}, gpu_dims={}x{}, samples_per_frame={}, xf_range={}-{}, iters={}",
+            initial_width,
+            initial_height,
+            self.gpu_width,
+            self.gpu_height,
+            self.weights._config.samples_per_frame,
+            self.weights._config.transform_count_min,
+            self.weights._config.transform_count_max,
+            self.weights._config.iterations_per_thread,
+        );
+        window.request_redraw();
 
         // Build initial taste model from voted/imported genomes
         let t = Instant::now();
@@ -2479,6 +2513,9 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
+                if self.frame < 3 {
+                    eprintln!("[debug] RedrawRequested frame={}", self.frame);
+                }
                 self.check_file_changes();
 
                 let now = Instant::now();

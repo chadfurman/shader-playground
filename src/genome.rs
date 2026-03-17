@@ -982,6 +982,13 @@ impl FlameGenome {
         use rand::prelude::IndexedRandom;
         let min = cfg.transform_count_min.max(1) as usize;
         let max = cfg.transform_count_max.max(min as u32) as usize;
+        let before = self.transforms.len();
+        if before < min || before > max {
+            eprintln!(
+                "[adjust] {} has {} transforms, adjusting to {}-{}",
+                self.name, before, min, max
+            );
+        }
 
         // Pad up: clone + mutate existing transforms
         while self.transforms.len() < min {
@@ -1481,6 +1488,7 @@ impl FlameGenome {
                 result.parent_a = bred.parent_a;
                 result.parent_b = bred.parent_b;
                 result.generation = bred.generation;
+                result.adjust_transform_count(cfg);
                 result.global.zoom = result.auto_zoom(cfg);
                 return result;
             }
@@ -1495,6 +1503,7 @@ impl FlameGenome {
         eprintln!("[mutate] all attempts degenerate, keeping parent A");
         let mut result = parent_a.clone();
         result.name = format!("mutant-{}", rand::rng().random_range(1000..9999u32));
+        result.adjust_transform_count(cfg);
         result.global.zoom = result.auto_zoom(cfg);
         result
     }
@@ -1542,19 +1551,21 @@ impl FlameGenome {
             child.mutate_final_transform(&mut rng, audio, cfg, profile);
         }
 
-        // Add/remove transforms — biased toward 3-5 (Electric Sheep sweet spot)
+        // Add/remove transforms — biased toward configured range
         let n = child.transforms.len();
-        let (add_chance, remove_chance) = if n < 3 {
-            (0.25, 0.0) // too few — always try to add
-        } else if n <= 5 {
-            (0.05, 0.05) // sweet spot — rare changes
+        let xf_min = cfg.transform_count_min.max(1) as usize;
+        let xf_max = cfg.transform_count_max.max(xf_min as u32) as usize;
+        let (add_chance, remove_chance) = if n < xf_min {
+            (0.25, 0.0) // below min — try to add
+        } else if n <= xf_max {
+            (0.05, 0.05) // in range — rare changes
         } else {
-            (0.02, 0.20) // too many — aggressively prune
+            (0.02, 0.20) // above max — aggressively prune
         };
         let roll: f32 = rng.random();
         if roll < add_chance {
             child.mutate_add_transform(&mut rng, audio, cfg, profile);
-        } else if roll < add_chance + remove_chance {
+        } else if roll < add_chance + remove_chance && n > xf_min {
             child.mutate_remove_transform(&mut rng);
         }
 
