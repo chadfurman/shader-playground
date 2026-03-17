@@ -2493,9 +2493,7 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
-                let frame_start = Instant::now();
                 self.check_file_changes();
-                let t_files = frame_start.elapsed();
 
                 let now = Instant::now();
                 let dt = now
@@ -2826,7 +2824,6 @@ impl ApplicationHandler for App {
                 }
 
                 // Send to render thread
-                let t_pre_render = frame_start.elapsed();
                 if let Some(tx) = &self.render_tx {
                     let frame_data = FrameData {
                         uniforms: final_uniforms,
@@ -2838,19 +2835,7 @@ impl ApplicationHandler for App {
                     };
                     let _ = tx.try_send(RenderCommand::Render(Box::new(frame_data)));
                 }
-                let t_render = frame_start.elapsed();
                 self.frame += 1;
-
-                // Log frame timing every 120 frames to find bottleneck
-                if self.frame.is_multiple_of(120) {
-                    eprintln!(
-                        "[frame-timing] files={:.1}ms pre_render={:.1}ms render={:.1}ms total={:.1}ms",
-                        t_files.as_secs_f64() * 1000.0,
-                        (t_pre_render - t_files).as_secs_f64() * 1000.0,
-                        (t_render - t_pre_render).as_secs_f64() * 1000.0,
-                        t_render.as_secs_f64() * 1000.0,
-                    );
-                }
 
                 // Per-genome performance tracking — flag for post-render evolve
                 self.genome_frame_count += 1;

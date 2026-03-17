@@ -293,6 +293,11 @@ pub struct RuntimeConfig {
     pub window_width: u32,
     #[serde(default = "default_window_height")]
     pub window_height: u32,
+    // Transform count range for breeding
+    #[serde(default = "default_transform_count_min")]
+    pub transform_count_min: u32,
+    #[serde(default = "default_transform_count_max")]
+    pub transform_count_max: u32,
 }
 
 fn default_morph_duration() -> f32 {
@@ -519,6 +524,12 @@ fn default_window_width() -> u32 {
 }
 fn default_window_height() -> u32 {
     480
+}
+fn default_transform_count_min() -> u32 {
+    3
+}
+fn default_transform_count_max() -> u32 {
+    6
 }
 
 const VARIATION_START: usize = 14; // first variation field index in each 48-float transform block

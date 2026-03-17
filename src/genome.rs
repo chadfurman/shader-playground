@@ -1191,9 +1191,11 @@ impl FlameGenome {
         use rand::prelude::SliceRandom;
         let mut rng = rand::rng();
 
-        // Child transform count: average of parents ±1, clamped to 3..=6
+        // Child transform count: average of parents ±1, clamped to config range
+        let xf_min = cfg.transform_count_min.max(1) as i32;
+        let xf_max = cfg.transform_count_max.max(xf_min as u32) as i32;
         let avg_xf = (parent_a.transforms.len() + parent_b.transforms.len()) / 2;
-        let child_count = (avg_xf as i32 + rng.random_range(-1..=1)).clamp(3, 6) as usize;
+        let child_count = (avg_xf as i32 + rng.random_range(-1..=1)).clamp(xf_min, xf_max) as usize;
 
         // Build transform slots
         let mut transforms = Vec::with_capacity(child_count);
