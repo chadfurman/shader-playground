@@ -117,14 +117,14 @@
     }
   },
   "_config": {
-    "morph_duration": 20.0,
-    "mutation_cooldown": 12.0,
+    "morph_duration": 60.0,
+    "mutation_cooldown": 0.0,
     "workgroups": 512,
-    "magnitude_min": 1.0,
-    "magnitude_max": 3.0,
+    "magnitude_min": 2.0,
+    "magnitude_max": 8.0,
     "randomness_range": 0.5,
-    "vibrancy": 0.7,
-    "bloom_intensity": 0.05,
+    "vibrancy": 0.9,
+    "bloom_intensity": 0.25,
     "noise_displacement": 0.0,
     "curl_displacement": 0.05,
     "tangent_clamp": 4.0,
@@ -135,8 +135,8 @@
     "gamma": 0.4545,
     "highlight_power": 2.0,
     "zoom_min": 1.0,
-    "zoom_max": 5.0,
-    "zoom_target": 3.0,
+    "zoom_max": 15.0,
+    "zoom_target": 8.0,
     "min_attractor_extent": 0.5,
     "max_mutation_retries": 10,
     "trail": 0.15,
@@ -147,7 +147,7 @@
     "drift_speed": 3.0,
     "velocity_blur_max": 24.0,
     "iterations_per_thread": 400,
-    "morph_speed": 1.0,
+    "morph_speed": 1.5,
     "morph_stagger_count": 2,
     "morph_stagger_min": 0.3,
     "morph_stagger_max": 0.6,
@@ -188,8 +188,21 @@
     "jacobian_weight_strength": 0.1,
     "min_genome_fps": 5.0,
     "morph_burst_decay": 0.7,
-    "transform_count_min": 8,
-    "transform_count_max": 12
+    "transform_count_min": 6,
+    "transform_count_max": 10,
+    "dancer_enabled": true,
+    "dancer_count_min": 1,
+    "dancer_count_max": 5,
+    "dancer_lifetime_min": 4.0,
+    "dancer_lifetime_max": 8.0,
+    "dancer_scale_min": 0.05,
+    "dancer_scale_max": 0.2,
+    "dancer_offset_min": 1.0,
+    "dancer_offset_max": 3.0,
+    "dancer_drift_speed": 0.3,
+    "dancer_audio_strength": 0.5,
+    "dancer_archive_size": 20,
+    "dancer_fade_fraction": 0.2
   },
   "bass": {
     "color_shift": -0.01,
@@ -213,14 +226,14 @@
   },
   "energy": {
     "flame_brightness": 0.03,
-    "drift_speed": 0.05,
-    "mutation_rate": 0.08,
+    "drift_speed": 0.03,
+    "mutation_rate": 0.01,
     "bloom_intensity": 0.02
   },
   "beat": {
     "color_shift": -0.01,
     "bloom_intensity": 0.02,
-    "mutation_rate": 0.05
+    "mutation_rate": 0.03
   },
   "beat_accum": {
     "mutation_rate": 0.3

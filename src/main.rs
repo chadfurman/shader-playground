@@ -14,6 +14,7 @@ use winit::window::{Window, WindowAttributes};
 
 mod archive;
 mod audio;
+mod dancer;
 mod device_picker;
 mod flam3;
 mod genome;
@@ -917,14 +918,6 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
-                if gpu.render_frame_count < 3 {
-                    eprintln!(
-                        "[debug] render thread got frame {}, wg={}, xf_len={}",
-                        gpu.render_frame_count,
-                        data.workgroups,
-                        data.xf_params.len()
-                    );
-                }
                 gpu.queue
                     .write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&data.uniforms));
                 gpu.queue.write_buffer(
@@ -1608,6 +1601,7 @@ struct App {
     prev_zoom: f32,
     genome_frame_count: u32,
     genome_start_time: Instant,
+    dancer_manager: crate::dancer::DancerManager,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1731,6 +1725,7 @@ impl App {
             prev_zoom: 3.0,
             genome_frame_count: 0,
             genome_start_time: Instant::now(),
+            dancer_manager: crate::dancer::DancerManager::new(),
         }
     }
 
@@ -2013,7 +2008,9 @@ impl App {
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(tx) = &self.render_tx {
-                let _ = tx.send(RenderCommand::ResizeTransformBuffer(self.num_transforms));
+                let buffer_xf =
+                    self.num_transforms + self.weights._config.dancer_count_max as usize;
+                let _ = tx.send(RenderCommand::ResizeTransformBuffer(buffer_xf));
             }
         }
         // Pad start vectors to match
@@ -2050,6 +2047,21 @@ impl App {
             let palette_data = crate::genome::palette_rgba_data(&self.genome);
             let _ = tx.send(RenderCommand::UpdatePalette(palette_data));
         }
+
+        // Schedule dancers for this morph (after morph_xf_rates is populated)
+        let min_rate = self
+            .morph_xf_rates
+            .iter()
+            .copied()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(1.0)
+            .max(0.1);
+        let morph_done_at = 1.0 / min_rate;
+        self.dancer_manager.schedule_dancers(
+            &self.genome.transforms,
+            &self.weights._config,
+            morph_done_at,
+        );
     }
 
     fn check_file_changes(&mut self) {
@@ -2176,8 +2188,6 @@ impl ApplicationHandler for App {
 
         let t = Instant::now();
         let mut gpu = Gpu::create(window.clone());
-        let initial_width = gpu.config.width;
-        let initial_height = gpu.config.height;
         eprintln!(
             "[boot] GPU initialized ({:.0}ms)",
             t.elapsed().as_secs_f64() * 1000.0
@@ -2197,11 +2207,37 @@ impl ApplicationHandler for App {
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
         }
 
-        // Try loading a random genome (before gpu moves to render thread)
+        // Try resuming from session, then fall back to random genome
         let genomes_dir = project_dir().join("genomes");
-        if genomes_dir.exists()
-            && let Ok(mut g) = FlameGenome::load_random(&genomes_dir)
-        {
+        let session_genome = std::fs::read_to_string(genomes_dir.join("session.json"))
+            .ok()
+            .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+            .and_then(|v| v.get("genome_name")?.as_str().map(String::from))
+            .and_then(|name| {
+                for subdir in ["", "history", "voted"] {
+                    let dir = if subdir.is_empty() {
+                        genomes_dir.clone()
+                    } else {
+                        genomes_dir.join(subdir)
+                    };
+                    let path = dir.join(format!("{name}.json"));
+                    if path.exists()
+                        && let Ok(g) = FlameGenome::load(&path)
+                    {
+                        return Some(g);
+                    }
+                }
+                None
+            });
+        let loaded_genome = if let Some(g) = session_genome {
+            eprintln!("[session] resumed: {}", g.name);
+            Some(g)
+        } else if genomes_dir.exists() {
+            FlameGenome::load_random(&genomes_dir).ok()
+        } else {
+            None
+        };
+        if let Some(mut g) = loaded_genome {
             g.adjust_transform_count(&self.weights._config);
             eprintln!("[genome] loaded: {}", g.name);
             self.genome = g;
@@ -2220,7 +2256,8 @@ impl ApplicationHandler for App {
         // Upload palette + resize transform buffer while we still own gpu
         let palette_data = crate::genome::palette_rgba_data(&self.genome);
         upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
-        gpu.resize_transform_buffer(self.num_transforms);
+        let buffer_xf = self.num_transforms + self.weights._config.dancer_count_max as usize;
+        gpu.resize_transform_buffer(buffer_xf);
 
         // Spawn render thread — gpu moves into it permanently
         // Bounded channel (2 frames): prevents main thread from spinning faster than GPU
@@ -2236,17 +2273,6 @@ impl ApplicationHandler for App {
         self.gpu_width = self.weights._config.window_width.max(1);
         self.gpu_height = self.weights._config.window_height.max(1);
         self.window = Some(window.clone());
-        eprintln!(
-            "[debug] window surface={}x{}, gpu_dims={}x{}, samples_per_frame={}, xf_range={}-{}, iters={}",
-            initial_width,
-            initial_height,
-            self.gpu_width,
-            self.gpu_height,
-            self.weights._config.samples_per_frame,
-            self.weights._config.transform_count_min,
-            self.weights._config.transform_count_max,
-            self.weights._config.iterations_per_thread,
-        );
         window.request_redraw();
 
         // Build initial taste model from voted/imported genomes
@@ -2256,6 +2282,18 @@ impl ApplicationHandler for App {
             "[boot] taste model rebuilt ({:.0}ms)",
             t.elapsed().as_secs_f64() * 1000.0
         );
+
+        // Load dancer archive
+        let archive_path = project_dir().join("genomes").join("dancer_archive.json");
+        if archive_path.exists() {
+            match self.dancer_manager.load_archive(&archive_path) {
+                Ok(()) => eprintln!(
+                    "[dancers] archive loaded ({} entries)",
+                    self.dancer_manager.archive.len()
+                ),
+                Err(e) => eprintln!("[dancers] archive load error: {e}"),
+            }
+        }
 
         eprintln!(
             "[boot] total startup: {:.0}ms",
@@ -2272,6 +2310,23 @@ impl ApplicationHandler for App {
     ) {
         match event {
             WindowEvent::CloseRequested => {
+                // Save session state
+                let genomes_dir = project_dir().join("genomes");
+                let session = serde_json::json!({ "genome_name": self.genome.name });
+                if let Err(e) = std::fs::write(
+                    genomes_dir.join("session.json"),
+                    serde_json::to_string_pretty(&session).unwrap_or_default(),
+                ) {
+                    eprintln!("[session] save error: {e}");
+                }
+                if let Err(e) = self
+                    .dancer_manager
+                    .save_archive(&genomes_dir.join("dancer_archive.json"))
+                {
+                    eprintln!("[dancers] archive save error: {e}");
+                }
+                eprintln!("[session] saved genome={}", self.genome.name);
+
                 if let Some(tx) = self.render_tx.take() {
                     let _ = tx.send(RenderCommand::Shutdown);
                 }
@@ -2513,9 +2568,6 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
-                if self.frame < 3 {
-                    eprintln!("[debug] RedrawRequested frame={}", self.frame);
-                }
                 self.check_file_changes();
 
                 let now = Instant::now();
@@ -2607,6 +2659,17 @@ impl ApplicationHandler for App {
                         ._config
                         .apply_variation_scales(&mut self.xf_params, self.num_transforms);
 
+                    // Tick dancers (after CRISPR, before FrameData)
+                    let current_time = self.start.elapsed().as_secs_f32();
+                    self.dancer_manager.tick(
+                        self.morph_progress,
+                        current_time,
+                        dt,
+                        &self.audio_features,
+                        &self.genome.transforms,
+                        &self.weights._config,
+                    );
+
                     // Auto-evolve when ALL transforms finish morphing (disabled when flame_locked)
                     let all_morphed = self
                         .morph_xf_rates
@@ -2686,7 +2749,8 @@ impl ApplicationHandler for App {
                     frame: self.frame,
                     resolution: [self.gpu_width as f32, self.gpu_height as f32],
                     mouse: self.mouse,
-                    transform_count: self.genome.transform_count(),
+                    transform_count: self.genome.transform_count()
+                        + self.dancer_manager.active_count() as u32,
                     has_final_xform: (if self.genome.final_transform.is_some() {
                         1u32
                     } else {
@@ -2846,11 +2910,18 @@ impl ApplicationHandler for App {
                     self.morph_burst_frames -= 1;
                 }
 
+                // Append dancer transforms (after Jacobian, skipping CRISPR)
+                let dancer_xf = self
+                    .dancer_manager
+                    .flatten_active(self.start.elapsed().as_secs_f32(), &self.weights._config);
+                let mut combined_xf = final_xf_params;
+                combined_xf.extend_from_slice(&dancer_xf);
+
                 // Send to render thread
                 if let Some(tx) = &self.render_tx {
                     let frame_data = FrameData {
                         uniforms: final_uniforms,
-                        xf_params: final_xf_params,
+                        xf_params: combined_xf,
                         accum_uniforms,
                         hist_cdf_uniforms,
                         workgroups: computed_workgroups,
@@ -2904,6 +2975,12 @@ impl ApplicationHandler for App {
                             .perf_model
                             .save(&project_dir().join("genomes").join("perf_model.json"));
                     }
+                }
+
+                // Save dancer archive periodically (~30s at 60fps)
+                if self.frame.is_multiple_of(1800) {
+                    let archive_path = project_dir().join("genomes").join("dancer_archive.json");
+                    let _ = self.dancer_manager.save_archive(&archive_path);
                 }
 
                 // FPS logging

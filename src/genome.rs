@@ -775,7 +775,7 @@ impl FlameGenome {
         t
     }
 
-    fn push_transform(t: &mut Vec<f32>, xf: &FlameTransform) {
+    pub fn push_transform(t: &mut Vec<f32>, xf: &FlameTransform) {
         t.push(xf.weight); // 0
         // 9 affine entries (row-major: m00, m01, m02, m10, m11, m12, m20, m21, m22)
         t.push(xf.affine[0][0]); // 1  m00

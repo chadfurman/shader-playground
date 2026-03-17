@@ -298,6 +298,33 @@ pub struct RuntimeConfig {
     pub transform_count_min: u32,
     #[serde(default = "default_transform_count_max")]
     pub transform_count_max: u32,
+    // Dancers
+    #[serde(default = "default_dancer_enabled")]
+    pub dancer_enabled: bool,
+    #[serde(default = "default_dancer_count_min")]
+    pub dancer_count_min: u32,
+    #[serde(default = "default_dancer_count_max")]
+    pub dancer_count_max: u32,
+    #[serde(default = "default_dancer_lifetime_min")]
+    pub dancer_lifetime_min: f32,
+    #[serde(default = "default_dancer_lifetime_max")]
+    pub dancer_lifetime_max: f32,
+    #[serde(default = "default_dancer_scale_min")]
+    pub dancer_scale_min: f32,
+    #[serde(default = "default_dancer_scale_max")]
+    pub dancer_scale_max: f32,
+    #[serde(default = "default_dancer_offset_min")]
+    pub dancer_offset_min: f32,
+    #[serde(default = "default_dancer_offset_max")]
+    pub dancer_offset_max: f32,
+    #[serde(default = "default_dancer_drift_speed")]
+    pub dancer_drift_speed: f32,
+    #[serde(default = "default_dancer_audio_strength")]
+    pub dancer_audio_strength: f32,
+    #[serde(default = "default_dancer_archive_size")]
+    pub dancer_archive_size: usize,
+    #[serde(default = "default_dancer_fade_fraction")]
+    pub dancer_fade_fraction: f32,
 }
 
 fn default_morph_duration() -> f32 {
@@ -530,6 +557,45 @@ fn default_transform_count_min() -> u32 {
 }
 fn default_transform_count_max() -> u32 {
     6
+}
+fn default_dancer_enabled() -> bool {
+    true
+}
+fn default_dancer_count_min() -> u32 {
+    1
+}
+fn default_dancer_count_max() -> u32 {
+    5
+}
+fn default_dancer_lifetime_min() -> f32 {
+    4.0
+}
+fn default_dancer_lifetime_max() -> f32 {
+    8.0
+}
+fn default_dancer_scale_min() -> f32 {
+    0.05
+}
+fn default_dancer_scale_max() -> f32 {
+    0.2
+}
+fn default_dancer_offset_min() -> f32 {
+    1.0
+}
+fn default_dancer_offset_max() -> f32 {
+    3.0
+}
+fn default_dancer_drift_speed() -> f32 {
+    0.3
+}
+fn default_dancer_audio_strength() -> f32 {
+    0.5
+}
+fn default_dancer_archive_size() -> usize {
+    20
+}
+fn default_dancer_fade_fraction() -> f32 {
+    0.2
 }
 
 const VARIATION_START: usize = 14; // first variation field index in each 48-float transform block
