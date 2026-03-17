@@ -15,6 +15,9 @@ pub struct AudioFeatures {
     pub beat: f32,
     pub beat_accum: f32,
     pub beat_pulse: f32,
+    /// Audio change detector: spikes toward 1.0 when features diverge from long-term EMA.
+    #[serde(default)]
+    pub change: f32,
 }
 
 struct AnalysisResult {
@@ -299,6 +302,11 @@ pub struct AudioProcessor {
     prev_energy_raw: f32,
     time: f32,
     sample_buf: Vec<f32>,
+    // Long-term EMA of [bass, mids, highs, energy] for change detection
+    ema_bass: f32,
+    ema_mids: f32,
+    ema_highs: f32,
+    ema_energy: f32,
 }
 
 impl AudioProcessor {
@@ -313,6 +321,10 @@ impl AudioProcessor {
             prev_energy_raw: 0.01,
             time: 0.0,
             sample_buf: Vec::with_capacity(BUFFER_SIZE),
+            ema_bass: 0.5,
+            ema_mids: 0.5,
+            ema_highs: 0.5,
+            ema_energy: 0.5,
         }
     }
 
@@ -356,6 +368,20 @@ impl AudioProcessor {
             f.beat_pulse = 1.0;
         }
         f.beat_pulse *= (-dt / 1.5).exp();
+
+        // Change detection: EMA divergence (~15s window)
+        let ema_alpha = 1.0 - (-dt / 15.0).exp(); // ~15s time constant
+        self.ema_bass += (f.bass - self.ema_bass) * ema_alpha;
+        self.ema_mids += (f.mids - self.ema_mids) * ema_alpha;
+        self.ema_highs += (f.highs - self.ema_highs) * ema_alpha;
+        self.ema_energy += (f.energy - self.ema_energy) * ema_alpha;
+        let db = f.bass - self.ema_bass;
+        let dm = f.mids - self.ema_mids;
+        let dh = f.highs - self.ema_highs;
+        let de = f.energy - self.ema_energy;
+        let dist = (db * db + dm * dm + dh * dh + de * de).sqrt();
+        // Normalize: distance of 0.5 maps to change=1.0 (tunable via the 2.0 scale)
+        f.change = (dist * 2.0).min(1.0);
     }
 
     fn decay_features(&mut self, dt: f32) {
@@ -368,6 +394,13 @@ impl AudioProcessor {
         self.beat_density.prune(self.time);
         f.beat_accum = self.beat_density.value();
         f.beat_pulse *= (-dt / 1.5).exp();
+        // Change signal decays toward 0 during silence
+        let ema_alpha = 1.0 - (-dt / 15.0).exp();
+        self.ema_bass += (0.0 - self.ema_bass) * ema_alpha;
+        self.ema_mids += (0.0 - self.ema_mids) * ema_alpha;
+        self.ema_highs += (0.0 - self.ema_highs) * ema_alpha;
+        self.ema_energy += (0.0 - self.ema_energy) * ema_alpha;
+        f.change = (f.change - dt * 0.5).max(0.0);
     }
 }
 

@@ -53,7 +53,7 @@ pub fn value_noise_pub(t: f32) -> f32 {
     value_noise(t)
 }
 
-const AUDIO_SIGNAL_COUNT: f32 = 6.0; // bass, mids, highs, energy, beat, beat_accum
+const AUDIO_SIGNAL_COUNT: f32 = 7.0; // bass, mids, highs, energy, beat, beat_accum, change
 const TIME_SIGNAL_COUNT: f32 = 9.0; // time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
 const PARAMS_PER_XF: usize = 48;
 
@@ -572,6 +572,8 @@ pub struct Weights {
     #[serde(default)]
     pub beat_accum: HashMap<String, f32>,
     #[serde(default)]
+    pub change: HashMap<String, f32>,
+    #[serde(default)]
     pub time: HashMap<String, f32>,
     #[serde(default)]
     pub time_slow: HashMap<String, f32>,
@@ -610,6 +612,7 @@ impl Weights {
             (&self.energy, features.energy, AUDIO_SIGNAL_COUNT),
             (&self.beat, features.beat, AUDIO_SIGNAL_COUNT),
             (&self.beat_accum, features.beat_accum, AUDIO_SIGNAL_COUNT),
+            (&self.change, features.change, AUDIO_SIGNAL_COUNT),
             (&self.time, time_signals.time, TIME_SIGNAL_COUNT),
             (&self.time_slow, time_signals.time_slow, TIME_SIGNAL_COUNT),
             (&self.time_med, time_signals.time_med, TIME_SIGNAL_COUNT),
