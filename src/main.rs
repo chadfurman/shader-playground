@@ -185,7 +185,11 @@ impl Gpu {
             format,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+                wgpu::PresentMode::Mailbox
+            } else {
+                wgpu::PresentMode::Fifo
+            },
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
@@ -776,7 +780,7 @@ impl Gpu {
         );
     }
 
-    fn render(&mut self) {
+    fn render(&mut self, run_compute: bool) {
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
             Err(_) => {
@@ -797,8 +801,8 @@ impl Gpu {
         // 1. Clear histogram
         encoder.clear_buffer(&self.histogram_buffer, 0, None);
 
-        // 2. Compute pass: run the chaos game
-        {
+        // 2. Compute pass: run the chaos game (skip first few frames for window responsiveness)
+        if run_compute {
             let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("flame"),
                 ..Default::default()
@@ -2374,7 +2378,9 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
+                let frame_start = Instant::now();
                 self.check_file_changes();
+                let t_files = frame_start.elapsed();
 
                 let now = Instant::now();
                 let dt = now
@@ -2667,7 +2673,7 @@ impl ApplicationHandler for App {
                 let jac_strength = self.weights._config.jacobian_weight_strength;
                 if jac_strength > 0.001 && self.num_transforms > 0 {
                     let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
-                    let n = self.num_transforms;
+                    let n = (xf_len / 48).min(self.num_transforms);
                     let mut weights: Vec<f32> = Vec::with_capacity(n);
                     for i in 0..n {
                         let base = i * 48;
@@ -2739,8 +2745,21 @@ impl ApplicationHandler for App {
                     self.morph_burst_frames -= 1;
                 }
 
-                gpu.render();
+                let t_pre_render = frame_start.elapsed();
+                gpu.render(self.frame >= 3);
+                let t_render = frame_start.elapsed();
                 self.frame += 1;
+
+                // Log frame timing every 120 frames to find bottleneck
+                if self.frame.is_multiple_of(120) {
+                    eprintln!(
+                        "[frame-timing] files={:.1}ms pre_render={:.1}ms render={:.1}ms total={:.1}ms",
+                        t_files.as_secs_f64() * 1000.0,
+                        (t_pre_render - t_files).as_secs_f64() * 1000.0,
+                        (t_render - t_pre_render).as_secs_f64() * 1000.0,
+                        t_render.as_secs_f64() * 1000.0,
+                    );
+                }
 
                 // Per-genome performance tracking — flag for post-render evolve
                 self.genome_frame_count += 1;
