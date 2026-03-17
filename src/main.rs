@@ -125,6 +125,7 @@ struct Gpu {
     palette_view: wgpu::TextureView,
     palette_sampler: wgpu::Sampler,
     workgroups: u32,
+    render_frame_count: u32,
     // Accumulation pipeline
     accumulation_pipeline: wgpu::ComputePipeline,
     accumulation_bind_group_layout: wgpu::BindGroupLayout,
@@ -192,7 +193,7 @@ impl Gpu {
             },
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 3,
         };
         surface.configure(&device, &config);
 
@@ -667,6 +668,7 @@ impl Gpu {
             palette_view,
             palette_sampler,
             workgroups: 256, // default samples_per_frame
+            render_frame_count: 0,
             accumulation_pipeline,
             accumulation_bind_group_layout,
             accumulation_bind_group,
@@ -781,29 +783,14 @@ impl Gpu {
     }
 
     fn render(&mut self, run_compute: bool) {
-        let frame = match self.surface.get_current_texture() {
-            Ok(f) => f,
-            Err(_) => {
-                self.surface.configure(&self.device, &self.config);
-                return;
-            }
-        };
-        let screen_view = frame.texture.create_view(&Default::default());
+        let t0 = std::time::Instant::now();
 
-        let (target_view, bind_group) = if self.ping {
-            (&self.frame_a, &self.bind_group_a)
-        } else {
-            (&self.frame_b, &self.bind_group_b)
-        };
-
-        let mut encoder = self.device.create_command_encoder(&Default::default());
-
-        // 1. Clear histogram
-        encoder.clear_buffer(&self.histogram_buffer, 0, None);
-
-        // 2. Compute pass: run the chaos game (skip first few frames for window responsiveness)
+        // Phase 1: Submit compute work BEFORE acquiring swapchain image.
+        // This lets the GPU work while we wait for vsync.
+        let mut compute_encoder = self.device.create_command_encoder(&Default::default());
+        compute_encoder.clear_buffer(&self.histogram_buffer, 0, None);
         if run_compute {
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            let mut cpass = compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("flame"),
                 ..Default::default()
             });
@@ -811,13 +798,9 @@ impl Gpu {
             cpass.set_bind_group(0, &self.compute_bind_group, &[]);
             cpass.dispatch_workgroups(self.workgroups, 1, 1);
         }
-
-        // 2.4. Clear max density for per-image normalization
-        encoder.clear_buffer(&self.max_density_buffer, 0, None);
-
-        // 2.5. Accumulation pass: blend histogram into persistent buffer
+        compute_encoder.clear_buffer(&self.max_density_buffer, 0, None);
         {
-            let mut apass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            let mut apass = compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("accumulation"),
                 ..Default::default()
             });
@@ -827,11 +810,9 @@ impl Gpu {
             let wg_y = self.config.height.div_ceil(16);
             apass.dispatch_workgroups(wg_x, wg_y, 1);
         }
-
-        // 2.75. Histogram equalization: bin densities + prefix sum CDF
-        encoder.clear_buffer(&self.hist_bins_buffer, 0, None);
+        compute_encoder.clear_buffer(&self.hist_bins_buffer, 0, None);
         {
-            let mut hpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            let mut hpass = compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("histogram_bin"),
                 ..Default::default()
             });
@@ -842,7 +823,7 @@ impl Gpu {
             hpass.dispatch_workgroups(wg_x, wg_y, 1);
         }
         {
-            let mut hpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            let mut hpass = compute_encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("histogram_cdf"),
                 ..Default::default()
             });
@@ -850,10 +831,32 @@ impl Gpu {
             hpass.set_bind_group(0, &self.histogram_cdf_bind_group, &[]);
             hpass.dispatch_workgroups(1, 1, 1);
         }
+        self.queue.submit(std::iter::once(compute_encoder.finish()));
+        let t_compute = t0.elapsed();
 
-        // 3. Render to feedback texture
+        // Phase 2: Acquire swapchain image (may block on vsync — but GPU is already working!)
+        // Poll pending GPU work so the swapchain image is more likely to be ready immediately.
+        let _ = self.device.poll(wgpu::PollType::Poll);
+        let frame = match self.surface.get_current_texture() {
+            Ok(f) => f,
+            Err(_) => {
+                self.surface.configure(&self.device, &self.config);
+                return;
+            }
+        };
+        let t_acquire = t0.elapsed();
+        let screen_view = frame.texture.create_view(&Default::default());
+
+        let (target_view, bind_group) = if self.ping {
+            (&self.frame_a, &self.bind_group_a)
+        } else {
+            (&self.frame_b, &self.bind_group_b)
+        };
+
+        // Phase 3: Fragment pass (reads accumulation buffer, writes to screen)
+        let mut display_encoder = self.device.create_command_encoder(&Default::default());
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut pass = display_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("feedback"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: target_view,
@@ -870,10 +873,8 @@ impl Gpu {
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
-
-        // 4. Copy to screen
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut pass = display_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("blit"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &screen_view,
@@ -890,10 +891,23 @@ impl Gpu {
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..3, 0..1);
         }
-
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.queue.submit(std::iter::once(display_encoder.finish()));
+        let t_display = t0.elapsed();
         frame.present();
+        let t_present = t0.elapsed();
         self.ping = !self.ping;
+
+        if self.render_frame_count.is_multiple_of(120) {
+            eprintln!(
+                "[render-detail] compute={:.1}ms acquire={:.1}ms display={:.1}ms present={:.1}ms total={:.1}ms",
+                t_compute.as_secs_f64() * 1000.0,
+                (t_acquire - t_compute).as_secs_f64() * 1000.0,
+                (t_display - t_acquire).as_secs_f64() * 1000.0,
+                (t_present - t_display).as_secs_f64() * 1000.0,
+                t_present.as_secs_f64() * 1000.0,
+            );
+        }
+        self.render_frame_count += 1;
     }
 }
 
