@@ -633,6 +633,22 @@ impl Weights {
         ]
     }
 
+    /// Compute the aggregate mutation_rate contribution from all signals this frame.
+    /// Returns a per-frame delta — caller accumulates and triggers mutation at >= 1.0.
+    pub fn compute_mutation_rate(
+        &self,
+        features: &crate::audio::AudioFeatures,
+        time_signals: &TimeSignals,
+    ) -> f32 {
+        let mut rate = 0.0;
+        for (weights, signal_val, divisor) in self.signal_list(features, time_signals) {
+            if let Some(&w) = weights.get("mutation_rate") {
+                rate += w * signal_val / divisor;
+            }
+        }
+        rate
+    }
+
     /// Apply weights to global params only.
     pub fn apply_globals(
         &self,

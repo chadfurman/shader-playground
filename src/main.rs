@@ -2315,6 +2315,7 @@ impl ApplicationHandler for App {
                         self.genome_history.remove(0);
                     }
                     self.flame_locked = false; // unlock on manual mutate
+                    self.mutation_accum = 0.0;
                     let (pa, pb, community) = self.pick_breeding_parents();
                     self.genome = FlameGenome::mutate(
                         &pa,
@@ -2607,55 +2608,66 @@ impl ApplicationHandler for App {
                         ._config
                         .apply_variation_scales(&mut self.xf_params, self.num_transforms);
 
-                    // Auto-evolve when ALL transforms finish morphing (disabled when flame_locked)
+                    // Accumulate signal-driven mutation_rate from weights
+                    let mr = self
+                        .weights
+                        .compute_mutation_rate(&self.audio_features, &time_signals);
+                    self.mutation_accum += mr;
+
+                    // Two evolution paths: signal-driven OR time-based
+                    let time_since_last = time - self.last_mutation_time;
                     let all_morphed = self
                         .morph_xf_rates
                         .iter()
                         .all(|r| self.morph_progress * r >= 1.0)
                         || self.morph_xf_rates.is_empty();
-                    if !self.flame_locked && all_morphed {
-                        let time_since_last = time - self.last_mutation_time;
-                        let cooldown = self.weights._config.mutation_cooldown;
-                        if time_since_last >= cooldown {
-                            self.genome_history.push(self.genome.clone());
-                            if self.genome_history.len() > 10 {
-                                self.genome_history.remove(0);
-                            }
 
-                            // Breed two parents to produce offspring
-                            let (pa, pb, community) = self.pick_breeding_parents();
-                            self.genome = FlameGenome::mutate(
-                                &pa,
-                                &pb,
-                                &community,
-                                &self.audio_features,
-                                &self.weights._config,
-                                &self.favorite_profile,
-                                &mut Some(&mut self.taste_engine),
-                            );
-                            let genomes_dir = project_dir().join("genomes");
-                            self.lineage_cache.register_and_save(
-                                &self.genome.name,
-                                &self.genome.parent_a,
-                                &self.genome.parent_b,
-                                self.genome.generation,
-                                &genomes_dir,
-                            );
-                            // Auto-save to history
-                            let history_dir = genomes_dir.join("history");
-                            if let Err(e) = self.genome.save(&history_dir) {
-                                eprintln!("[history] save error: {e}");
-                            }
-                            self.archive_genome();
-                            self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                            self.begin_morph();
-                            eprintln!(
-                                "[auto-evolve] t={:.1}s → {} (gen {})",
-                                self.start.elapsed().as_secs_f32(),
-                                self.genome.name,
-                                self.genome.generation
-                            );
+                    // Signal-driven: mutation_rate accumulated to 1.0 (min 10s between)
+                    let signal_trigger =
+                        !self.flame_locked && self.mutation_accum >= 1.0 && time_since_last >= 10.0;
+                    // Time-based: all morphed + cooldown elapsed
+                    let cooldown = self.weights._config.mutation_cooldown;
+                    let time_trigger =
+                        !self.flame_locked && all_morphed && time_since_last >= cooldown;
+
+                    if signal_trigger || time_trigger {
+                        self.mutation_accum = 0.0;
+                        let reason = if signal_trigger { "signal" } else { "auto" };
+                        self.genome_history.push(self.genome.clone());
+                        if self.genome_history.len() > 10 {
+                            self.genome_history.remove(0);
                         }
+                        let (pa, pb, community) = self.pick_breeding_parents();
+                        self.genome = FlameGenome::mutate(
+                            &pa,
+                            &pb,
+                            &community,
+                            &self.audio_features,
+                            &self.weights._config,
+                            &self.favorite_profile,
+                            &mut Some(&mut self.taste_engine),
+                        );
+                        let genomes_dir = project_dir().join("genomes");
+                        self.lineage_cache.register_and_save(
+                            &self.genome.name,
+                            &self.genome.parent_a,
+                            &self.genome.parent_b,
+                            self.genome.generation,
+                            &genomes_dir,
+                        );
+                        let history_dir = genomes_dir.join("history");
+                        if let Err(e) = self.genome.save(&history_dir) {
+                            eprintln!("[history] save error: {e}");
+                        }
+                        self.archive_genome();
+                        self.last_mutation_time = self.start.elapsed().as_secs_f32();
+                        self.begin_morph();
+                        eprintln!(
+                            "[evolve:{reason}] t={:.1}s → {} (gen {})",
+                            self.start.elapsed().as_secs_f32(),
+                            self.genome.name,
+                            self.genome.generation,
+                        );
                     }
 
                     // Periodic favorite profile refresh (every 30s)

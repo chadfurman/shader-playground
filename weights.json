@@ -1,8 +1,26 @@
 {
   "_doc": {
-    "_signals": "bass, mids, highs, energy, beat, beat_accum, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope",
-    "_formula": "final[i] = genome_base[i] + sum(weight * signal / divisor). Audio signals ÷6, time signals ÷9.",
-    "_wildcards": "xfN_ expands to all transforms with per-transform randomness and magnitude. xf0_, xf1_ etc. target specific transforms.",
+    "_signals": "bass, mids, highs, energy, beat, beat_accum, change, time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope",
+    "_formula": "final[i] = genome_base[i] + sum(weight * signal / divisor). Audio signals ÷7 (7 signals). Time signals ÷9 (9 signals).",
+    "_signal_notes": {
+      "bass":          "Low-frequency energy (0-200 Hz), normalized 0-1",
+      "mids":          "Mid-frequency energy (200 Hz-2 kHz), normalized 0-1",
+      "highs":         "High-frequency energy (2 kHz+), normalized 0-1",
+      "energy":        "Overall RMS amplitude, normalized 0-1",
+      "beat":          "Per-beat pulse — peaks at 1 on beat, decays to 0",
+      "beat_accum":    "Accumulated beat count, grows monotonically",
+      "change":        "Song-change detector: EMA divergence spikes near 1 when audio changes significantly",
+      "time_slow":     "Value noise at 0.05 speed — ~20s wander cycle",
+      "time_med":      "Value noise at 0.2 speed — ~5s wander cycle",
+      "time_fast":     "Value noise at 0.8 speed — ~1.25s wander cycle",
+      "time_noise":    "Value noise at 0.3 speed — organic wandering",
+      "time_drift":    "Value noise at 0.02 speed — glacial ~50s drift",
+      "time_flutter":  "Value noise at 1.5 speed — quick flicker",
+      "time_walk":     "Accumulated random walk — never reverses",
+      "time_envelope": "Time since last mutation, capped at 1.0 over 10s"
+    },
+    "_wildcards": "xfN_ targets ALL transforms stochastically — each transform gets weight * randomness(i) * magnitude(i) * signal / divisor, where randomness is in [-randomness_range, +randomness_range] and magnitude in [magnitude_min, magnitude_max], both deterministic per transform index. xf0_/xf1_/etc. target a specific index (no randomness). NOTE: xf0_/xf1_ indices are arbitrary per-genome — prefer xfN_ for audio reactivity.",
+    "_spin_drift_note": "spin_speed_max and position_drift are global amplitude caps. The shader randomizes spin and drift independently per transform (seeded by transform index). Driving spin_speed_max with energy makes all transforms dance at different rates — no per-transform targeting needed.",
     "_params": {
       "speed":              "Global animation speed (base ~0.25)",
       "zoom":               "Camera zoom level (base ~3.0)",
@@ -19,8 +37,8 @@
       "curl_displacement":  "How much the 'curl' variation displaces points (base 0.05)",
       "tangent_clamp":      "Clamp range for tangent variation to prevent explosions (base 4.0)",
       "color_blend":        "How much each iteration blends toward xform color vs keeping previous (base 0.7)",
-      "spin_speed_max":     "Max per-transform spin speed (base 0.15)",
-      "position_drift":     "Per-transform position drift amplitude (base 0.08)",
+      "spin_speed_max":     "Global max per-transform spin speed (rad/s, base 0.15). Shader randomizes spin independently per transform within ±this — drive with energy to make transforms dance.",
+      "position_drift":     "Global per-transform position drift amplitude (base 0.08). Shader applies noise-based drift independently per transform within this bound — drive with beat for rhythmic movement.",
       "warmup_iters":       "Iterations to skip before plotting (base 20)",
       "mutation_rate":      "Virtual — auto-evolve accumulator (triggers mutate at 1.0)",
       "xfN_weight":         "All transforms blend weight",
@@ -117,8 +135,8 @@
     }
   },
   "_config": {
-    "morph_duration": 20.0,
-    "mutation_cooldown": 12.0,
+    "morph_duration": 60.0,
+    "mutation_cooldown": 80.0,
     "workgroups": 512,
     "magnitude_min": 1.0,
     "magnitude_max": 3.0,
@@ -145,7 +163,7 @@
     "bloom_radius": 3.0,
     "fitness_bias_strength": 0.5,
     "drift_speed": 3.0,
-    "velocity_blur_max": 24.0,
+    "velocity_blur_max": 3.0,
     "iterations_per_thread": 400,
     "morph_speed": 1.0,
     "morph_stagger_count": 2,
@@ -191,43 +209,18 @@
     "transform_count_min": 8,
     "transform_count_max": 12
   },
-  "bass": {
-    "color_shift": -0.01,
-    "flame_brightness": 0.02,
-    "vibrancy": 0.01,
-    "xfN_spherical": 0.01,
-    "xfN_bubble": 0.01,
-    "xfN_blob": 0.01
-  },
-  "mids": {
-    "color_shift": 0.01,
-    "xfN_sinusoidal": 0.01,
-    "xfN_waves": 0.01,
-    "xfN_cosine": 0.01
-  },
-  "highs": {
-    "color_shift": 0.01,
-    "xfN_julia": 0.01,
-    "xfN_disc": 0.01,
-    "xfN_cross": 0.01
-  },
+  "bass": {},
+  "mids": {},
+  "highs": {},
   "energy": {
-    "flame_brightness": 0.03,
-    "drift_speed": 0.05,
-    "mutation_rate": 0.08,
     "bloom_intensity": 0.02
   },
   "beat": {
-    "color_shift": -0.01,
-    "bloom_intensity": 0.02,
-    "mutation_rate": 0.05
+    "position_drift": 0.001
   },
-  "beat_accum": {
-    "mutation_rate": 0.3
-  },
+  "beat_accum": {},
   "change": {
-    "mutation_rate": 0.5,
-    "color_shift": 0.05
+      "mutation_rate": 0.8
   },
   "time": {},
   "time_slow": {
@@ -236,16 +229,12 @@
   "time_med": {},
   "time_fast": {},
   "time_noise": {
-    "xfN_offset_x": 0.005,
-    "xfN_offset_y": 0.005,
-    "xfN_m00": 0.003,
-    "xfN_m01": 0.003,
-    "xfN_m10": 0.003,
-    "xfN_m11": 0.003
   },
   "time_drift": {},
   "time_flutter": {},
-  "time_walk": {},
+  "time_walk": {
+    "mutation_rate": 0.02
+  },
   "time_envelope": {
     "drift_speed": 0.3
   }
