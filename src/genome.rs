@@ -974,6 +974,55 @@ impl FlameGenome {
         }
     }
 
+    /// Adjust transform count to fit within the configured range.
+    /// Too few: clone random existing transforms with small mutations.
+    /// Too many: drop the lowest-weight transforms.
+    pub fn adjust_transform_count(&mut self, cfg: &crate::weights::RuntimeConfig) {
+        use rand::Rng;
+        use rand::prelude::IndexedRandom;
+        let min = cfg.transform_count_min.max(1) as usize;
+        let max = cfg.transform_count_max.max(min as u32) as usize;
+
+        // Pad up: clone + mutate existing transforms
+        while self.transforms.len() < min {
+            let mut rng = rand::rng();
+            if let Some(parent) = self.transforms.choose(&mut rng).cloned() {
+                let mut child = parent;
+                // Small affine mutation
+                let angle: f32 = rng.random_range(-0.3..0.3);
+                let (s, c) = angle.sin_cos();
+                let m00 = child.affine[0][0] * c - child.affine[0][1] * s;
+                let m01 = child.affine[0][0] * s + child.affine[0][1] * c;
+                child.affine[0][0] = m00;
+                child.affine[0][1] = m01;
+                // Slightly shift color
+                child.color = (child.color + rng.random_range(-0.1..0.1)).clamp(0.0, 1.0);
+                self.transforms.push(child);
+            } else {
+                // No transforms at all — generate random
+                self.transforms
+                    .push(FlameTransform::random_transform(&mut rng));
+            }
+        }
+
+        // Trim down: drop lowest-weight transforms
+        while self.transforms.len() > max {
+            if let Some((i, _)) = self
+                .transforms
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| a.weight.partial_cmp(&b.weight).unwrap())
+            {
+                self.transforms.remove(i);
+            } else {
+                break;
+            }
+        }
+
+        // Re-normalize weights after adjustment
+        self.normalize_weights();
+    }
+
     pub fn load_random(dir: &Path) -> Result<Self, String> {
         use rand::prelude::IndexedRandom;
         let entries: Vec<_> = fs::read_dir(dir)

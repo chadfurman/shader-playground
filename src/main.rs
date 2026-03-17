@@ -803,10 +803,7 @@ impl Gpu {
     }
 
     fn render(&mut self, run_compute: bool) {
-        let t0 = std::time::Instant::now();
-
         // Phase 1: Submit compute work BEFORE acquiring swapchain image.
-        // This lets the GPU work while we wait for vsync.
         let mut compute_encoder = self.device.create_command_encoder(&Default::default());
         compute_encoder.clear_buffer(&self.histogram_buffer, 0, None);
         if run_compute {
@@ -852,9 +849,8 @@ impl Gpu {
             hpass.dispatch_workgroups(1, 1, 1);
         }
         self.queue.submit(std::iter::once(compute_encoder.finish()));
-        let t_compute = t0.elapsed();
 
-        // Phase 2: Acquire swapchain image (may block on vsync — but GPU is already working!)
+        // Phase 2: Acquire swapchain image (may block on vsync)
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
             Err(_) => {
@@ -862,7 +858,6 @@ impl Gpu {
                 return;
             }
         };
-        let t_acquire = t0.elapsed();
         let screen_view = frame.texture.create_view(&Default::default());
 
         let (target_view, bind_group) = if self.ping {
@@ -910,21 +905,8 @@ impl Gpu {
             pass.draw(0..3, 0..1);
         }
         self.queue.submit(std::iter::once(display_encoder.finish()));
-        let t_display = t0.elapsed();
         frame.present();
-        let t_present = t0.elapsed();
         self.ping = !self.ping;
-
-        if self.render_frame_count.is_multiple_of(120) {
-            eprintln!(
-                "[render-detail] compute={:.1}ms acquire={:.1}ms display={:.1}ms present={:.1}ms total={:.1}ms",
-                t_compute.as_secs_f64() * 1000.0,
-                (t_acquire - t_compute).as_secs_f64() * 1000.0,
-                (t_display - t_acquire).as_secs_f64() * 1000.0,
-                (t_present - t_display).as_secs_f64() * 1000.0,
-                t_present.as_secs_f64() * 1000.0,
-            );
-        }
         self.render_frame_count += 1;
     }
 }
@@ -1666,9 +1648,10 @@ impl App {
         let t = Instant::now();
         let flames_dir = project_dir().join("genomes").join("flames");
         let seeds_dir = project_dir().join("genomes").join("seeds");
-        let genome = crate::flam3::load_random_flame(&flames_dir)
+        let mut genome = crate::flam3::load_random_flame(&flames_dir)
             .or_else(|_| FlameGenome::load_random(&seeds_dir))
             .unwrap_or_else(|_| FlameGenome::default_genome());
+        genome.adjust_transform_count(&weights._config);
         eprintln!(
             "[boot] genome loaded: {} ({:.0}ms)",
             genome.name,
@@ -2196,8 +2179,9 @@ impl ApplicationHandler for App {
         // Try loading a random genome (before gpu moves to render thread)
         let genomes_dir = project_dir().join("genomes");
         if genomes_dir.exists()
-            && let Ok(g) = FlameGenome::load_random(&genomes_dir)
+            && let Ok(mut g) = FlameGenome::load_random(&genomes_dir)
         {
+            g.adjust_transform_count(&self.weights._config);
             eprintln!("[genome] loaded: {}", g.name);
             self.genome = g;
             let g_globals = self.genome.flatten_globals(&self.weights._config);
@@ -2407,7 +2391,8 @@ impl ApplicationHandler for App {
                     "l" => {
                         let dir = project_dir().join("genomes");
                         match FlameGenome::load_random(&dir) {
-                            Ok(g) => {
+                            Ok(mut g) => {
+                                g.adjust_transform_count(&self.weights._config);
                                 self.genome_history.push(self.genome.clone());
                                 if self.genome_history.len() > 10 {
                                     self.genome_history.remove(0);
@@ -2436,7 +2421,8 @@ impl ApplicationHandler for App {
                     "f" => {
                         let flames_dir = project_dir().join("genomes").join("flames");
                         match crate::flam3::load_random_flame(&flames_dir) {
-                            Ok(g) => {
+                            Ok(mut g) => {
+                                g.adjust_transform_count(&self.weights._config);
                                 self.genome_history.push(self.genome.clone());
                                 if self.genome_history.len() > 10 {
                                     self.genome_history.remove(0);

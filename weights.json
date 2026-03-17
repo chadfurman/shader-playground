@@ -111,12 +111,14 @@
       "jacobian_weight_strength": "Blend Jacobian determinant into transform selection: 0.0 = weight-only, 1.0 = fully Jacobian (default 0.0, try 0.1)",
       "min_genome_fps": "Auto-evolve away from genomes below this FPS after 3s (default 15, 0 = disabled)",
       "window_width": "Initial window width in logical pixels (default 640)",
-      "window_height": "Initial window height in logical pixels (default 480)"
+      "window_height": "Initial window height in logical pixels (default 480)",
+      "transform_count_min": "Minimum transforms per genome during breeding (default 3)",
+      "transform_count_max": "Maximum transforms per genome during breeding (default 6)"
     }
   },
   "_config": {
-    "morph_duration": 20.0,
-    "mutation_cooldown": 12.0,
+    "morph_duration": 40.0,
+    "mutation_cooldown": 10.0,
     "workgroups": 512,
     "magnitude_min": 1.0,
     "magnitude_max": 3.0,
@@ -127,7 +129,7 @@
     "curl_displacement": 0.05,
     "tangent_clamp": 4.0,
     "color_blend": 0.4,
-    "spin_speed_max": 0.15,
+    "spin_speed_max": 0.2,
     "position_drift": 0.4,
     "warmup_iters": 20.0,
     "gamma": 0.4545,
@@ -139,13 +141,13 @@
     "max_mutation_retries": 10,
     "trail": 0.15,
     "accumulation_decay": 0.94,
-    "samples_per_frame": 512,
+    "samples_per_frame": 1024,
     "bloom_radius": 3.0,
     "fitness_bias_strength": 0.5,
     "drift_speed": 3.0,
     "velocity_blur_max": 24.0,
-    "iterations_per_thread": 200,
-    "morph_speed": 1.0,
+    "iterations_per_thread": 400,
+    "morph_speed": .7,
     "morph_stagger_count": 2,
     "morph_stagger_min": 0.3,
     "morph_stagger_max": 0.6,
@@ -185,7 +187,9 @@
     "window_height": 480,
     "jacobian_weight_strength": 0.1,
     "min_genome_fps": 5.0,
-    "morph_burst_decay": 0.7
+    "morph_burst_decay": 0.7,
+    "transform_count_min": 8,
+    "transform_count_max": 12 
   },
   "bass": {
     "color_shift": -0.01,
