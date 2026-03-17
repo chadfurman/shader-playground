@@ -115,8 +115,8 @@
     }
   },
   "_config": {
-    "morph_duration": 5.0,
-    "mutation_cooldown": 60.0,
+    "morph_duration": 20.0,
+    "mutation_cooldown": 12.0,
     "workgroups": 512,
     "magnitude_min": 1.0,
     "magnitude_max": 3.0,
@@ -128,7 +128,7 @@
     "tangent_clamp": 4.0,
     "color_blend": 0.4,
     "spin_speed_max": 0.15,
-    "position_drift": 0.08,
+    "position_drift": 0.4,
     "warmup_iters": 20.0,
     "gamma": 0.4545,
     "highlight_power": 2.0,
@@ -142,7 +142,7 @@
     "samples_per_frame": 512,
     "bloom_radius": 3.0,
     "fitness_bias_strength": 0.5,
-    "drift_speed": 0.5,
+    "drift_speed": 3.0,
     "velocity_blur_max": 24.0,
     "iterations_per_thread": 200,
     "morph_speed": 1.0,

@@ -26,6 +26,36 @@ use crate::genome::{FavoriteProfile, FlameGenome};
 use crate::votes::VoteLedger;
 use crate::weights::Weights;
 
+// ── Render Thread Protocol ──
+
+/// Data needed to render one frame. Sent from main thread to render thread.
+struct FrameData {
+    uniforms: Uniforms,
+    xf_params: Vec<f32>,
+    accum_uniforms: [f32; 4],
+    hist_cdf_uniforms: [f32; 4],
+    workgroups: u32,
+    run_compute: bool,
+}
+
+/// Commands sent from the main thread to the render thread.
+enum RenderCommand {
+    /// Render one frame with the given data.
+    Render(Box<FrameData>),
+    /// Window was resized.
+    Resize { width: u32, height: u32 },
+    /// Upload a new 256-color palette (256 RGBA tuples).
+    UpdatePalette(Vec<[f32; 4]>),
+    /// Transform count changed — recreate the transform buffer.
+    ResizeTransformBuffer(usize),
+    /// Hot-reload the display shader.
+    ReloadShader(String),
+    /// Hot-reload the compute shader.
+    ReloadComputeShader(String),
+    /// Shut down the render thread.
+    Shutdown,
+}
+
 // ── Uniforms ──
 
 #[repr(C)]
@@ -710,16 +740,6 @@ impl Gpu {
         self.rebuild_bind_groups();
     }
 
-    fn reload_shader(&mut self, src: &str) {
-        self.pipeline =
-            create_render_pipeline(&self.device, &self.pipeline_layout, src, self.config.format);
-    }
-
-    fn reload_compute_shader(&mut self, src: &str) {
-        self.compute_pipeline =
-            create_compute_pipeline(&self.device, &self.compute_pipeline_layout, src);
-    }
-
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
         let size = (num_transforms.max(1) * 48 * 4) as u64;
         self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -835,8 +855,6 @@ impl Gpu {
         let t_compute = t0.elapsed();
 
         // Phase 2: Acquire swapchain image (may block on vsync — but GPU is already working!)
-        // Poll pending GPU work so the swapchain image is more likely to be ready immediately.
-        let _ = self.device.poll(wgpu::PollType::Poll);
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
             Err(_) => {
@@ -909,6 +927,64 @@ impl Gpu {
         }
         self.render_frame_count += 1;
     }
+}
+
+// ── Render Thread ──
+
+fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
+    while let Ok(cmd) = rx.recv() {
+        match cmd {
+            RenderCommand::Render(data) => {
+                gpu.queue
+                    .write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&data.uniforms));
+                gpu.queue.write_buffer(
+                    &gpu.transform_buffer,
+                    0,
+                    bytemuck::cast_slice(&data.xf_params),
+                );
+                gpu.queue.write_buffer(
+                    &gpu.accumulation_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&data.accum_uniforms),
+                );
+                gpu.queue.write_buffer(
+                    &gpu.histogram_cdf_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&data.hist_cdf_uniforms),
+                );
+                gpu.workgroups = data.workgroups;
+                gpu.render(data.run_compute);
+            }
+            RenderCommand::Resize { width, height } => {
+                gpu.resize(width, height);
+            }
+            RenderCommand::UpdatePalette(rgba_data) => {
+                upload_palette_texture(&gpu.queue, &gpu.palette_texture, &rgba_data);
+            }
+            RenderCommand::ResizeTransformBuffer(num_transforms) => {
+                gpu.resize_transform_buffer(num_transforms);
+            }
+            RenderCommand::ReloadShader(src) => {
+                gpu.pipeline = create_render_pipeline(
+                    &gpu.device,
+                    &gpu.pipeline_layout,
+                    &src,
+                    gpu.config.format,
+                );
+                eprintln!("[render-thread] shader reloaded");
+            }
+            RenderCommand::ReloadComputeShader(src) => {
+                gpu.compute_pipeline =
+                    create_compute_pipeline(&gpu.device, &gpu.compute_pipeline_layout, &src);
+                eprintln!("[render-thread] compute shader reloaded");
+            }
+            RenderCommand::Shutdown => {
+                eprintln!("[render-thread] shutdown");
+                return;
+            }
+        }
+    }
+    eprintln!("[render-thread] channel closed");
 }
 
 // ── Helper Functions ──
@@ -1491,7 +1567,9 @@ fn create_compute_pipeline(
 // ── App ──
 
 struct App {
-    gpu: Option<Gpu>,
+    render_tx: Option<mpsc::SyncSender<RenderCommand>>,
+    gpu_width: u32,
+    gpu_height: u32,
     window: Option<Arc<Window>>,
     watcher: Option<FileWatcher>,
     start: Instant,
@@ -1600,7 +1678,9 @@ impl App {
         let initial_xf = genome.flatten_transforms();
         let num_transforms = genome.total_buffer_transforms();
         Self {
-            gpu: None,
+            render_tx: None,
+            gpu_width: 1,
+            gpu_height: 1,
             window: None,
             watcher: None,
             start: Instant::now(),
@@ -1935,8 +2015,8 @@ impl App {
         let max_xf = (self.xf_params.len().max(target_xf.len())) / 48;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
-            if let Some(gpu) = &mut self.gpu {
-                gpu.resize_transform_buffer(self.num_transforms);
+            if let Some(tx) = &self.render_tx {
+                let _ = tx.send(RenderCommand::ResizeTransformBuffer(self.num_transforms));
             }
         }
         // Pad start vectors to match
@@ -1969,9 +2049,9 @@ impl App {
         self.morph_burst_frames = 60;
 
         // Upload palette for the new genome
-        if let Some(gpu) = &self.gpu {
+        if let Some(tx) = &self.render_tx {
             let palette_data = crate::genome::palette_rgba_data(&self.genome);
-            upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
+            let _ = tx.send(RenderCommand::UpdatePalette(palette_data));
         }
     }
 
@@ -2012,12 +2092,16 @@ impl App {
         }
         if reload_shader {
             let src = load_shader_source();
-            self.gpu.as_mut().unwrap().reload_shader(&src);
+            if let Some(tx) = &self.render_tx {
+                let _ = tx.send(RenderCommand::ReloadShader(src));
+            }
             eprintln!("[shader] reloaded");
         }
         if reload_compute {
             let src = load_compute_source();
-            self.gpu.as_mut().unwrap().reload_compute_shader(&src);
+            if let Some(tx) = &self.render_tx {
+                let _ = tx.send(RenderCommand::ReloadComputeShader(src));
+            }
             eprintln!("[compute] reloaded");
         }
         if reload_params {
@@ -2030,9 +2114,6 @@ impl App {
         }
         if reload_weights {
             self.weights = load_weights();
-            if let Some(gpu) = &mut self.gpu {
-                gpu.workgroups = self.weights._config.samples_per_frame;
-            }
             eprintln!(
                 "[weights] reloaded (samples_per_frame={}, morph={}s, cooldown={}s)",
                 self.weights._config.samples_per_frame,
@@ -2090,12 +2171,13 @@ impl ApplicationHandler for App {
         }
 
         let t = Instant::now();
-        self.gpu = Some(Gpu::create(window.clone()));
+        let mut gpu = Gpu::create(window.clone());
+        let initial_width = gpu.config.width;
+        let initial_height = gpu.config.height;
         eprintln!(
             "[boot] GPU initialized ({:.0}ms)",
             t.elapsed().as_secs_f64() * 1000.0
         );
-        self.window = Some(window);
 
         // Watch all shader files + params
         let paths = vec![
@@ -2111,14 +2193,13 @@ impl ApplicationHandler for App {
             Err(e) => eprintln!("warning: file watcher failed: {e}"),
         }
 
-        // Try loading a random genome
+        // Try loading a random genome (before gpu moves to render thread)
         let genomes_dir = project_dir().join("genomes");
         if genomes_dir.exists()
             && let Ok(g) = FlameGenome::load_random(&genomes_dir)
         {
             eprintln!("[genome] loaded: {}", g.name);
             self.genome = g;
-            // Snap (no morph) on initial load
             let g_globals = self.genome.flatten_globals(&self.weights._config);
             let g_xf = self.genome.flatten_transforms();
             self.globals = g_globals;
@@ -2129,16 +2210,26 @@ impl ApplicationHandler for App {
             self.morph_start_xf = g_xf;
             self.morph_progress = 1.0;
             self.num_transforms = self.genome.total_buffer_transforms();
-            if let Some(gpu) = &mut self.gpu {
-                gpu.resize_transform_buffer(self.num_transforms);
-            }
         }
 
-        // Upload palette for the initial genome
-        if let Some(gpu) = &self.gpu {
-            let palette_data = crate::genome::palette_rgba_data(&self.genome);
-            upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
-        }
+        // Upload palette + resize transform buffer while we still own gpu
+        let palette_data = crate::genome::palette_rgba_data(&self.genome);
+        upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
+        gpu.resize_transform_buffer(self.num_transforms);
+
+        // Spawn render thread — gpu moves into it permanently
+        // Bounded channel (2 frames): prevents main thread from spinning faster than GPU
+        // can consume, which would starve keyboard/mouse events.
+        let (tx, rx) = mpsc::sync_channel(2);
+        std::thread::Builder::new()
+            .name("render".into())
+            .spawn(move || render_thread_loop(rx, gpu))
+            .expect("failed to spawn render thread");
+
+        self.render_tx = Some(tx);
+        self.gpu_width = initial_width;
+        self.gpu_height = initial_height;
+        self.window = Some(window);
 
         // Build initial taste model from voted/imported genomes
         let t = Instant::now();
@@ -2162,19 +2253,29 @@ impl ApplicationHandler for App {
         event: WindowEvent,
     ) {
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                if let Some(tx) = self.render_tx.take() {
+                    let _ = tx.send(RenderCommand::Shutdown);
+                }
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
-                if let Some(gpu) = &mut self.gpu {
-                    gpu.resize(size.width, size.height);
+                if size.width > 0 && size.height > 0 {
+                    self.gpu_width = size.width;
+                    self.gpu_height = size.height;
+                    if let Some(tx) = &self.render_tx {
+                        let _ = tx.send(RenderCommand::Resize {
+                            width: size.width,
+                            height: size.height,
+                        });
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if let Some(gpu) = &self.gpu {
-                    self.mouse = [
-                        position.x as f32 / gpu.config.width as f32,
-                        position.y as f32 / gpu.config.height as f32,
-                    ];
-                }
+                self.mouse = [
+                    position.x as f32 / self.gpu_width.max(1) as f32,
+                    position.y as f32 / self.gpu_height.max(1) as f32,
+                ];
             }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
@@ -2558,16 +2659,11 @@ impl ApplicationHandler for App {
                     }
                 }
 
-                let gpu = match &mut self.gpu {
-                    Some(g) => g,
-                    None => return,
-                };
-
-                // Write uniforms
+                // Build uniforms (using cached gpu dimensions)
                 let uniforms = Uniforms {
                     time: self.start.elapsed().as_secs_f32(),
                     frame: self.frame,
-                    resolution: [gpu.config.width as f32, gpu.config.height as f32],
+                    resolution: [self.gpu_width as f32, self.gpu_height as f32],
                     mouse: self.mouse,
                     transform_count: self.genome.transform_count(),
                     has_final_xform: (if self.genome.final_transform.is_some() {
@@ -2641,126 +2737,107 @@ impl ApplicationHandler for App {
                     extra8: [self.weights._config.dof_strength, 0.0, 0.0, 0.0],
                 };
 
-                gpu.queue
-                    .write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+                // Update prev_zoom AFTER building uniforms (this frame → next frame)
+                self.prev_zoom = self.globals[1];
 
-                self.prev_zoom = self.globals[1]; // zoom is globals[1]
-
-                // Adaptive compute budget: target ~4 effective transforms worth of work.
-                // Scale both workgroups AND iterations to keep frame time manageable
-                // while preserving point density (fewer iterations = same points, less work).
+                // Adaptive compute budget
                 let effective_xforms =
                     self.genome.transform_count() * (self.genome.symmetry.unsigned_abs().max(1));
                 let budget_baseline = 4u32;
                 let base_wg = self.weights._config.samples_per_frame;
                 let base_iters = self.weights._config.iterations_per_thread;
-                if effective_xforms > budget_baseline {
+                let (final_uniforms, computed_workgroups) = if effective_xforms > budget_baseline {
                     let ratio = budget_baseline as f32 / effective_xforms as f32;
-                    // Split the scaling: sqrt on each so neither goes too low
                     let sqrt_ratio = ratio.sqrt();
-                    gpu.workgroups = (base_wg as f32 * sqrt_ratio).max(256.0) as u32;
-                    // Pack scaled iterations into has_final_xform upper bits
+                    let wg = (base_wg as f32 * sqrt_ratio).max(256.0) as u32;
                     let scaled_iters = (base_iters as f32 * sqrt_ratio).max(40.0) as u32;
                     let has_final = if self.genome.final_transform.is_some() {
                         1u32
                     } else {
                         0u32
                     };
-                    let uniforms_patched = Uniforms {
+                    let patched = Uniforms {
                         has_final_xform: has_final | (scaled_iters.clamp(10, 2000) << 16),
                         ..uniforms
                     };
-                    gpu.queue.write_buffer(
-                        &gpu.uniform_buffer,
-                        0,
-                        bytemuck::bytes_of(&uniforms_patched),
-                    );
+                    (patched, wg)
                 } else {
-                    gpu.workgroups = base_wg;
+                    (uniforms, base_wg)
                 };
 
+                // Jacobian importance sampling (CPU work, stays on main thread)
                 let xf_write_len = self.num_transforms * 48;
                 let xf_len = xf_write_len.min(self.xf_params.len());
-
-                // Jacobian importance sampling: blend |a*d - b*c| with genetic weight
-                // 3x3 layout: field 0=weight, 1=m00, 2=m01, 4=m10, 5=m11
-                let jac_strength = self.weights._config.jacobian_weight_strength;
-                if jac_strength > 0.001 && self.num_transforms > 0 {
-                    let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
-                    let n = (xf_len / 48).min(self.num_transforms);
-                    let mut weights: Vec<f32> = Vec::with_capacity(n);
-                    for i in 0..n {
-                        let base = i * 48;
-                        let w = adjusted[base]; // field 0 = weight
-                        let a = adjusted[base + 1]; // m00
-                        let b = adjusted[base + 2]; // m01
-                        let c = adjusted[base + 4]; // m10
-                        let d = adjusted[base + 5]; // m11
-                        let det = (a * d - b * c).abs();
-                        weights.push(w * (1.0 - jac_strength) + det * jac_strength);
-                    }
-                    let total: f32 = weights.iter().sum();
-                    if total > 0.0 {
-                        for (i, jw) in weights.iter().enumerate() {
-                            adjusted[i * 48] = jw / total;
+                let final_xf_params: Vec<f32> = {
+                    let jac_strength = self.weights._config.jacobian_weight_strength;
+                    if jac_strength > 0.001 && self.num_transforms > 0 {
+                        let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
+                        let n = (xf_len / 48).min(self.num_transforms);
+                        let mut weights: Vec<f32> = Vec::with_capacity(n);
+                        for i in 0..n {
+                            let base = i * 48;
+                            let w = adjusted[base];
+                            let a = adjusted[base + 1];
+                            let b = adjusted[base + 2];
+                            let c = adjusted[base + 4];
+                            let d = adjusted[base + 5];
+                            let det = (a * d - b * c).abs();
+                            weights.push(w * (1.0 - jac_strength) + det * jac_strength);
                         }
+                        let total: f32 = weights.iter().sum();
+                        if total > 0.0 {
+                            for (i, jw) in weights.iter().enumerate() {
+                                adjusted[i * 48] = jw / total;
+                            }
+                        }
+                        adjusted
+                    } else {
+                        self.xf_params[..xf_len].to_vec()
                     }
-                    gpu.queue.write_buffer(
-                        &gpu.transform_buffer,
-                        0,
-                        bytemuck::cast_slice(&adjusted),
-                    );
-                } else {
-                    let xf_slice = &self.xf_params[..xf_len];
-                    gpu.queue.write_buffer(
-                        &gpu.transform_buffer,
-                        0,
-                        bytemuck::cast_slice(xf_slice),
-                    );
-                }
+                };
 
-                // Write accumulation uniforms — faster decay during morph transition
+                // Accumulation uniforms — faster decay during morph transition
                 let base_decay = self.weights._config.accumulation_decay;
                 let morph_burst_decay = self.weights._config.morph_burst_decay;
                 let decay = if self.morph_burst_frames > 0 {
-                    // Gentle ramp from burst decay back to normal over burst period
                     let burst_t = self.morph_burst_frames as f32 / 60.0;
                     base_decay + (morph_burst_decay - base_decay) * burst_t
                 } else {
                     base_decay
                 };
                 let accum_uniforms: [f32; 4] = [
-                    gpu.config.width as f32,
-                    gpu.config.height as f32,
+                    self.gpu_width as f32,
+                    self.gpu_height as f32,
                     decay,
                     self.weights._config.accumulation_cap,
                 ];
-                gpu.queue.write_buffer(
-                    &gpu.accumulation_uniform_buffer,
-                    0,
-                    bytemuck::cast_slice(&accum_uniforms),
-                );
 
-                // Write histogram CDF uniforms
+                // Histogram CDF uniforms
                 let hist_cdf_uniforms: [f32; 4] = [
-                    gpu.config.width as f32,
-                    gpu.config.height as f32,
+                    self.gpu_width as f32,
+                    self.gpu_height as f32,
                     self.globals[3], // flame_brightness
-                    (gpu.config.width * gpu.config.height) as f32,
+                    (self.gpu_width * self.gpu_height) as f32,
                 ];
-                gpu.queue.write_buffer(
-                    &gpu.histogram_cdf_uniform_buffer,
-                    0,
-                    bytemuck::cast_slice(&hist_cdf_uniforms),
-                );
 
-                // Tick down morph burst (drives faster decay ramp)
+                // Tick down morph burst
                 if self.morph_burst_frames > 0 {
                     self.morph_burst_frames -= 1;
                 }
 
+                // Send to render thread
                 let t_pre_render = frame_start.elapsed();
-                gpu.render(self.frame >= 3);
+                if let Some(tx) = &self.render_tx {
+                    let frame_data = FrameData {
+                        uniforms: final_uniforms,
+                        xf_params: final_xf_params,
+                        accum_uniforms,
+                        hist_cdf_uniforms,
+                        workgroups: computed_workgroups,
+                        run_compute: self.frame >= 3,
+                    };
+                    let _ = tx.try_send(RenderCommand::Render(Box::new(frame_data)));
+                }
                 let t_render = frame_start.elapsed();
                 self.frame += 1;
 
@@ -2847,7 +2924,7 @@ impl ApplicationHandler for App {
                         self.frame,
                         ms_per_frame,
                         1.0 / dt.max(0.001),
-                        gpu.workgroups,
+                        computed_workgroups,
                         self.morph_progress,
                         self.morph_burst_frames,
                         decay,
