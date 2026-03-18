@@ -113,6 +113,7 @@ struct HudFrameData {
     // HUD fade config
     hud_fade_delay: f32,
     hud_fade_duration: f32,
+    mouse_moved_this_frame: bool,
 }
 
 // ── Uniforms ──
@@ -1884,14 +1885,6 @@ fn config_slider_u32(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, 
 
 // ── Render Thread ──
 
-/// Check if egui RawInput contains any pointer movement events.
-fn has_pointer_movement(raw_input: &egui::RawInput) -> bool {
-    raw_input
-        .events
-        .iter()
-        .any(|e| matches!(e, egui::Event::PointerMoved(_)))
-}
-
 /// Compute HUD opacity based on time since last mouse move.
 fn compute_hud_opacity(elapsed: f32, fade_delay: f32, fade_duration: f32) -> f32 {
     if elapsed < fade_delay {
@@ -1963,8 +1956,8 @@ fn render_thread_loop(
                     let screen_w = gpu.config.width as f32;
                     let screen_h = gpu.config.height as f32;
 
-                    // Track mouse movement for HUD fade
-                    if has_pointer_movement(&raw_input) {
+                    // Track mouse movement for HUD fade (flag set by main thread on CursorMoved)
+                    if data.hud.mouse_moved_this_frame {
                         last_mouse_move = Instant::now();
                     }
                     let elapsed = last_mouse_move.elapsed().as_secs_f32();
@@ -2826,6 +2819,7 @@ struct App {
     genome_start_time: Instant,
     egui_state: Option<egui_winit::State>,
     mutation_paused: bool,
+    cursor_moved: bool, // set on CursorMoved, cleared after building FrameData
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -2952,6 +2946,7 @@ impl App {
             genome_start_time: Instant::now(),
             egui_state: None,
             mutation_paused: false,
+            cursor_moved: false,
         }
     }
 
@@ -3536,6 +3531,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                self.cursor_moved = true;
                 self.mouse = [
                     position.x as f32 / self.gpu_width.max(1) as f32,
                     position.y as f32 / self.gpu_height.max(1) as f32,
@@ -4260,7 +4256,9 @@ impl ApplicationHandler for App {
                     },
                     hud_fade_delay: self.weights._config.hud_fade_delay,
                     hud_fade_duration: self.weights._config.hud_fade_duration,
+                    mouse_moved_this_frame: self.cursor_moved,
                 };
+                self.cursor_moved = false;
 
                 // Send to render thread
                 if let Some(tx) = &self.render_tx {
