@@ -69,6 +69,25 @@ struct HudFrameData {
     morph_progress: f32,
     morph_xf_rates: [f32; 12],
     num_transforms: usize,
+    // Audio signals
+    audio_bass: f32,
+    audio_mids: f32,
+    audio_highs: f32,
+    audio_energy: f32,
+    audio_beat: f32,
+    audio_beat_accum: f32,
+    audio_change: f32,
+    // Time signals
+    time_slow: f32,
+    time_med: f32,
+    time_fast: f32,
+    time_noise: f32,
+    time_drift: f32,
+    time_flutter: f32,
+    time_walk: f32,
+    time_envelope: f32,
+    // Per-transform weights
+    transform_weights: [f32; 12],
 }
 
 // ── Uniforms ──
@@ -928,6 +947,312 @@ impl Gpu {
     }
 }
 
+// ── HUD Panel Helpers ──
+
+/// Semi-transparent dark background frame for HUD panels.
+fn hud_frame() -> egui::Frame {
+    egui::Frame::NONE
+        .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 153))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::same(8))
+}
+
+/// Draw a horizontal signal bar: label | colored fill | numeric value.
+fn signal_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32, max: f32) {
+    let dim = egui::Color32::from_rgb(136, 136, 136);
+    let bg = egui::Color32::from_rgb(34, 34, 34);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(9.0).color(dim));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 2.0, bg);
+        let fill_frac = (value / max).clamp(0.0, 1.0);
+        let fill_rect = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(fill_frac * rect.width(), rect.height()),
+        );
+        ui.painter().rect_filled(fill_rect, 2.0, color);
+        ui.label(
+            egui::RichText::new(format!("{:.2}", value))
+                .size(9.0)
+                .color(dim),
+        );
+    });
+}
+
+/// Draw a bipolar signal bar (center-zero): fills left for negative, right for positive.
+fn bipolar_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32) {
+    let dim = egui::Color32::from_rgb(136, 136, 136);
+    let bg = egui::Color32::from_rgb(34, 34, 34);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(9.0).color(dim));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 2.0, bg);
+        let center_x = rect.min.x + rect.width() * 0.5;
+        let frac = value.clamp(-1.0, 1.0);
+        let fill_rect = if frac >= 0.0 {
+            egui::Rect::from_min_max(
+                egui::pos2(center_x, rect.min.y),
+                egui::pos2(center_x + frac * rect.width() * 0.5, rect.max.y),
+            )
+        } else {
+            egui::Rect::from_min_max(
+                egui::pos2(center_x + frac * rect.width() * 0.5, rect.min.y),
+                egui::pos2(center_x, rect.max.y),
+            )
+        };
+        ui.painter().rect_filled(fill_rect, 2.0, color);
+        ui.label(
+            egui::RichText::new(format!("{:+.2}", value))
+                .size(9.0)
+                .color(dim),
+        );
+    });
+}
+
+/// Morph progress color: red→yellow→green based on completion.
+fn morph_color(completion: f32) -> egui::Color32 {
+    if completion >= 1.0 {
+        egui::Color32::from_rgb(68, 238, 68) // green
+    } else if completion >= 0.5 {
+        egui::Color32::from_rgb(238, 238, 68) // yellow
+    } else {
+        egui::Color32::from_rgb(238, 68, 68) // red
+    }
+}
+
+/// Top-left: Identity panel — FPS, transform count, mutation info.
+fn hud_panel_identity(ctx: &egui::Context, hud: &HudFrameData) {
+    egui::Area::new(egui::Id::new("hud_identity"))
+        .fixed_pos(egui::pos2(10.0, 10.0))
+        .show(ctx, |ui| {
+            hud_frame().show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(format!("{:.0} fps", hud.fps))
+                        .color(egui::Color32::from_rgb(119, 255, 119))
+                        .size(16.0),
+                );
+                let dim = egui::Color32::from_rgb(160, 160, 160);
+                ui.label(
+                    egui::RichText::new(format!("{} transforms", hud.num_transforms))
+                        .color(dim)
+                        .size(10.0),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "accum:{:.2}  cd:{:.0}/{:.0}s",
+                        hud.mutation_accum, hud.time_since_mutation, hud.cooldown,
+                    ))
+                    .color(dim)
+                    .size(10.0),
+                );
+            });
+        });
+}
+
+/// Top-right: Progress panel — mutation progress bar, cooldown, per-transform morph bars.
+fn hud_panel_progress(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
+    egui::Area::new(egui::Id::new("hud_progress"))
+        .fixed_pos(egui::pos2(screen_w - 220.0, 10.0))
+        .show(ctx, |ui| {
+            hud_frame().show(ui, |ui| {
+                let dim = egui::Color32::from_rgb(136, 136, 136);
+                let bg = egui::Color32::from_rgb(34, 34, 34);
+
+                // Mutation accumulator progress bar
+                ui.label(egui::RichText::new("mutation").size(9.0).color(dim));
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(180.0, 6.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 3.0, bg);
+                let fill_frac = hud.mutation_accum.clamp(0.0, 1.0);
+                let fill_rect = egui::Rect::from_min_size(
+                    rect.min,
+                    egui::vec2(fill_frac * rect.width(), rect.height()),
+                );
+                ui.painter()
+                    .rect_filled(fill_rect, 3.0, egui::Color32::from_rgb(238, 153, 34));
+
+                // Cooldown text
+                ui.label(
+                    egui::RichText::new(format!(
+                        "cd:{:.0}/{:.0}s",
+                        hud.time_since_mutation, hud.cooldown,
+                    ))
+                    .size(9.0)
+                    .color(dim),
+                );
+
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new("morph").size(9.0).color(dim));
+
+                // Per-transform morph bars
+                for i in 0..hud.num_transforms.min(12) {
+                    let rate = hud.morph_xf_rates[i];
+                    let completion = (hud.morph_progress * rate).min(1.0);
+                    let bar_color = morph_color(completion);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(format!("{i}")).size(8.0).color(dim));
+                        let (bar_rect, _) =
+                            ui.allocate_exact_size(egui::vec2(150.0, 3.0), egui::Sense::hover());
+                        ui.painter().rect_filled(bar_rect, 1.5, bg);
+                        let fill = egui::Rect::from_min_size(
+                            bar_rect.min,
+                            egui::vec2(completion * bar_rect.width(), bar_rect.height()),
+                        );
+                        ui.painter().rect_filled(fill, 1.5, bar_color);
+                    });
+                }
+            });
+        });
+}
+
+/// Left side: Audio signals panel.
+fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
+    egui::Area::new(egui::Id::new("hud_audio"))
+        .fixed_pos(egui::pos2(10.0, 100.0))
+        .show(ctx, |ui| {
+            hud_frame().show(ui, |ui| {
+                let dim = egui::Color32::from_rgb(136, 136, 136);
+                ui.label(egui::RichText::new("audio").size(10.0).color(dim));
+                signal_bar(
+                    ui,
+                    "bass ",
+                    hud.audio_bass,
+                    egui::Color32::from_rgb(238, 68, 68),
+                    1.0,
+                );
+                signal_bar(
+                    ui,
+                    "mids ",
+                    hud.audio_mids,
+                    egui::Color32::from_rgb(238, 136, 68),
+                    1.0,
+                );
+                signal_bar(
+                    ui,
+                    "highs",
+                    hud.audio_highs,
+                    egui::Color32::from_rgb(238, 170, 68),
+                    1.0,
+                );
+                signal_bar(
+                    ui,
+                    "enrgy",
+                    hud.audio_energy,
+                    egui::Color32::from_rgb(68, 238, 136),
+                    1.0,
+                );
+                // Beat bar — glow when > 0.8
+                let beat_color = if hud.audio_beat > 0.8 {
+                    egui::Color32::from_rgb(255, 102, 102)
+                } else {
+                    egui::Color32::from_rgb(238, 68, 68)
+                };
+                signal_bar(ui, "beat ", hud.audio_beat, beat_color, 1.0);
+                signal_bar(
+                    ui,
+                    "b.acc",
+                    hud.audio_beat_accum,
+                    egui::Color32::from_rgb(136, 68, 238),
+                    1.0,
+                );
+                signal_bar(
+                    ui,
+                    "chng ",
+                    hud.audio_change,
+                    egui::Color32::from_rgb(255, 136, 68),
+                    1.0,
+                );
+            });
+        });
+}
+
+/// Left side: Time signals panel (below audio).
+fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData) {
+    egui::Area::new(egui::Id::new("hud_time"))
+        .fixed_pos(egui::pos2(10.0, 310.0))
+        .show(ctx, |ui| {
+            hud_frame().show(ui, |ui| {
+                let dim = egui::Color32::from_rgb(136, 136, 136);
+                let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
+                ui.label(egui::RichText::new("time").size(10.0).color(dim));
+                // Bipolar signals (-1 to 1): slow, med, fast, noise, drift, flutter
+                bipolar_bar(ui, "slow ", hud.time_slow, bipolar_color);
+                bipolar_bar(ui, "med  ", hud.time_med, bipolar_color);
+                bipolar_bar(ui, "fast ", hud.time_fast, bipolar_color);
+                bipolar_bar(ui, "noise", hud.time_noise, bipolar_color);
+                bipolar_bar(ui, "drift", hud.time_drift, bipolar_color);
+                bipolar_bar(ui, "flutr", hud.time_flutter, bipolar_color);
+                // Walk: monotonically growing, show capped bar + numeric value
+                signal_bar(
+                    ui,
+                    "walk ",
+                    hud.time_walk.abs(),
+                    egui::Color32::from_rgb(136, 68, 170),
+                    10.0,
+                );
+                // Envelope: 0→1 range
+                signal_bar(
+                    ui,
+                    "envlp",
+                    hud.time_envelope,
+                    egui::Color32::from_rgb(170, 136, 68),
+                    1.0,
+                );
+            });
+        });
+}
+
+/// Right side: Transforms panel (below progress).
+fn hud_panel_transforms(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
+    egui::Area::new(egui::Id::new("hud_transforms"))
+        .fixed_pos(egui::pos2(screen_w - 220.0, 250.0))
+        .show(ctx, |ui| {
+            hud_frame().show(ui, |ui| {
+                let dim = egui::Color32::from_rgb(136, 136, 136);
+                ui.label(egui::RichText::new("transforms").size(10.0).color(dim));
+                for i in 0..hud.num_transforms.min(12) {
+                    let w = hud.transform_weights[i];
+                    ui.label(
+                        egui::RichText::new(format!("xf{i:>2}  w:{w:.3}"))
+                            .size(9.0)
+                            .color(dim)
+                            .family(egui::FontFamily::Monospace),
+                    );
+                }
+            });
+        });
+}
+
+/// Bottom: Hotkey bar — centered row of key+label pairs.
+fn hud_panel_hotkeys(ctx: &egui::Context, screen_w: f32, screen_h: f32) {
+    egui::Area::new(egui::Id::new("hud_hotkeys"))
+        .fixed_pos(egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0))
+        .show(ctx, |ui| {
+            hud_frame()
+                .inner_margin(egui::Margin::symmetric(10, 4))
+                .show(ui, |ui| {
+                    let key_color = egui::Color32::from_rgb(187, 187, 187);
+                    let label_color = egui::Color32::from_rgb(102, 102, 102);
+                    ui.horizontal(|ui| {
+                        for (key, desc) in [
+                            ("Space", "evolve"),
+                            ("\u{2191}/\u{2193}", "vote"),
+                            ("S", "save"),
+                            ("F", "flame"),
+                            ("A", "audio"),
+                            ("C", "config"),
+                            ("I", "info"),
+                            ("Esc", "quit"),
+                        ] {
+                            ui.label(egui::RichText::new(key).size(9.0).color(key_color));
+                            ui.label(egui::RichText::new(desc).size(9.0).color(label_color));
+                            ui.add_space(6.0);
+                        }
+                    });
+                });
+        });
+}
+
 // ── Render Thread ──
 
 fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
@@ -974,50 +1299,19 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                 if let Some(surface_texture) = gpu.render(data.run_compute) {
                     let screen_view = surface_texture.texture.create_view(&Default::default());
 
-                    // Run egui — build UI, tessellate, render overlay
+                    // Run egui — build full HUD overlay
                     let raw_input = mem::take(&mut last_raw_input);
                     let hud = &data.hud;
+                    let screen_w = gpu.config.width as f32;
+                    let screen_h = gpu.config.height as f32;
                     let egui_output = egui_ctx.run_ui(raw_input, |ui| {
-                        egui::Area::new(egui::Id::new("hud_overlay"))
-                            .fixed_pos(egui::pos2(10.0, 10.0))
-                            .show(ui.ctx(), |ui| {
-                                let green = egui::Color32::from_rgb(119, 255, 119);
-                                let dim = egui::Color32::from_rgb(160, 160, 160);
-                                ui.label(
-                                    egui::RichText::new(format!("{:.0} fps", hud.fps))
-                                        .color(green)
-                                        .size(14.0),
-                                );
-                                ui.label(
-                                    egui::RichText::new(format!(
-                                        "xf:{} morph:{:.0}% accum:{:.2} cd:{:.0}/{:.0}s",
-                                        hud.num_transforms,
-                                        hud.morph_progress * 100.0,
-                                        hud.mutation_accum,
-                                        hud.time_since_mutation,
-                                        hud.cooldown,
-                                    ))
-                                    .color(dim)
-                                    .size(11.0),
-                                );
-                                // Show per-transform morph rates (compact)
-                                let active_rates: Vec<String> = hud
-                                    .morph_xf_rates
-                                    .iter()
-                                    .take(hud.num_transforms)
-                                    .map(|r| format!("{:.1}", r))
-                                    .collect();
-                                if !active_rates.is_empty() {
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "rates:[{}]",
-                                            active_rates.join(",")
-                                        ))
-                                        .color(dim)
-                                        .size(10.0),
-                                    );
-                                }
-                            });
+                        let ctx = ui.ctx();
+                        hud_panel_identity(ctx, hud);
+                        hud_panel_progress(ctx, hud, screen_w);
+                        hud_panel_audio(ctx, hud);
+                        hud_panel_time(ctx, hud);
+                        hud_panel_transforms(ctx, hud, screen_w);
+                        hud_panel_hotkeys(ctx, screen_w, screen_h);
                     });
 
                     let pixels_per_point = egui_output.pixels_per_point;
@@ -3052,6 +3346,11 @@ impl ApplicationHandler for App {
 
                 // Build HUD data for this frame
                 let time = self.start.elapsed().as_secs_f32();
+                let hud_time_signals = crate::weights::TimeSignals::compute(
+                    time,
+                    time - self.last_mutation_time,
+                    self.random_walk,
+                );
                 let hud = HudFrameData {
                     fps: 1.0 / dt,
                     mutation_accum: self.mutation_accum,
@@ -3066,6 +3365,35 @@ impl ApplicationHandler for App {
                         rates
                     },
                     num_transforms: self.num_transforms,
+                    // Audio signals
+                    audio_bass: self.audio_features.bass,
+                    audio_mids: self.audio_features.mids,
+                    audio_highs: self.audio_features.highs,
+                    audio_energy: self.audio_features.energy,
+                    audio_beat: self.audio_features.beat,
+                    audio_beat_accum: self.audio_features.beat_accum,
+                    audio_change: self.audio_features.change,
+                    // Time signals
+                    time_slow: hud_time_signals.time_slow,
+                    time_med: hud_time_signals.time_med,
+                    time_fast: hud_time_signals.time_fast,
+                    time_noise: hud_time_signals.time_noise,
+                    time_drift: hud_time_signals.time_drift,
+                    time_flutter: hud_time_signals.time_flutter,
+                    time_walk: hud_time_signals.time_walk,
+                    time_envelope: hud_time_signals.time_envelope,
+                    // Per-transform weights
+                    transform_weights: {
+                        let mut w = [0.0f32; 12];
+                        for (i, slot) in w.iter_mut().enumerate().take(self.num_transforms.min(12))
+                        {
+                            let idx = i * PARAMS_PER_XF;
+                            if idx < self.xf_params.len() {
+                                *slot = self.xf_params[idx];
+                            }
+                        }
+                        w
+                    },
                 };
 
                 // Send to render thread
