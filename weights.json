@@ -135,7 +135,9 @@
       "transform_count_min": "Minimum transforms per genome during breeding (default 3)",
       "transform_count_max": "Maximum transforms per genome during breeding (default 6)",
       "spin_mod_max": "Max per-transform spin_mod clamp value (default 4.0)",
-      "drift_mod_max": "Max per-transform drift_mod clamp value (default 4.0)"
+      "drift_mod_max": "Max per-transform drift_mod clamp value (default 4.0)",
+      "hud_fade_delay": "Seconds of mouse inactivity before HUD starts fading (default 3.0)",
+      "hud_fade_duration": "Seconds for HUD fade-out animation (default 0.5)"
     }
   },
   "_config": {
@@ -211,7 +213,9 @@
     "min_genome_fps": 5.0,
     "morph_burst_decay": 0.7,
     "transform_count_min": 8,
-    "transform_count_max": 12
+    "transform_count_max": 12,
+    "hud_fade_delay": 3.0,
+    "hud_fade_duration": 0.5
   },
   "bass": {},
   "mids": {},

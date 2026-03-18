@@ -87,6 +87,11 @@ struct HudFrameData {
     time_envelope: f32,
     // Per-transform weights
     transform_weights: [f32; 12],
+    // Per-transform variation weights: [transform_idx][variation_idx]
+    transform_variations: [[f32; 26]; 12],
+    // HUD fade config
+    hud_fade_delay: f32,
+    hud_fade_duration: f32,
 }
 
 // ── Uniforms ──
@@ -949,17 +954,25 @@ impl Gpu {
 // ── HUD Panel Helpers ──
 
 /// Semi-transparent dark background frame for HUD panels.
-fn hud_frame() -> egui::Frame {
+fn hud_frame(opacity: f32) -> egui::Frame {
+    let alpha = (153.0 * opacity) as u8;
     egui::Frame::NONE
-        .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, 153))
+        .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, alpha))
         .corner_radius(6.0)
         .inner_margin(egui::Margin::same(8))
 }
 
 /// Draw a horizontal signal bar: label | colored fill | numeric value.
-fn signal_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32, max: f32) {
-    let dim = egui::Color32::from_rgb(136, 136, 136);
-    let bg = egui::Color32::from_rgb(34, 34, 34);
+fn signal_bar(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: f32,
+    color: egui::Color32,
+    max: f32,
+    opacity: f32,
+) {
+    let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+    let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(label).size(9.0).color(dim));
         let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
@@ -969,7 +982,8 @@ fn signal_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32, 
             rect.min,
             egui::vec2(fill_frac * rect.width(), rect.height()),
         );
-        ui.painter().rect_filled(fill_rect, 2.0, color);
+        ui.painter()
+            .rect_filled(fill_rect, 2.0, fade_color(color, opacity));
         ui.label(
             egui::RichText::new(format!("{:.2}", value))
                 .size(9.0)
@@ -979,9 +993,9 @@ fn signal_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32, 
 }
 
 /// Draw a bipolar signal bar (center-zero): fills left for negative, right for positive.
-fn bipolar_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32) {
-    let dim = egui::Color32::from_rgb(136, 136, 136);
-    let bg = egui::Color32::from_rgb(34, 34, 34);
+fn bipolar_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32, opacity: f32) {
+    let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+    let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(label).size(9.0).color(dim));
         let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
@@ -999,7 +1013,8 @@ fn bipolar_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32)
                 egui::pos2(center_x, rect.max.y),
             )
         };
-        ui.painter().rect_filled(fill_rect, 2.0, color);
+        ui.painter()
+            .rect_filled(fill_rect, 2.0, fade_color(color, opacity));
         ui.label(
             egui::RichText::new(format!("{:+.2}", value))
                 .size(9.0)
@@ -1019,18 +1034,24 @@ fn morph_color(completion: f32) -> egui::Color32 {
     }
 }
 
+/// Apply opacity to a Color32.
+fn fade_color(c: egui::Color32, opacity: f32) -> egui::Color32 {
+    let [r, g, b, a] = c.to_array();
+    egui::Color32::from_rgba_unmultiplied(r, g, b, (a as f32 * opacity) as u8)
+}
+
 /// Top-left: Identity panel — FPS, transform count, mutation info.
-fn hud_panel_identity(ctx: &egui::Context, hud: &HudFrameData) {
+fn hud_panel_identity(ctx: &egui::Context, hud: &HudFrameData, opacity: f32) {
     egui::Area::new(egui::Id::new("hud_identity"))
         .fixed_pos(egui::pos2(10.0, 10.0))
         .show(ctx, |ui| {
-            hud_frame().show(ui, |ui| {
+            hud_frame(opacity).show(ui, |ui| {
                 ui.label(
                     egui::RichText::new(format!("{:.0} fps", hud.fps))
-                        .color(egui::Color32::from_rgb(119, 255, 119))
+                        .color(fade_color(egui::Color32::from_rgb(119, 255, 119), opacity))
                         .size(16.0),
                 );
-                let dim = egui::Color32::from_rgb(160, 160, 160);
+                let dim = fade_color(egui::Color32::from_rgb(160, 160, 160), opacity);
                 ui.label(
                     egui::RichText::new(format!("{} transforms", hud.num_transforms))
                         .color(dim)
@@ -1049,13 +1070,13 @@ fn hud_panel_identity(ctx: &egui::Context, hud: &HudFrameData) {
 }
 
 /// Top-right: Progress panel — mutation progress bar, cooldown, per-transform morph bars.
-fn hud_panel_progress(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
+fn hud_panel_progress(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32, opacity: f32) {
     egui::Area::new(egui::Id::new("hud_progress"))
         .fixed_pos(egui::pos2(screen_w - 220.0, 10.0))
         .show(ctx, |ui| {
-            hud_frame().show(ui, |ui| {
-                let dim = egui::Color32::from_rgb(136, 136, 136);
-                let bg = egui::Color32::from_rgb(34, 34, 34);
+            hud_frame(opacity).show(ui, |ui| {
+                let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+                let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
 
                 // Next evolve — signal-driven trigger bar
                 ui.label(
@@ -1068,13 +1089,16 @@ fn hud_panel_progress(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
                 ui.painter().rect_filled(rect, 3.0, bg);
                 let fill_frac = hud.mutation_accum.clamp(0.0, 1.0);
                 let gate_met = hud.time_since_mutation >= 10.0;
-                let bar_color = if fill_frac >= 1.0 && gate_met {
-                    egui::Color32::from_rgb(68, 238, 68) // green = ready to fire
-                } else if fill_frac >= 1.0 {
-                    egui::Color32::from_rgb(238, 238, 68) // yellow = full but gated
-                } else {
-                    egui::Color32::from_rgb(238, 153, 34) // orange = filling
-                };
+                let bar_color = fade_color(
+                    if fill_frac >= 1.0 && gate_met {
+                        egui::Color32::from_rgb(68, 238, 68) // green = ready to fire
+                    } else if fill_frac >= 1.0 {
+                        egui::Color32::from_rgb(238, 238, 68) // yellow = full but gated
+                    } else {
+                        egui::Color32::from_rgb(238, 153, 34) // orange = filling
+                    },
+                    opacity,
+                );
                 let fill_rect = egui::Rect::from_min_size(
                     rect.min,
                     egui::vec2(fill_frac * rect.width(), rect.height()),
@@ -1100,7 +1124,7 @@ fn hud_panel_progress(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
                 for i in 0..hud.num_transforms.min(12) {
                     let rate = hud.morph_xf_rates[i];
                     let completion = (hud.morph_progress * rate).min(1.0);
-                    let bar_color = morph_color(completion);
+                    let bar_color = fade_color(morph_color(completion), opacity);
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(format!("{i}")).size(8.0).color(dim));
                         let (bar_rect, _) =
@@ -1118,12 +1142,12 @@ fn hud_panel_progress(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
 }
 
 /// Left side: Audio signals panel.
-fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
+fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32) {
     egui::Area::new(egui::Id::new("hud_audio"))
         .fixed_pos(egui::pos2(10.0, 100.0))
         .show(ctx, |ui| {
-            hud_frame().show(ui, |ui| {
-                let dim = egui::Color32::from_rgb(136, 136, 136);
+            hud_frame(opacity).show(ui, |ui| {
+                let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
                 ui.label(egui::RichText::new("audio").size(10.0).color(dim));
                 signal_bar(
                     ui,
@@ -1131,6 +1155,7 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
                     hud.audio_bass,
                     egui::Color32::from_rgb(238, 68, 68),
                     1.0,
+                    opacity,
                 );
                 signal_bar(
                     ui,
@@ -1138,6 +1163,7 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
                     hud.audio_mids,
                     egui::Color32::from_rgb(238, 136, 68),
                     1.0,
+                    opacity,
                 );
                 signal_bar(
                     ui,
@@ -1145,6 +1171,7 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
                     hud.audio_highs,
                     egui::Color32::from_rgb(238, 170, 68),
                     1.0,
+                    opacity,
                 );
                 signal_bar(
                     ui,
@@ -1152,6 +1179,7 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
                     hud.audio_energy,
                     egui::Color32::from_rgb(68, 238, 136),
                     1.0,
+                    opacity,
                 );
                 // Beat bar — glow when > 0.8
                 let beat_color = if hud.audio_beat > 0.8 {
@@ -1159,13 +1187,14 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
                 } else {
                     egui::Color32::from_rgb(238, 68, 68)
                 };
-                signal_bar(ui, "beat ", hud.audio_beat, beat_color, 1.0);
+                signal_bar(ui, "beat ", hud.audio_beat, beat_color, 1.0, opacity);
                 signal_bar(
                     ui,
                     "b.acc",
                     hud.audio_beat_accum,
                     egui::Color32::from_rgb(136, 68, 238),
                     1.0,
+                    opacity,
                 );
                 signal_bar(
                     ui,
@@ -1173,27 +1202,28 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData) {
                     hud.audio_change,
                     egui::Color32::from_rgb(255, 136, 68),
                     1.0,
+                    opacity,
                 );
             });
         });
 }
 
 /// Left side: Time signals panel (below audio).
-fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData) {
+fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData, opacity: f32) {
     egui::Area::new(egui::Id::new("hud_time"))
         .fixed_pos(egui::pos2(10.0, 310.0))
         .show(ctx, |ui| {
-            hud_frame().show(ui, |ui| {
-                let dim = egui::Color32::from_rgb(136, 136, 136);
+            hud_frame(opacity).show(ui, |ui| {
+                let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
                 let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
                 ui.label(egui::RichText::new("time").size(10.0).color(dim));
                 // Bipolar signals (-1 to 1): slow, med, fast, noise, drift, flutter
-                bipolar_bar(ui, "slow ", hud.time_slow, bipolar_color);
-                bipolar_bar(ui, "med  ", hud.time_med, bipolar_color);
-                bipolar_bar(ui, "fast ", hud.time_fast, bipolar_color);
-                bipolar_bar(ui, "noise", hud.time_noise, bipolar_color);
-                bipolar_bar(ui, "drift", hud.time_drift, bipolar_color);
-                bipolar_bar(ui, "flutr", hud.time_flutter, bipolar_color);
+                bipolar_bar(ui, "slow ", hud.time_slow, bipolar_color, opacity);
+                bipolar_bar(ui, "med  ", hud.time_med, bipolar_color, opacity);
+                bipolar_bar(ui, "fast ", hud.time_fast, bipolar_color, opacity);
+                bipolar_bar(ui, "noise", hud.time_noise, bipolar_color, opacity);
+                bipolar_bar(ui, "drift", hud.time_drift, bipolar_color, opacity);
+                bipolar_bar(ui, "flutr", hud.time_flutter, bipolar_color, opacity);
                 // Walk: monotonically growing, show capped bar + numeric value
                 signal_bar(
                     ui,
@@ -1201,6 +1231,7 @@ fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData) {
                     hud.time_walk.abs(),
                     egui::Color32::from_rgb(136, 68, 170),
                     10.0,
+                    opacity,
                 );
                 // Envelope: 0→1 range
                 signal_bar(
@@ -1209,42 +1240,375 @@ fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData) {
                     hud.time_envelope,
                     egui::Color32::from_rgb(170, 136, 68),
                     1.0,
+                    opacity,
                 );
             });
         });
 }
 
+/// Variation names for tooltips (indices 0-25).
+const VARIATION_NAMES: [&str; 26] = [
+    "linear",
+    "sinusoidal",
+    "spherical",
+    "swirl",
+    "horseshoe",
+    "handkerchief",
+    "julia",
+    "polar",
+    "disc",
+    "rings",
+    "bubble",
+    "fisheye",
+    "exponential",
+    "spiral",
+    "diamond",
+    "bent",
+    "waves",
+    "popcorn",
+    "fan",
+    "eyefish",
+    "cross",
+    "tangent",
+    "cosine",
+    "blob",
+    "noise",
+    "curl",
+];
+
+/// Draw a tiny distinctive icon for a variation type.
+fn draw_variation_icon(ui: &mut egui::Ui, var_idx: u8, size: f32, opacity: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let p = ui.painter();
+    let c = rect.center();
+    let r = size * 0.4;
+    let stroke = egui::Stroke {
+        width: 1.0,
+        color: fade_color(egui::Color32::from_rgb(200, 200, 200), opacity),
+    };
+    let fill = fade_color(egui::Color32::from_rgb(200, 200, 200), opacity);
+    draw_variation_shape(p, var_idx, c, r, stroke, fill);
+    response
+}
+
+/// Draw the shape for a given variation index at the given center and radius.
+fn draw_variation_shape(
+    p: &egui::Painter,
+    var_idx: u8,
+    c: egui::Pos2,
+    r: f32,
+    stroke: egui::Stroke,
+    fill: egui::Color32,
+) {
+    match var_idx {
+        0 => {
+            // linear: diagonal line /
+            p.line_segment(
+                [egui::pos2(c.x - r, c.y + r), egui::pos2(c.x + r, c.y - r)],
+                stroke,
+            );
+        }
+        1 => {
+            // sinusoidal: sine wave ~
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    egui::pos2(
+                        c.x - r + t * 2.0 * r,
+                        c.y - (t * std::f32::consts::TAU).sin() * r * 0.5,
+                    )
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        2 => {
+            // spherical: circle with center dot
+            p.circle_stroke(c, r, stroke);
+            p.circle_filled(c, 1.5, fill);
+        }
+        3 => {
+            // swirl: spiral curve
+            let pts: Vec<egui::Pos2> = (0..=16)
+                .map(|i| {
+                    let t = i as f32 / 16.0;
+                    let angle = t * std::f32::consts::TAU * 1.5;
+                    let rad = t * r;
+                    egui::pos2(c.x + rad * angle.cos(), c.y + rad * angle.sin())
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        4 => {
+            // horseshoe: U shape
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let angle = std::f32::consts::PI * t;
+                    egui::pos2(c.x + r * angle.cos(), c.y + r * angle.sin().abs())
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        5 => {
+            // handkerchief: diamond outline
+            let d = r;
+            let pts = vec![
+                egui::pos2(c.x, c.y - d),
+                egui::pos2(c.x + d, c.y),
+                egui::pos2(c.x, c.y + d),
+                egui::pos2(c.x - d, c.y),
+                egui::pos2(c.x, c.y - d),
+            ];
+            p.line(pts, stroke);
+        }
+        6 => {
+            // julia: two overlapping circles
+            p.circle_stroke(egui::pos2(c.x - r * 0.3, c.y), r * 0.6, stroke);
+            p.circle_stroke(egui::pos2(c.x + r * 0.3, c.y), r * 0.6, stroke);
+        }
+        7 => {
+            // polar: crosshair + circle
+            p.circle_stroke(c, r * 0.7, stroke);
+            p.line_segment([egui::pos2(c.x - r, c.y), egui::pos2(c.x + r, c.y)], stroke);
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+        }
+        8 => {
+            // disc: circle with vertical line
+            p.circle_stroke(c, r, stroke);
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+        }
+        9 => {
+            // rings: concentric circles
+            p.circle_stroke(c, r, stroke);
+            p.circle_stroke(c, r * 0.5, stroke);
+        }
+        10 => {
+            // bubble: dashed circle (approx with arcs)
+            for i in 0..6 {
+                let a0 = i as f32 * std::f32::consts::TAU / 6.0;
+                let a1 = a0 + std::f32::consts::TAU / 12.0;
+                p.line_segment(
+                    [
+                        egui::pos2(c.x + r * a0.cos(), c.y + r * a0.sin()),
+                        egui::pos2(c.x + r * a1.cos(), c.y + r * a1.sin()),
+                    ],
+                    stroke,
+                );
+            }
+        }
+        11 => {
+            // fisheye: ellipse with dot
+            let pts: Vec<egui::Pos2> = (0..=12)
+                .map(|i| {
+                    let a = i as f32 * std::f32::consts::TAU / 12.0;
+                    egui::pos2(c.x + r * a.cos(), c.y + r * 0.6 * a.sin())
+                })
+                .collect();
+            p.line(pts, stroke);
+            p.circle_filled(c, 1.5, fill);
+        }
+        12 => {
+            // exponential: exponential curve
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let y = (t * 3.0).exp() / (3.0_f32).exp();
+                    egui::pos2(c.x - r + t * 2.0 * r, c.y + r - y * 2.0 * r)
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        13 => {
+            // spiral
+            let pts: Vec<egui::Pos2> = (0..=20)
+                .map(|i| {
+                    let t = i as f32 / 20.0;
+                    let angle = t * std::f32::consts::TAU * 2.0;
+                    let rad = t * r;
+                    egui::pos2(c.x + rad * angle.cos(), c.y + rad * angle.sin())
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        14 => {
+            // diamond: filled diamond
+            let d = r * 0.8;
+            let pts = vec![
+                egui::pos2(c.x, c.y - d),
+                egui::pos2(c.x + d, c.y),
+                egui::pos2(c.x, c.y + d),
+                egui::pos2(c.x - d, c.y),
+            ];
+            p.add(egui::Shape::convex_polygon(pts, fill, stroke));
+        }
+        15 => {
+            // bent: bent line
+            p.line_segment([egui::pos2(c.x - r, c.y), egui::pos2(c.x, c.y)], stroke);
+            p.line_segment([egui::pos2(c.x, c.y), egui::pos2(c.x + r, c.y - r)], stroke);
+        }
+        16 => {
+            // waves: double wave
+            for offset in [-r * 0.3, r * 0.3] {
+                let pts: Vec<egui::Pos2> = (0..=8)
+                    .map(|i| {
+                        let t = i as f32 / 8.0;
+                        egui::pos2(
+                            c.x - r + t * 2.0 * r,
+                            c.y + offset - (t * std::f32::consts::TAU).sin() * r * 0.3,
+                        )
+                    })
+                    .collect();
+                p.line(pts, stroke);
+            }
+        }
+        17 => {
+            // popcorn: scattered dots
+            for (dx, dy) in [
+                (-0.5, -0.5),
+                (0.3, -0.2),
+                (-0.2, 0.4),
+                (0.5, 0.3),
+                (0.0, -0.6),
+            ] {
+                p.circle_filled(egui::pos2(c.x + dx * r, c.y + dy * r), 1.0, fill);
+            }
+        }
+        18 => {
+            // fan: triangle
+            let pts = vec![
+                egui::pos2(c.x, c.y - r),
+                egui::pos2(c.x + r, c.y + r),
+                egui::pos2(c.x - r, c.y + r),
+                egui::pos2(c.x, c.y - r),
+            ];
+            p.line(pts, stroke);
+        }
+        19 => {
+            // eyefish: eye shape
+            let top: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let x = c.x - r + t * 2.0 * r;
+                    let y = c.y - (t * std::f32::consts::PI).sin() * r * 0.6;
+                    egui::pos2(x, y)
+                })
+                .collect();
+            let bot: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let x = c.x - r + t * 2.0 * r;
+                    let y = c.y + (t * std::f32::consts::PI).sin() * r * 0.6;
+                    egui::pos2(x, y)
+                })
+                .collect();
+            p.line(top, stroke);
+            p.line(bot, stroke);
+        }
+        20 => {
+            // cross: + cross
+            p.line_segment([egui::pos2(c.x - r, c.y), egui::pos2(c.x + r, c.y)], stroke);
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+        }
+        21 => {
+            // tangent: vertical asymptote
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = (i as f32 / 8.0 - 0.5) * 2.0;
+                    egui::pos2(c.x + t * r, c.y - t.atan() * r * 0.8)
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        22 => {
+            // cosine: cosine curve
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    egui::pos2(
+                        c.x - r + t * 2.0 * r,
+                        c.y - (t * std::f32::consts::TAU).cos() * r * 0.5,
+                    )
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        23 => {
+            // blob: filled ellipse
+            let pts: Vec<egui::Pos2> = (0..=12)
+                .map(|i| {
+                    let a = i as f32 * std::f32::consts::TAU / 12.0;
+                    egui::pos2(c.x + r * a.cos(), c.y + r * 0.6 * a.sin())
+                })
+                .collect();
+            p.add(egui::Shape::convex_polygon(pts, fill, stroke));
+        }
+        24 => {
+            // noise: random dots (deterministic positions)
+            for (dx, dy) in [
+                (-0.7, 0.2),
+                (0.4, -0.6),
+                (-0.3, -0.4),
+                (0.6, 0.5),
+                (0.1, 0.1),
+                (-0.5, 0.6),
+            ] {
+                p.circle_filled(egui::pos2(c.x + dx * r, c.y + dy * r), 1.0, fill);
+            }
+        }
+        _ => {
+            // curl (25) or unknown: S-curve
+            let pts: Vec<egui::Pos2> = (0..=10)
+                .map(|i| {
+                    let t = i as f32 / 10.0 * 2.0 - 1.0;
+                    egui::pos2(c.x + t * r, c.y - (t * 1.5).tanh() * r)
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+    }
+}
+
 /// Right side: Transforms panel (below progress).
-fn hud_panel_transforms(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
+fn hud_panel_transforms(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32, opacity: f32) {
     egui::Area::new(egui::Id::new("hud_transforms"))
         .fixed_pos(egui::pos2(screen_w - 220.0, 250.0))
         .show(ctx, |ui| {
-            hud_frame().show(ui, |ui| {
-                let dim = egui::Color32::from_rgb(136, 136, 136);
+            hud_frame(opacity).show(ui, |ui| {
+                let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
                 ui.label(egui::RichText::new("transforms").size(10.0).color(dim));
                 for i in 0..hud.num_transforms.min(12) {
                     let w = hud.transform_weights[i];
-                    ui.label(
-                        egui::RichText::new(format!("xf{i:>2}  w:{w:.3}"))
-                            .size(9.0)
-                            .color(dim)
-                            .family(egui::FontFamily::Monospace),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("xf{i:>2} w:{w:.3}"))
+                                .size(9.0)
+                                .color(dim)
+                                .family(egui::FontFamily::Monospace),
+                        );
+                        // Show variation icons for non-zero variations
+                        for (v, &vw) in hud.transform_variations[i].iter().enumerate() {
+                            if vw.abs() > 0.001 {
+                                let resp = draw_variation_icon(ui, v as u8, 12.0, opacity);
+                                resp.on_hover_text(VARIATION_NAMES[v]);
+                            }
+                        }
+                    });
                 }
             });
         });
 }
 
 /// Bottom: Hotkey bar — centered row of key+label pairs.
-fn hud_panel_hotkeys(ctx: &egui::Context, screen_w: f32, screen_h: f32) {
+fn hud_panel_hotkeys(ctx: &egui::Context, screen_w: f32, screen_h: f32, opacity: f32) {
     egui::Area::new(egui::Id::new("hud_hotkeys"))
         .fixed_pos(egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0))
         .show(ctx, |ui| {
-            hud_frame()
+            hud_frame(opacity)
                 .inner_margin(egui::Margin::symmetric(10, 4))
                 .show(ui, |ui| {
-                    let key_color = egui::Color32::from_rgb(187, 187, 187);
-                    let label_color = egui::Color32::from_rgb(102, 102, 102);
+                    let key_color = fade_color(egui::Color32::from_rgb(187, 187, 187), opacity);
+                    let label_color = fade_color(egui::Color32::from_rgb(102, 102, 102), opacity);
                     ui.horizontal(|ui| {
                         for (key, desc) in [
                             ("Space", "evolve"),
@@ -1267,6 +1631,26 @@ fn hud_panel_hotkeys(ctx: &egui::Context, screen_w: f32, screen_h: f32) {
 
 // ── Render Thread ──
 
+/// Check if egui RawInput contains any pointer movement events.
+fn has_pointer_movement(raw_input: &egui::RawInput) -> bool {
+    raw_input
+        .events
+        .iter()
+        .any(|e| matches!(e, egui::Event::PointerMoved(_)))
+}
+
+/// Compute HUD opacity based on time since last mouse move.
+fn compute_hud_opacity(elapsed: f32, fade_delay: f32, fade_duration: f32) -> f32 {
+    if elapsed < fade_delay {
+        return 1.0;
+    }
+    let fade_elapsed = elapsed - fade_delay;
+    if fade_duration <= 0.0 {
+        return 0.0;
+    }
+    (1.0 - fade_elapsed / fade_duration).clamp(0.0, 1.0)
+}
+
 fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
     // egui setup — context + renderer live on the render thread
     let mut egui_renderer = egui_wgpu::Renderer::new(
@@ -1275,6 +1659,7 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
         egui_wgpu::RendererOptions::default(),
     );
     let egui_ctx = egui::Context::default();
+    let mut last_mouse_move = Instant::now();
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
@@ -1314,14 +1699,26 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                     let hud = &data.hud;
                     let screen_w = gpu.config.width as f32;
                     let screen_h = gpu.config.height as f32;
+
+                    // Track mouse movement for HUD fade
+                    if has_pointer_movement(&raw_input) {
+                        last_mouse_move = Instant::now();
+                    }
+                    let elapsed = last_mouse_move.elapsed().as_secs_f32();
+                    let hud_opacity =
+                        compute_hud_opacity(elapsed, hud.hud_fade_delay, hud.hud_fade_duration);
+
                     let egui_output = egui_ctx.run_ui(raw_input, |ui| {
-                        let ctx = ui.ctx();
-                        hud_panel_identity(ctx, hud);
-                        hud_panel_progress(ctx, hud, screen_w);
-                        hud_panel_audio(ctx, hud);
-                        hud_panel_time(ctx, hud);
-                        hud_panel_transforms(ctx, hud, screen_w);
-                        hud_panel_hotkeys(ctx, screen_w, screen_h);
+                        // Skip all panel building when fully faded out
+                        if hud_opacity > 0.0 {
+                            let ctx = ui.ctx();
+                            hud_panel_identity(ctx, hud, hud_opacity);
+                            hud_panel_progress(ctx, hud, screen_w, hud_opacity);
+                            hud_panel_audio(ctx, hud, hud_opacity);
+                            hud_panel_time(ctx, hud, hud_opacity);
+                            hud_panel_transforms(ctx, hud, screen_w, hud_opacity);
+                            hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity);
+                        }
                     });
 
                     let pixels_per_point = egui_output.pixels_per_point;
@@ -3403,6 +3800,26 @@ impl ApplicationHandler for App {
                         }
                         w
                     },
+                    // Per-transform variation weights (26 variations per transform)
+                    transform_variations: {
+                        let mut vars = [[0.0f32; 26]; 12];
+                        for (i, xf_vars) in vars
+                            .iter_mut()
+                            .enumerate()
+                            .take(self.num_transforms.min(12))
+                        {
+                            let base = i * PARAMS_PER_XF + 14; // variations start at offset 14
+                            for (v, slot) in xf_vars.iter_mut().enumerate() {
+                                let idx = base + v;
+                                if idx < self.xf_params.len() {
+                                    *slot = self.xf_params[idx];
+                                }
+                            }
+                        }
+                        vars
+                    },
+                    hud_fade_delay: self.weights._config.hud_fade_delay,
+                    hud_fade_duration: self.weights._config.hud_fade_duration,
                 };
 
                 // Send to render thread

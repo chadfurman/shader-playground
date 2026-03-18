@@ -304,6 +304,10 @@ pub struct RuntimeConfig {
     pub spin_mod_max: f32,
     #[serde(default = "default_drift_mod_max")]
     pub drift_mod_max: f32,
+    #[serde(default = "default_hud_fade_delay")]
+    pub hud_fade_delay: f32,
+    #[serde(default = "default_hud_fade_duration")]
+    pub hud_fade_duration: f32,
 }
 
 fn default_morph_duration() -> f32 {
@@ -542,6 +546,12 @@ fn default_spin_mod_max() -> f32 {
 }
 fn default_drift_mod_max() -> f32 {
     4.0
+}
+fn default_hud_fade_delay() -> f32 {
+    3.0
+}
+fn default_hud_fade_duration() -> f32 {
+    0.5
 }
 
 const VARIATION_START: usize = 14; // first variation field index in each 50-float transform block
