@@ -54,8 +54,19 @@ enum RenderCommand {
     ReloadShader(String),
     /// Hot-reload the compute shader.
     ReloadComputeShader(String),
+    /// A vote was cast — show the feedback popup on the render thread.
+    VoteCast { score: i32, genome_name: String },
     /// Shut down the render thread.
     Shutdown,
+}
+
+/// Commands sent from the render thread back to the main thread.
+enum UiCommand {
+    /// User submitted a note for a vote (or dismissed without one).
+    VoteNote {
+        genome_name: String,
+        note: Option<String>,
+    },
 }
 
 /// Per-frame HUD data — sent with each FrameData.
@@ -1651,7 +1662,11 @@ fn compute_hud_opacity(elapsed: f32, fade_delay: f32, fade_duration: f32) -> f32
     (1.0 - fade_elapsed / fade_duration).clamp(0.0, 1.0)
 }
 
-fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
+fn render_thread_loop(
+    rx: mpsc::Receiver<RenderCommand>,
+    mut gpu: Gpu,
+    ui_tx: mpsc::Sender<UiCommand>,
+) {
     // egui setup — context + renderer live on the render thread
     let mut egui_renderer = egui_wgpu::Renderer::new(
         &gpu.device,
@@ -1660,6 +1675,8 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
     );
     let egui_ctx = egui::Context::default();
     let mut last_mouse_move = Instant::now();
+    // Vote feedback popup state: (score, genome_name, text_input)
+    let mut vote_feedback: Option<(i32, String, String)> = None;
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
@@ -1708,6 +1725,8 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                     let hud_opacity =
                         compute_hud_opacity(elapsed, hud.hud_fade_delay, hud.hud_fade_duration);
 
+                    // Track vote feedback actions to apply after egui closure
+                    let mut vote_submit: Option<(String, Option<String>)> = None;
                     let egui_output = egui_ctx.run_ui(raw_input, |ui| {
                         // Skip all panel building when fully faded out
                         if hud_opacity > 0.0 {
@@ -1719,7 +1738,73 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                             hud_panel_transforms(ctx, hud, screen_w, hud_opacity);
                             hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity);
                         }
+
+                        // Vote feedback popup — always visible when active
+                        if let Some((score, ref genome_name, ref mut text)) = vote_feedback {
+                            let ctx = ui.ctx();
+                            let prompt = if score > 0 {
+                                "What do you like about this?"
+                            } else {
+                                "What don't you like?"
+                            };
+                            let popup_w = 360.0;
+                            let popup_h = 100.0;
+                            egui::Area::new(egui::Id::new("vote_feedback"))
+                                .fixed_pos(egui::pos2(
+                                    (screen_w - popup_w) * 0.5,
+                                    (screen_h - popup_h) * 0.5,
+                                ))
+                                .show(ctx, |ui| {
+                                    egui::Frame::NONE
+                                        .fill(egui::Color32::from_rgba_premultiplied(
+                                            20, 20, 20, 200,
+                                        ))
+                                        .corner_radius(8.0)
+                                        .inner_margin(egui::Margin::same(16))
+                                        .show(ui, |ui| {
+                                            ui.set_min_width(popup_w - 32.0);
+                                            let arrow = if score > 0 { "\u{2191}" } else { "\u{2193}" };
+                                            ui.label(
+                                                egui::RichText::new(format!("{arrow} {prompt}"))
+                                                    .size(14.0)
+                                                    .color(egui::Color32::WHITE),
+                                            );
+                                            ui.add_space(6.0);
+                                            let response = ui.add(
+                                                egui::TextEdit::singleline(text)
+                                                    .desired_width(popup_w - 32.0)
+                                                    .hint_text("optional — press Enter to submit, Esc to skip"),
+                                            );
+                                            // Auto-focus the text input
+                                            if response.gained_focus()
+                                                || !response.has_focus()
+                                            {
+                                                response.request_focus();
+                                            }
+                                            // Enter = submit note, Esc = dismiss
+                                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                                let note = if text.trim().is_empty() {
+                                                    None
+                                                } else {
+                                                    Some(text.trim().to_string())
+                                                };
+                                                vote_submit =
+                                                    Some((genome_name.clone(), note));
+                                            }
+                                            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                                vote_submit =
+                                                    Some((genome_name.clone(), None));
+                                            }
+                                        });
+                                });
+                        }
                     });
+
+                    // Apply vote feedback actions outside the egui closure
+                    if let Some((genome_name, note)) = vote_submit {
+                        let _ = ui_tx.send(UiCommand::VoteNote { genome_name, note });
+                        vote_feedback = None;
+                    }
 
                     let pixels_per_point = egui_output.pixels_per_point;
                     let clipped_primitives =
@@ -1803,6 +1888,9 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                 gpu.compute_pipeline =
                     create_compute_pipeline(&gpu.device, &gpu.compute_pipeline_layout, &src);
                 eprintln!("[render-thread] compute shader reloaded");
+            }
+            RenderCommand::VoteCast { score, genome_name } => {
+                vote_feedback = Some((score, genome_name, String::new()));
             }
             RenderCommand::Shutdown => {
                 eprintln!("[render-thread] shutdown");
@@ -2400,6 +2488,7 @@ fn create_compute_pipeline(
 
 struct App {
     render_tx: Option<mpsc::SyncSender<RenderCommand>>,
+    ui_rx: Option<mpsc::Receiver<UiCommand>>,
     gpu_width: u32,
     gpu_height: u32,
     window: Option<Arc<Window>>,
@@ -2514,6 +2603,7 @@ impl App {
         let num_transforms = genome.total_buffer_transforms();
         Self {
             render_tx: None,
+            ui_rx: None,
             gpu_width: 1,
             gpu_height: 1,
             window: None,
@@ -3066,12 +3156,15 @@ impl ApplicationHandler for App {
         // Bounded channel (2 frames): prevents main thread from spinning faster than GPU
         // can consume, which would starve keyboard/mouse events.
         let (tx, rx) = mpsc::sync_channel(1);
+        // Reverse channel: render thread → main thread (for UI commands like vote notes)
+        let (ui_tx, ui_rx) = mpsc::channel();
         std::thread::Builder::new()
             .name("render".into())
-            .spawn(move || render_thread_loop(rx, gpu))
+            .spawn(move || render_thread_loop(rx, gpu, ui_tx))
             .expect("failed to spawn render thread");
 
         self.render_tx = Some(tx);
+        self.ui_rx = Some(ui_rx);
         // Use configured dimensions — inner_size() returns 0×0 on macOS before window is shown
         self.gpu_width = self.weights._config.window_width.max(1);
         self.gpu_height = self.weights._config.window_height.max(1);
@@ -3236,6 +3329,12 @@ impl ApplicationHandler for App {
                     let igmm_path = dir.join("taste_model.json");
                     self.taste_engine.on_upvote(&self.genome, Some(&igmm_path));
                     self.rebuild_taste_model();
+                    if let Some(tx) = &self.render_tx {
+                        let _ = tx.try_send(RenderCommand::VoteCast {
+                            score: 1,
+                            genome_name: vote_genome.name.clone(),
+                        });
+                    }
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} +1 (score: {})",
@@ -3253,6 +3352,12 @@ impl ApplicationHandler for App {
                     let score = self.vote_ledger.vote(&vote_genome, -1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
                     self.rebuild_taste_model();
+                    if let Some(tx) = &self.render_tx {
+                        let _ = tx.try_send(RenderCommand::VoteCast {
+                            score: -1,
+                            genome_name: vote_genome.name.clone(),
+                        });
+                    }
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} -1 (score: {})",
@@ -3378,6 +3483,20 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if self.frame < 3 {
                     eprintln!("[debug] RedrawRequested frame={}", self.frame);
+                }
+                // Poll reverse channel for UI commands from render thread
+                if let Some(ref ui_rx) = self.ui_rx {
+                    while let Ok(cmd) = ui_rx.try_recv() {
+                        match cmd {
+                            UiCommand::VoteNote { genome_name, note } => {
+                                if let Some(note_text) = note {
+                                    let dir = project_dir().join("genomes");
+                                    self.vote_ledger.attach_note(&genome_name, note_text, &dir);
+                                    eprintln!("[vote] note attached to {genome_name}");
+                                }
+                            }
+                        }
+                    }
                 }
                 self.check_file_changes();
 
