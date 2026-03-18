@@ -163,12 +163,12 @@
     "max_mutation_retries": 10,
     "trail": 0.15,
     "accumulation_decay": 0.94,
-    "samples_per_frame": 1024,
+    "samples_per_frame": 512,
     "bloom_radius": 3.0,
     "fitness_bias_strength": 0.5,
     "drift_speed": 3.0,
     "velocity_blur_max": 3.0,
-    "iterations_per_thread": 400,
+    "iterations_per_thread": 200,
     "morph_speed": 1.0,
     "morph_stagger_count": 2,
     "morph_stagger_min": 0.3,
@@ -219,7 +219,7 @@
   "energy": {
     "bloom_intensity": 0.02,
     "xfN_spin_mod": 0.3,
-    "mutation_rate": 0.05
+    "mutation_rate": 1.0
   },
   "beat": {
     "position_drift": 0.001,
@@ -227,7 +227,7 @@
   },
   "beat_accum": {},
   "change": {
-      "mutation_rate": 0.8
+      "mutation_rate": 5.0
   },
   "time": {},
   "time_slow": {

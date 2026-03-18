@@ -3080,7 +3080,7 @@ impl ApplicationHandler for App {
                     let mr = self
                         .weights
                         .compute_mutation_rate(&self.audio_features, &time_signals);
-                    self.mutation_accum += mr;
+                    self.mutation_accum += mr * dt; // dt-scaled for frame-rate independence
 
                     // Two evolution paths: signal-driven OR time-based
                     let time_since_last = time - self.last_mutation_time;
