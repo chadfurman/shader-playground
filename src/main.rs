@@ -3490,7 +3490,10 @@ impl ApplicationHandler for App {
                     let mr = self
                         .weights
                         .compute_mutation_rate(&self.audio_features, &time_signals);
-                    self.mutation_accum = (self.mutation_accum + mr * dt).min(1.0); // cap at trigger threshold
+                    // Decay so accum drains during silence, signals must outpace decay
+                    let decay = self.weights._config.mutation_accum_decay;
+                    self.mutation_accum =
+                        ((self.mutation_accum + mr * dt) * (1.0 - decay * dt)).clamp(0.0, 1.0);
 
                     // Two evolution paths: signal-driven OR time-based
                     let time_since_last = time - self.last_mutation_time;

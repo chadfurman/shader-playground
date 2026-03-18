@@ -308,6 +308,8 @@ pub struct RuntimeConfig {
     pub hud_fade_delay: f32,
     #[serde(default = "default_hud_fade_duration")]
     pub hud_fade_duration: f32,
+    #[serde(default = "default_mutation_accum_decay")]
+    pub mutation_accum_decay: f32,
 }
 
 fn default_morph_duration() -> f32 {
@@ -552,6 +554,9 @@ fn default_hud_fade_delay() -> f32 {
 }
 fn default_hud_fade_duration() -> f32 {
     0.5
+}
+fn default_mutation_accum_decay() -> f32 {
+    0.3 // drains ~30% per second — signals must outpace to reach 1.0
 }
 
 const VARIATION_START: usize = 14; // first variation field index in each 50-float transform block

@@ -137,7 +137,8 @@
       "spin_mod_max": "Max per-transform spin_mod clamp value (default 4.0)",
       "drift_mod_max": "Max per-transform drift_mod clamp value (default 4.0)",
       "hud_fade_delay": "Seconds of mouse inactivity before HUD starts fading (default 3.0)",
-      "hud_fade_duration": "Seconds for HUD fade-out animation (default 0.5)"
+      "hud_fade_duration": "Seconds for HUD fade-out animation (default 0.5)",
+      "mutation_accum_decay": "Per-second decay rate for mutation accumulator (default 0.3). Higher = drains faster, signals must be stronger to trigger. 0 = no decay (old behavior)."
     }
   },
   "_config": {
@@ -214,6 +215,7 @@
     "morph_burst_decay": 0.7,
     "transform_count_min": 8,
     "transform_count_max": 12,
+    "mutation_accum_decay": 0.3,
     "hud_fade_delay": 3.0,
     "hud_fade_duration": 0.5
   },
