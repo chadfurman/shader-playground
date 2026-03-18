@@ -1038,8 +1038,8 @@ fn hud_panel_identity(ctx: &egui::Context, hud: &HudFrameData) {
                 );
                 ui.label(
                     egui::RichText::new(format!(
-                        "accum:{:.2}  cd:{:.0}/{:.0}s",
-                        hud.mutation_accum, hud.time_since_mutation, hud.cooldown,
+                        "cd:{:.0}/{:.0}s",
+                        hud.time_since_mutation, hud.cooldown
                     ))
                     .color(dim)
                     .size(10.0),
@@ -1057,26 +1057,39 @@ fn hud_panel_progress(ctx: &egui::Context, hud: &HudFrameData, screen_w: f32) {
                 let dim = egui::Color32::from_rgb(136, 136, 136);
                 let bg = egui::Color32::from_rgb(34, 34, 34);
 
-                // Mutation accumulator progress bar
-                ui.label(egui::RichText::new("mutation").size(9.0).color(dim));
+                // Next evolve — signal-driven trigger bar
+                ui.label(
+                    egui::RichText::new("next evolve (signal)")
+                        .size(9.0)
+                        .color(dim),
+                );
                 let (rect, _) =
                     ui.allocate_exact_size(egui::vec2(180.0, 6.0), egui::Sense::hover());
                 ui.painter().rect_filled(rect, 3.0, bg);
                 let fill_frac = hud.mutation_accum.clamp(0.0, 1.0);
+                let gate_met = hud.time_since_mutation >= 10.0;
+                let bar_color = if fill_frac >= 1.0 && gate_met {
+                    egui::Color32::from_rgb(68, 238, 68) // green = ready to fire
+                } else if fill_frac >= 1.0 {
+                    egui::Color32::from_rgb(238, 238, 68) // yellow = full but gated
+                } else {
+                    egui::Color32::from_rgb(238, 153, 34) // orange = filling
+                };
                 let fill_rect = egui::Rect::from_min_size(
                     rect.min,
                     egui::vec2(fill_frac * rect.width(), rect.height()),
                 );
-                ui.painter()
-                    .rect_filled(fill_rect, 3.0, egui::Color32::from_rgb(238, 153, 34));
-
-                // Cooldown text
+                ui.painter().rect_filled(fill_rect, 3.0, bar_color);
+                let gate_label = if gate_met { "ready" } else { "wait" };
                 ui.label(
                     egui::RichText::new(format!(
-                        "cd:{:.0}/{:.0}s",
-                        hud.time_since_mutation, hud.cooldown,
+                        "{:.0}% gate:{} cd:{:.0}/{:.0}s",
+                        fill_frac * 100.0,
+                        gate_label,
+                        hud.time_since_mutation,
+                        hud.cooldown,
                     ))
-                    .size(9.0)
+                    .size(8.0)
                     .color(dim),
                 );
 
@@ -3080,7 +3093,7 @@ impl ApplicationHandler for App {
                     let mr = self
                         .weights
                         .compute_mutation_rate(&self.audio_features, &time_signals);
-                    self.mutation_accum += mr * dt; // dt-scaled for frame-rate independence
+                    self.mutation_accum = (self.mutation_accum + mr * dt).min(1.0); // cap at trigger threshold
 
                     // Two evolution paths: signal-driven OR time-based
                     let time_since_last = time - self.last_mutation_time;
