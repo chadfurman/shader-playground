@@ -20,6 +20,9 @@ screencapturekit = "1"
 crossterm = "0.28"
 quick-xml = "0.39.2"
 half = "2.7.1"
+egui = "0.31"
+egui-winit = "0.31"
+egui-wgpu = "0.31"
 
 [package.metadata.packager]
 product-name = "Shader Playground"
