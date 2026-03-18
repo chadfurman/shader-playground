@@ -56,6 +56,10 @@ enum RenderCommand {
     ReloadComputeShader(String),
     /// A vote was cast — show the feedback popup on the render thread.
     VoteCast { score: i32, genome_name: String },
+    /// Toggle the live config panel open/closed.
+    ToggleConfigPanel,
+    /// Snapshot of current RuntimeConfig for the config panel to edit.
+    ConfigSnapshot(Box<crate::weights::RuntimeConfig>),
     /// Shut down the render thread.
     Shutdown,
 }
@@ -67,6 +71,12 @@ enum UiCommand {
         genome_name: String,
         note: Option<String>,
     },
+    /// Live config panel updated a config value — apply immediately.
+    UpdateConfig(Box<crate::weights::RuntimeConfig>),
+    /// Save current weights to disk.
+    SaveConfig,
+    /// Pause or resume auto-mutation (while config panel is open).
+    PauseMutation(bool),
 }
 
 /// Per-frame HUD data — sent with each FrameData.
@@ -1640,6 +1650,238 @@ fn hud_panel_hotkeys(ctx: &egui::Context, screen_w: f32, screen_h: f32, opacity:
         });
 }
 
+// ── Config Panel ──
+
+/// Main config panel UI. Returns (config_changed, save_requested).
+fn config_panel_ui(
+    ctx: &egui::Context,
+    cfg: &mut crate::weights::RuntimeConfig,
+    tab: &mut usize,
+    screen_w: f32,
+    screen_h: f32,
+) -> (bool, bool) {
+    let mut changed = false;
+    let mut save = false;
+    let panel_w = 300.0;
+    let panel_h = 420.0;
+    let x = (screen_w - panel_w) * 0.5;
+    let y = (screen_h - panel_h) * 0.5;
+
+    egui::Area::new(egui::Id::new("config_panel"))
+        .fixed_pos(egui::pos2(x, y))
+        .show(ctx, |ui| {
+            egui::Frame::NONE
+                .fill(egui::Color32::from_rgba_premultiplied(15, 15, 15, 210))
+                .corner_radius(8.0)
+                .inner_margin(egui::Margin::same(12))
+                .show(ui, |ui| {
+                    ui.set_min_width(panel_w - 24.0);
+                    ui.label(
+                        egui::RichText::new("Config Panel")
+                            .size(14.0)
+                            .color(egui::Color32::WHITE),
+                    );
+                    ui.add_space(4.0);
+
+                    // Tab buttons
+                    ui.horizontal(|ui| {
+                        for (i, name) in ["Config", "Rendering", "Breeding"].iter().enumerate() {
+                            let color = if *tab == i {
+                                egui::Color32::from_rgb(100, 200, 255)
+                            } else {
+                                egui::Color32::from_rgb(140, 140, 140)
+                            };
+                            if ui
+                                .add(egui::Button::new(
+                                    egui::RichText::new(*name).size(11.0).color(color),
+                                ))
+                                .clicked()
+                            {
+                                *tab = i;
+                            }
+                        }
+                    });
+                    ui.add_space(4.0);
+
+                    // Tab content in a scroll area
+                    egui::ScrollArea::vertical()
+                        .max_height(330.0)
+                        .show(ui, |ui| match *tab {
+                            0 => changed = config_tab_main(ui, cfg),
+                            1 => changed = config_tab_rendering(ui, cfg),
+                            2 => changed = config_tab_breeding(ui, cfg),
+                            _ => {}
+                        });
+
+                    ui.add_space(6.0);
+                    if ui
+                        .add(egui::Button::new(
+                            egui::RichText::new("Save to disk")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(100, 255, 100)),
+                        ))
+                        .clicked()
+                    {
+                        save = true;
+                    }
+                });
+        });
+    (changed, save)
+}
+
+/// Config tab: morph, mutation, motion, and accumulation sliders.
+fn config_tab_main(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConfig) -> bool {
+    let mut changed = false;
+    changed |= config_slider_f32(ui, "morph_duration", &mut cfg.morph_duration, 1.0, 120.0);
+    changed |= config_slider_f32(
+        ui,
+        "mutation_cooldown",
+        &mut cfg.mutation_cooldown,
+        1.0,
+        300.0,
+    );
+    changed |= config_slider_f32(ui, "spin_speed_max", &mut cfg.spin_speed_max, 0.0, 2.0);
+    changed |= config_slider_f32(ui, "position_drift", &mut cfg.position_drift, 0.0, 2.0);
+    changed |= config_slider_f32(ui, "drift_speed", &mut cfg.drift_speed, 0.0, 10.0);
+    changed |= config_slider_f32(ui, "trail", &mut cfg.trail, 0.0, 1.0);
+    changed |= config_slider_f32(ui, "bloom_intensity", &mut cfg.bloom_intensity, 0.0, 0.5);
+    changed |= config_slider_f32(
+        ui,
+        "accumulation_decay",
+        &mut cfg.accumulation_decay,
+        0.5,
+        0.999,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "mutation_accum_decay",
+        &mut cfg.mutation_accum_decay,
+        0.0,
+        2.0,
+    );
+    changed
+}
+
+/// Rendering tab: tonemap, jitter, histogram, DoF, blur, gamma, bloom.
+fn config_tab_rendering(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConfig) -> bool {
+    let mut changed = false;
+    // tonemap_mode as u32 selector
+    let mut mode = cfg.tonemap_mode as usize;
+    let labels = ["Reinhard (0)", "ACES (1)", "Filmic (2)"];
+    ui.horizontal(|ui| {
+        let dim = egui::Color32::from_rgb(160, 160, 160);
+        ui.label(egui::RichText::new("tonemap_mode").size(10.0).color(dim));
+        for (i, label) in labels.iter().enumerate() {
+            let color = if mode == i {
+                egui::Color32::from_rgb(100, 200, 255)
+            } else {
+                egui::Color32::from_rgb(100, 100, 100)
+            };
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new(*label).size(9.0).color(color),
+                ))
+                .clicked()
+            {
+                mode = i;
+                changed = true;
+            }
+        }
+    });
+    cfg.tonemap_mode = mode as u32;
+
+    changed |= config_slider_f32(ui, "jitter_amount", &mut cfg.jitter_amount, 0.0, 1.0);
+    changed |= config_slider_f32(
+        ui,
+        "histogram_equalization",
+        &mut cfg.histogram_equalization,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(ui, "dof_strength", &mut cfg.dof_strength, 0.0, 2.0);
+    changed |= config_slider_f32(
+        ui,
+        "velocity_blur_max",
+        &mut cfg.velocity_blur_max,
+        0.0,
+        50.0,
+    );
+    changed |= config_slider_f32(ui, "gamma", &mut cfg.gamma, 0.1, 2.0);
+    changed |= config_slider_f32(ui, "bloom_radius", &mut cfg.bloom_radius, 0.0, 10.0);
+    changed
+}
+
+/// Breeding tab: transform counts, parent biases, breeding distance.
+fn config_tab_breeding(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConfig) -> bool {
+    let mut changed = false;
+    changed |= config_slider_u32(
+        ui,
+        "transform_count_min",
+        &mut cfg.transform_count_min,
+        1,
+        20,
+    );
+    changed |= config_slider_u32(
+        ui,
+        "transform_count_max",
+        &mut cfg.transform_count_max,
+        1,
+        20,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_current_bias",
+        &mut cfg.parent_current_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_voted_bias",
+        &mut cfg.parent_voted_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_saved_bias",
+        &mut cfg.parent_saved_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_random_bias",
+        &mut cfg.parent_random_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_u32(
+        ui,
+        "min_breeding_distance",
+        &mut cfg.min_breeding_distance,
+        0,
+        20,
+    );
+    changed
+}
+
+/// Helper: f32 slider with label. Returns true if value changed.
+fn config_slider_f32(ui: &mut egui::Ui, label: &str, value: &mut f32, min: f32, max: f32) -> bool {
+    let before = *value;
+    ui.add(egui::Slider::new(value, min..=max).text(label));
+    (*value - before).abs() > f32::EPSILON
+}
+
+/// Helper: u32 slider with label. Returns true if value changed.
+fn config_slider_u32(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, max: u32) -> bool {
+    let before = *value;
+    let mut v = *value as i32;
+    ui.add(egui::Slider::new(&mut v, min as i32..=max as i32).text(label));
+    *value = v as u32;
+    *value != before
+}
+
 // ── Render Thread ──
 
 /// Check if egui RawInput contains any pointer movement events.
@@ -1677,6 +1919,10 @@ fn render_thread_loop(
     let mut last_mouse_move = Instant::now();
     // Vote feedback popup state: (score, genome_name, text_input)
     let mut vote_feedback: Option<(i32, String, String)> = None;
+    // Config panel state
+    let mut config_panel_open = false;
+    let mut config_edit: Option<crate::weights::RuntimeConfig> = None;
+    let mut config_tab: usize = 0; // 0=Config, 1=Rendering, 2=Breeding
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
@@ -1727,6 +1973,8 @@ fn render_thread_loop(
 
                     // Track vote feedback actions to apply after egui closure
                     let mut vote_submit: Option<(String, Option<String>)> = None;
+                    let mut config_changed = false;
+                    let mut config_save_requested = false;
                     let egui_output = egui_ctx.run_ui(raw_input, |ui| {
                         // Skip all panel building when fully faded out
                         if hud_opacity > 0.0 {
@@ -1737,6 +1985,21 @@ fn render_thread_loop(
                             hud_panel_time(ctx, hud, hud_opacity);
                             hud_panel_transforms(ctx, hud, screen_w, hud_opacity);
                             hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity);
+                        }
+
+                        // Config panel — always visible when open (ignores HUD fade)
+                        if config_panel_open
+                            && let Some(ref mut cfg) = config_edit
+                        {
+                            let (changed, save) = config_panel_ui(
+                                ui.ctx(),
+                                cfg,
+                                &mut config_tab,
+                                screen_w,
+                                screen_h,
+                            );
+                            config_changed = changed;
+                            config_save_requested = save;
                         }
 
                         // Vote feedback popup — always visible when active
@@ -1804,6 +2067,14 @@ fn render_thread_loop(
                     if let Some((genome_name, note)) = vote_submit {
                         let _ = ui_tx.send(UiCommand::VoteNote { genome_name, note });
                         vote_feedback = None;
+                    }
+
+                    // Send config updates to main thread
+                    if config_changed && let Some(ref cfg) = config_edit {
+                        let _ = ui_tx.send(UiCommand::UpdateConfig(Box::new(cfg.clone())));
+                    }
+                    if config_save_requested {
+                        let _ = ui_tx.send(UiCommand::SaveConfig);
                     }
 
                     let pixels_per_point = egui_output.pixels_per_point;
@@ -1891,6 +2162,26 @@ fn render_thread_loop(
             }
             RenderCommand::VoteCast { score, genome_name } => {
                 vote_feedback = Some((score, genome_name, String::new()));
+            }
+            RenderCommand::ToggleConfigPanel => {
+                config_panel_open = !config_panel_open;
+                let _ = ui_tx.send(UiCommand::PauseMutation(config_panel_open));
+                if !config_panel_open {
+                    config_edit = None;
+                }
+                eprintln!(
+                    "[config] panel {}",
+                    if config_panel_open {
+                        "opened"
+                    } else {
+                        "closed"
+                    }
+                );
+            }
+            RenderCommand::ConfigSnapshot(cfg) => {
+                if config_panel_open {
+                    config_edit = Some(*cfg);
+                }
             }
             RenderCommand::Shutdown => {
                 eprintln!("[render-thread] shutdown");
@@ -3039,7 +3330,7 @@ impl App {
             self.morph_base_globals[..n].copy_from_slice(&override_params[..n]);
             eprintln!("[params] reloaded (overriding globals)");
         }
-        if reload_weights {
+        if reload_weights && !self.mutation_paused {
             match Weights::load(&weights_path()) {
                 Ok(w) => {
                     self.weights = w;
@@ -3449,6 +3740,14 @@ impl ApplicationHandler for App {
                             }
                         );
                     }
+                    "c" => {
+                        if let Some(tx) = &self.render_tx {
+                            let _ = tx.try_send(RenderCommand::ToggleConfigPanel);
+                            let _ = tx.try_send(RenderCommand::ConfigSnapshot(Box::new(
+                                self.weights._config.clone(),
+                            )));
+                        }
+                    }
                     "i" => {
                         self.audio_info = !self.audio_info;
                         if self.audio_info {
@@ -3493,6 +3792,25 @@ impl ApplicationHandler for App {
                                     let dir = project_dir().join("genomes");
                                     self.vote_ledger.attach_note(&genome_name, note_text, &dir);
                                     eprintln!("[vote] note attached to {genome_name}");
+                                }
+                            }
+                            UiCommand::PauseMutation(paused) => {
+                                self.mutation_paused = paused;
+                            }
+                            UiCommand::UpdateConfig(cfg) => {
+                                self.weights._config = *cfg;
+                            }
+                            UiCommand::SaveConfig => {
+                                let path = weights_path();
+                                match serde_json::to_string_pretty(&self.weights) {
+                                    Ok(json) => {
+                                        if let Err(e) = std::fs::write(&path, json) {
+                                            eprintln!("[config] save error: {e}");
+                                        } else {
+                                            eprintln!("[config] saved to {}", path.display());
+                                        }
+                                    }
+                                    Err(e) => eprintln!("[config] serialize error: {e}"),
                                 }
                             }
                         }
