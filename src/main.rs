@@ -77,6 +77,8 @@ enum UiCommand {
     SaveConfig,
     /// Pause or resume auto-mutation (while config panel is open).
     PauseMutation(bool),
+    /// Tell main thread egui needs keyboard (text input active).
+    WantsKeyboard(bool),
 }
 
 /// Per-frame HUD data — sent with each FrameData.
@@ -2059,6 +2061,7 @@ fn render_thread_loop(
                     // Apply vote feedback actions outside the egui closure
                     if let Some((genome_name, note)) = vote_submit {
                         let _ = ui_tx.send(UiCommand::VoteNote { genome_name, note });
+                        let _ = ui_tx.send(UiCommand::WantsKeyboard(false));
                         vote_feedback = None;
                     }
 
@@ -2155,6 +2158,7 @@ fn render_thread_loop(
             }
             RenderCommand::VoteCast { score, genome_name } => {
                 vote_feedback = Some((score, genome_name, String::new()));
+                let _ = ui_tx.send(UiCommand::WantsKeyboard(true));
             }
             RenderCommand::ToggleConfigPanel => {
                 config_panel_open = !config_panel_open;
@@ -2820,6 +2824,7 @@ struct App {
     egui_state: Option<egui_winit::State>,
     mutation_paused: bool,
     cursor_moved: bool, // set on CursorMoved, cleared after building FrameData
+    egui_wants_keyboard: bool, // true when vote popup or config panel is capturing keys
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -2947,6 +2952,7 @@ impl App {
             egui_state: None,
             mutation_paused: false,
             cursor_moved: false,
+            egui_wants_keyboard: false,
         }
     }
 
@@ -3501,6 +3507,15 @@ impl ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        // Always track cursor movement (before egui consumes the event)
+        if let WindowEvent::CursorMoved { position, .. } = &event {
+            self.cursor_moved = true;
+            self.mouse = [
+                position.x as f32 / self.gpu_width.max(1) as f32,
+                position.y as f32 / self.gpu_height.max(1) as f32,
+            ];
+        }
+
         // Forward events to egui for input handling
         if let Some(egui_state) = &mut self.egui_state
             && let Some(window) = &self.window
@@ -3530,13 +3545,7 @@ impl ApplicationHandler for App {
                     }
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.cursor_moved = true;
-                self.mouse = [
-                    position.x as f32 / self.gpu_width.max(1) as f32,
-                    position.y as f32 / self.gpu_height.max(1) as f32,
-                ];
-            }
+            WindowEvent::CursorMoved { .. } => {} // handled above (before egui consumes it)
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
@@ -3550,7 +3559,7 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } => match logical_key {
+            } if !self.egui_wants_keyboard => match logical_key {
                 Key::Named(NamedKey::Space) => {
                     self.genome_history.push(self.genome.clone());
                     if self.genome_history.len() > 10 {
@@ -3792,6 +3801,9 @@ impl ApplicationHandler for App {
                             }
                             UiCommand::PauseMutation(paused) => {
                                 self.mutation_paused = paused;
+                            }
+                            UiCommand::WantsKeyboard(wants) => {
+                                self.egui_wants_keyboard = wants;
                             }
                             UiCommand::UpdateConfig(cfg) => {
                                 self.weights._config = *cfg;
