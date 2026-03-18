@@ -2823,7 +2823,8 @@ struct App {
     egui_state: Option<egui_winit::State>,
     mutation_paused: bool,
     last_cursor_move: Instant,
-    egui_wants_keyboard: bool, // true when vote popup or config panel is capturing keys
+    pending_egui_events: Vec<egui::Event>, // events from dropped frames, prepended to next send
+    egui_wants_keyboard: bool,             // true when vote popup or config panel is capturing keys
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -2951,6 +2952,7 @@ impl App {
             egui_state: None,
             mutation_paused: false,
             last_cursor_move: Instant::now(),
+            pending_egui_events: Vec::new(),
             egui_wants_keyboard: false,
         }
     }
@@ -4270,7 +4272,15 @@ impl ApplicationHandler for App {
                     time_since_cursor_move: self.last_cursor_move.elapsed().as_secs_f32(),
                 };
 
-                // Send to render thread
+                // Prepend any events from previously dropped frames
+                let mut egui_input = egui_input;
+                if !self.pending_egui_events.is_empty() {
+                    let mut merged = std::mem::take(&mut self.pending_egui_events);
+                    merged.append(&mut egui_input.events);
+                    egui_input.events = merged;
+                }
+
+                // Send to render thread — if channel is full, save events for next frame
                 if let Some(tx) = &self.render_tx {
                     let frame_data = FrameData {
                         uniforms: final_uniforms,
@@ -4282,7 +4292,23 @@ impl ApplicationHandler for App {
                         hud,
                         egui_input,
                     };
-                    let _ = tx.try_send(RenderCommand::Render(Box::new(frame_data)));
+                    match tx.try_send(RenderCommand::Render(Box::new(frame_data))) {
+                        Ok(()) => {}
+                        Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
+                            // Channel full — save keyboard/text events for next frame
+                            self.pending_egui_events.extend(
+                                dropped.egui_input.events.into_iter().filter(|e| {
+                                    matches!(
+                                        e,
+                                        egui::Event::Key { .. }
+                                            | egui::Event::Text(_)
+                                            | egui::Event::Ime(_)
+                                    )
+                                }),
+                            );
+                        }
+                        Err(_) => {} // disconnected
+                    }
                 }
                 self.frame += 1;
 
