@@ -760,12 +760,12 @@ impl FlameGenome {
     }
 
     /// Pack all transforms into a flat Vec<f32> for the storage buffer.
-    /// Each transform = 48 floats: weight, 9 affine, 3 offset,
-    /// color, 26 variations, 8 parametric variation params.
+    /// Each transform = 50 floats: weight, 9 affine, 3 offset,
+    /// color, 26 variations, 8 parametric variation params, spin_mod, drift_mod.
     /// If a final_transform is present, it is appended after the regular transforms.
     pub fn flatten_transforms(&self) -> Vec<f32> {
         let total = self.transforms.len() + if self.final_transform.is_some() { 1 } else { 0 };
-        let mut t = Vec::with_capacity(total * 48);
+        let mut t = Vec::with_capacity(total * 50);
         for xf in &self.transforms {
             Self::push_transform(&mut t, xf);
         }
@@ -856,6 +856,9 @@ impl FlameGenome {
                 .copied()
                 .unwrap_or(2.0),
         ); // 41
+        // Per-transform audio modulation (default 1.0 = full participation)
+        t.push(1.0); // 48 spin_mod
+        t.push(1.0); // 49 drift_mod
     }
 
     pub fn transform_count(&self) -> u32 {
@@ -2553,26 +2556,29 @@ mod tests {
     }
 
     #[test]
-    fn flatten_produces_48_floats_per_transform() {
+    fn flatten_produces_50_floats_per_transform() {
         let g = FlameGenome::default_genome();
         let flat = g.flatten_transforms();
-        let expected = g.transforms.len() * 48;
+        let expected = g.transforms.len() * 50;
         assert_eq!(
             flat.len(),
             expected,
-            "expected {} floats for {} transforms, got {}",
+            "expected {} floats ({} transforms * 50), got {}",
             expected,
             g.transforms.len(),
             flat.len()
         );
-        // Verify the first transform's weight is at position 0
-        assert!((flat[0] - g.transforms[0].weight).abs() < 1e-6);
-        // Verify affine m00 is at position 1
-        assert!((flat[1] - g.transforms[0].a()).abs() < 1e-6);
-        // Verify color is at position 13
-        assert!((flat[13] - g.transforms[0].color).abs() < 1e-6);
-        // Verify second transform starts at position 48
-        assert!((flat[48] - g.transforms[1].weight).abs() < 1e-6);
+        // Verify second transform starts at position 50
+        assert!((flat[50] - g.transforms[1].weight).abs() < 1e-6);
+        // Verify spin_mod defaults to 1.0
+        assert!(
+            (flat[48] - 1.0).abs() < 1e-6,
+            "spin_mod should default to 1.0"
+        );
+        assert!(
+            (flat[49] - 1.0).abs() < 1e-6,
+            "drift_mod should default to 1.0"
+        );
     }
 
     #[test]

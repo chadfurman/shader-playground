@@ -74,7 +74,9 @@
       "xfN_cosine":         "All transforms cosine variation weight",
       "xfN_blob":           "All transforms blob variation weight",
       "xfN_noise":          "All transforms noise variation weight",
-      "xfN_curl":           "All transforms curl variation weight"
+      "xfN_curl":           "All transforms curl variation weight",
+      "xfN_spin_mod":       "Per-transform spin speed multiplier (default 1.0 = full participation)",
+      "xfN_drift_mod":      "Per-transform position drift multiplier (default 1.0 = full participation)"
     },
     "_config_doc": {
       "morph_duration":      "Seconds for genome transition ease-in-out (default 8)",
@@ -131,7 +133,9 @@
       "window_width": "Initial window width in logical pixels (default 640)",
       "window_height": "Initial window height in logical pixels (default 480)",
       "transform_count_min": "Minimum transforms per genome during breeding (default 3)",
-      "transform_count_max": "Maximum transforms per genome during breeding (default 6)"
+      "transform_count_max": "Maximum transforms per genome during breeding (default 6)",
+      "spin_mod_max": "Max per-transform spin_mod clamp value (default 4.0)",
+      "drift_mod_max": "Max per-transform drift_mod clamp value (default 4.0)"
     }
   },
   "_config": {
@@ -213,10 +217,12 @@
   "mids": {},
   "highs": {},
   "energy": {
-    "bloom_intensity": 0.02
+    "bloom_intensity": 0.02,
+    "xfN_spin_mod": 0.3
   },
   "beat": {
-    "position_drift": 0.001
+    "position_drift": 0.001,
+    "xfN_drift_mod": 0.2
   },
   "beat_accum": {},
   "change": {

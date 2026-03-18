@@ -55,7 +55,7 @@ pub fn value_noise_pub(t: f32) -> f32 {
 
 const AUDIO_SIGNAL_COUNT: f32 = 7.0; // bass, mids, highs, energy, beat, beat_accum, change
 const TIME_SIGNAL_COUNT: f32 = 9.0; // time, time_slow, time_med, time_fast, time_noise, time_drift, time_flutter, time_walk, time_envelope
-const PARAMS_PER_XF: usize = 48;
+pub const PARAMS_PER_XF: usize = 50;
 
 /// Per-transform field names in order (matching genome flatten layout).
 /// Layout: weight, m00..m22 (9 affine), offset_x/y/z (3), color, 26 variations, 8 var params
@@ -108,6 +108,8 @@ const XF_FIELDS: [&str; PARAMS_PER_XF] = [
     "julian_dist",  // 45
     "ngon_sides",   // 46
     "ngon_corners", // 47
+    "spin_mod",     // 48
+    "drift_mod",    // 49
 ];
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -298,6 +300,10 @@ pub struct RuntimeConfig {
     pub transform_count_min: u32,
     #[serde(default = "default_transform_count_max")]
     pub transform_count_max: u32,
+    #[serde(default = "default_spin_mod_max")]
+    pub spin_mod_max: f32,
+    #[serde(default = "default_drift_mod_max")]
+    pub drift_mod_max: f32,
 }
 
 fn default_morph_duration() -> f32 {
@@ -531,8 +537,14 @@ fn default_transform_count_min() -> u32 {
 fn default_transform_count_max() -> u32 {
     6
 }
+fn default_spin_mod_max() -> f32 {
+    4.0
+}
+fn default_drift_mod_max() -> f32 {
+    4.0
+}
 
-const VARIATION_START: usize = 14; // first variation field index in each 48-float transform block
+const VARIATION_START: usize = 14; // first variation field index in each 50-float transform block
 
 impl RuntimeConfig {
     /// Apply variation_scales to a flattened transform buffer.

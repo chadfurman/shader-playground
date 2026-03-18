@@ -24,7 +24,7 @@ mod weights;
 use crate::audio::{AudioCapture, AudioFeatures};
 use crate::genome::{FavoriteProfile, FlameGenome};
 use crate::votes::VoteLedger;
-use crate::weights::Weights;
+use crate::weights::{PARAMS_PER_XF, Weights};
 
 // ── Render Thread Protocol ──
 
@@ -253,10 +253,10 @@ impl Gpu {
         // Histogram buffer: 6 u32s per pixel (density + R + G + B + vx + vy)
         let histogram_buffer = create_histogram_buffer(&device, config.width, config.height);
 
-        // Initial transform buffer (6 transforms * 48 floats * 4 bytes)
+        // Initial transform buffer (6 transforms * 50 floats * 4 bytes)
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
-            size: (6 * 48 * 4) as u64,
+            size: (6 * PARAMS_PER_XF * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -741,7 +741,7 @@ impl Gpu {
     }
 
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
-        let size = (num_transforms.max(1) * 48 * 4) as u64;
+        let size = (num_transforms.max(1) * PARAMS_PER_XF * 4) as u64;
         self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
             size,
@@ -1760,7 +1760,7 @@ impl App {
         );
         let xf_data = &self.morph_base_xf;
         for (i, xf) in snapshot.transforms.iter_mut().enumerate() {
-            let base = i * 48;
+            let base = i * PARAMS_PER_XF;
             if base + 13 < xf_data.len() {
                 xf.weight = xf_data[base];
                 // 3x3 affine: 9 values at base+1..base+9
@@ -2009,7 +2009,7 @@ impl App {
 
         // Ensure buffers can hold max of current and target transforms
         let target_xf = self.genome.flatten_transforms();
-        let max_xf = (self.xf_params.len().max(target_xf.len())) / 48;
+        let max_xf = (self.xf_params.len().max(target_xf.len())) / PARAMS_PER_XF;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(tx) = &self.render_tx {
@@ -2017,7 +2017,7 @@ impl App {
             }
         }
         // Pad start vectors to match
-        self.morph_start_xf.resize(max_xf * 48, 0.0);
+        self.morph_start_xf.resize(max_xf * PARAMS_PER_XF, 0.0);
 
         // Generate per-transform morph rates: some fast (2x), some slow (0.4x)
         // This makes transforms arrive at different times for organic transitions.
@@ -2442,7 +2442,7 @@ impl ApplicationHandler for App {
                     "1" | "2" | "3" | "4" => {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
                         if idx < self.num_transforms {
-                            let base = idx * 48; // weight is first field
+                            let base = idx * PARAMS_PER_XF; // weight is first field
                             if base < self.xf_params.len() {
                                 if self.xf_params[base] < 0.01 {
                                     self.xf_params[base] = 0.25;
@@ -2571,12 +2571,13 @@ impl ApplicationHandler for App {
                     padded_start.resize(max_len, 0.0);
                     let mut padded_genome = genome_xf;
                     padded_genome.resize(max_len, 0.0);
-                    let num_xf = max_len / 48;
+                    let num_xf = max_len / PARAMS_PER_XF;
                     for xi in 0..num_xf {
                         // Each transform morphs at its own rate
                         let rate = self.morph_xf_rates.get(xi).copied().unwrap_or(1.0);
                         let xf_t = smoothstep((self.morph_progress * rate).min(1.0));
-                        let base = xi * 48;
+                        let base = xi * PARAMS_PER_XF;
+                        // Only morph genome-owned fields (0..48), not audio modulation fields (48-49)
                         for j in 0..48 {
                             let idx = base + j;
                             if idx < max_len {
@@ -2607,6 +2608,21 @@ impl ApplicationHandler for App {
                     self.weights
                         ._config
                         .apply_variation_scales(&mut self.xf_params, self.num_transforms);
+
+                    // Clamp per-transform spin_mod and drift_mod
+                    let cfg = &self.weights._config;
+                    for xf in 0..self.num_transforms {
+                        let spin_idx = xf * PARAMS_PER_XF + 48;
+                        let drift_idx = xf * PARAMS_PER_XF + 49;
+                        if spin_idx < self.xf_params.len() {
+                            self.xf_params[spin_idx] =
+                                self.xf_params[spin_idx].clamp(0.0, cfg.spin_mod_max);
+                        }
+                        if drift_idx < self.xf_params.len() {
+                            self.xf_params[drift_idx] =
+                                self.xf_params[drift_idx].clamp(0.0, cfg.drift_mod_max);
+                        }
+                    }
 
                     // Accumulate signal-driven mutation_rate from weights
                     let mr = self
@@ -2799,16 +2815,16 @@ impl ApplicationHandler for App {
                 };
 
                 // Jacobian importance sampling (CPU work, stays on main thread)
-                let xf_write_len = self.num_transforms * 48;
+                let xf_write_len = self.num_transforms * PARAMS_PER_XF;
                 let xf_len = xf_write_len.min(self.xf_params.len());
                 let final_xf_params: Vec<f32> = {
                     let jac_strength = self.weights._config.jacobian_weight_strength;
                     if jac_strength > 0.001 && self.num_transforms > 0 {
                         let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
-                        let n = (xf_len / 48).min(self.num_transforms);
+                        let n = (xf_len / PARAMS_PER_XF).min(self.num_transforms);
                         let mut weights: Vec<f32> = Vec::with_capacity(n);
                         for i in 0..n {
-                            let base = i * 48;
+                            let base = i * PARAMS_PER_XF;
                             let w = adjusted[base];
                             let a = adjusted[base + 1];
                             let b = adjusted[base + 2];
@@ -2820,7 +2836,7 @@ impl ApplicationHandler for App {
                         let total: f32 = weights.iter().sum();
                         if total > 0.0 {
                             for (i, jw) in weights.iter().enumerate() {
-                                adjusted[i * 48] = jw / total;
+                                adjusted[i * PARAMS_PER_XF] = jw / total;
                             }
                         }
                         adjusted
