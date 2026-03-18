@@ -2637,6 +2637,7 @@ struct App {
     egui_state: Option<egui_winit::State>,
     mutation_paused: bool,
     last_cursor_move: Instant,
+    pending_egui_textures: egui::TexturesDelta,
     // Vote feedback popup state (now on main thread): (score, genome_name, text_input)
     vote_feedback: Option<(i32, String, String)>,
     // Config panel state (now on main thread)
@@ -2769,6 +2770,7 @@ impl App {
             egui_state: None,
             mutation_paused: false,
             last_cursor_move: Instant::now(),
+            pending_egui_textures: egui::TexturesDelta::default(),
             vote_feedback: None,
             config_panel_open: false,
             config_edit: None,
@@ -4192,6 +4194,18 @@ impl ApplicationHandler for App {
                     self.build_egui_frame(&hud);
 
                 // Send pre-built paint jobs to render thread
+                // Merge any pending texture deltas from previously dropped frames
+                let mut egui_textures_delta = egui_textures_delta;
+                if !self.pending_egui_textures.set.is_empty()
+                    || !self.pending_egui_textures.free.is_empty()
+                {
+                    // Prepend pending texture sets (creations must come before partial updates)
+                    let mut merged = std::mem::take(&mut self.pending_egui_textures);
+                    merged.set.append(&mut egui_textures_delta.set);
+                    merged.free.append(&mut egui_textures_delta.free);
+                    egui_textures_delta = merged;
+                }
+
                 if let Some(tx) = &self.render_tx {
                     let frame_data = FrameData {
                         uniforms: final_uniforms,
@@ -4206,8 +4220,11 @@ impl ApplicationHandler for App {
                     };
                     match tx.try_send(RenderCommand::Render(Box::new(frame_data))) {
                         Ok(()) => {}
-                        Err(mpsc::TrySendError::Full(_)) => {} // drop frame
-                        Err(_) => {}                           // disconnected
+                        Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
+                            // Save texture deltas from dropped frame for next send
+                            self.pending_egui_textures = dropped.egui_textures_delta;
+                        }
+                        Err(_) => {} // disconnected
                     }
                 }
                 self.frame += 1;
