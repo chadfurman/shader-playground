@@ -1747,6 +1747,7 @@ struct App {
     genome_frame_count: u32,
     genome_start_time: Instant,
     egui_state: Option<egui_winit::State>,
+    mutation_paused: bool,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1871,6 +1872,7 @@ impl App {
             genome_frame_count: 0,
             genome_start_time: Instant::now(),
             egui_state: None,
+            mutation_paused: false,
         }
     }
 
@@ -2801,12 +2803,16 @@ impl ApplicationHandler for App {
                         || self.morph_xf_rates.is_empty();
 
                     // Signal-driven: mutation_rate accumulated to 1.0 (min 10s between)
-                    let signal_trigger =
-                        !self.flame_locked && self.mutation_accum >= 1.0 && time_since_last >= 10.0;
+                    let signal_trigger = !self.flame_locked
+                        && !self.mutation_paused
+                        && self.mutation_accum >= 1.0
+                        && time_since_last >= 10.0;
                     // Time-based: all morphed + cooldown elapsed
                     let cooldown = self.weights._config.mutation_cooldown;
-                    let time_trigger =
-                        !self.flame_locked && all_morphed && time_since_last >= cooldown;
+                    let time_trigger = !self.flame_locked
+                        && !self.mutation_paused
+                        && all_morphed
+                        && time_since_last >= cooldown;
 
                     if signal_trigger || time_trigger {
                         self.mutation_accum = 0.0;
