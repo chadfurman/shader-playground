@@ -2638,8 +2638,8 @@ struct App {
     mutation_paused: bool,
     last_cursor_move: Instant,
     pending_egui_textures: egui::TexturesDelta,
-    // Vote feedback popup state (now on main thread): (score, genome_name, text_input)
-    vote_feedback: Option<(i32, String, String)>,
+    // Vote feedback popup state: (score, genome_name, text_input, prev_genome_name)
+    vote_feedback: Option<(i32, String, String, Option<String>)>,
     // Config panel state (now on main thread)
     config_panel_open: bool,
     config_edit: Option<crate::weights::RuntimeConfig>,
@@ -2844,15 +2844,16 @@ impl App {
             }
 
             // Vote feedback popup — always visible when active
-            if let Some((score, ref genome_name, ref mut text)) = self.vote_feedback {
+            if let Some((score, ref genome_name, ref mut text, ref prev_name)) = self.vote_feedback
+            {
                 let ctx = ui.ctx();
                 let prompt = if score > 0 {
                     "What do you like about this?"
                 } else {
                     "What don't you like?"
                 };
-                let popup_w = 360.0;
-                let popup_h = 100.0;
+                let popup_w = 400.0;
+                let popup_h = 120.0;
                 egui::Area::new(egui::Id::new("vote_feedback"))
                     .fixed_pos(egui::pos2(
                         (screen_w - popup_w) * 0.5,
@@ -2871,7 +2872,21 @@ impl App {
                                         .size(14.0)
                                         .color(egui::Color32::WHITE),
                                 );
-                                ui.add_space(6.0);
+                                // Show genome context
+                                let dim = egui::Color32::from_rgb(120, 120, 120);
+                                ui.label(
+                                    egui::RichText::new(format!("current: {genome_name}"))
+                                        .size(9.0)
+                                        .color(dim),
+                                );
+                                if let Some(prev) = prev_name {
+                                    ui.label(
+                                        egui::RichText::new(format!("previous: {prev}"))
+                                            .size(9.0)
+                                            .color(dim),
+                                    );
+                                }
+                                ui.add_space(4.0);
                                 let response = ui.add(
                                     egui::TextEdit::singleline(text)
                                         .desired_width(popup_w - 32.0)
@@ -3591,7 +3606,15 @@ impl ApplicationHandler for App {
                     let igmm_path = dir.join("taste_model.json");
                     self.taste_engine.on_upvote(&self.genome, Some(&igmm_path));
                     self.rebuild_taste_model();
-                    self.vote_feedback = Some((1, vote_genome.name.clone(), String::new()));
+                    let existing_note = self
+                        .vote_ledger
+                        .entries
+                        .get(&vote_genome.name)
+                        .and_then(|e| e.note.clone())
+                        .unwrap_or_default();
+                    let prev_name = self.genome_history.last().map(|g| g.name.clone());
+                    self.vote_feedback =
+                        Some((1, vote_genome.name.clone(), existing_note, prev_name));
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} +1 (score: {})",
@@ -3609,7 +3632,15 @@ impl ApplicationHandler for App {
                     let score = self.vote_ledger.vote(&vote_genome, -1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
                     self.rebuild_taste_model();
-                    self.vote_feedback = Some((-1, vote_genome.name.clone(), String::new()));
+                    let existing_note = self
+                        .vote_ledger
+                        .entries
+                        .get(&vote_genome.name)
+                        .and_then(|e| e.note.clone())
+                        .unwrap_or_default();
+                    let prev_name = self.genome_history.last().map(|g| g.name.clone());
+                    self.vote_feedback =
+                        Some((-1, vote_genome.name.clone(), existing_note, prev_name));
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} -1 (score: {})",
