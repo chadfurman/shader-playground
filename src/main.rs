@@ -36,6 +36,7 @@ struct FrameData {
     hist_cdf_uniforms: [f32; 4],
     workgroups: u32,
     run_compute: bool,
+    hud: HudFrameData,
 }
 
 /// Commands sent from the main thread to the render thread.
@@ -52,8 +53,22 @@ enum RenderCommand {
     ReloadShader(String),
     /// Hot-reload the compute shader.
     ReloadComputeShader(String),
+    /// egui raw input collected on main thread.
+    EguiInput(egui::RawInput),
     /// Shut down the render thread.
     Shutdown,
+}
+
+/// Per-frame HUD data — sent with each FrameData.
+#[derive(Clone, Default)]
+struct HudFrameData {
+    fps: f32,
+    mutation_accum: f32,
+    time_since_mutation: f32,
+    cooldown: f32,
+    morph_progress: f32,
+    morph_xf_rates: [f32; 12],
+    num_transforms: usize,
 }
 
 // ── Uniforms ──
@@ -802,7 +817,9 @@ impl Gpu {
         );
     }
 
-    fn render(&mut self, run_compute: bool) {
+    /// Runs compute + display passes, returns the surface texture for overlay rendering.
+    /// Caller must call `.present()` on the returned texture after any overlay passes.
+    fn render(&mut self, run_compute: bool) -> Option<wgpu::SurfaceTexture> {
         // Phase 1: Submit compute work BEFORE acquiring swapchain image.
         let mut compute_encoder = self.device.create_command_encoder(&Default::default());
         compute_encoder.clear_buffer(&self.histogram_buffer, 0, None);
@@ -855,7 +872,7 @@ impl Gpu {
             Ok(f) => f,
             Err(_) => {
                 self.surface.configure(&self.device, &self.config);
-                return;
+                return None;
             }
         };
         let screen_view = frame.texture.create_view(&Default::default());
@@ -905,15 +922,24 @@ impl Gpu {
             pass.draw(0..3, 0..1);
         }
         self.queue.submit(std::iter::once(display_encoder.finish()));
-        frame.present();
         self.ping = !self.ping;
         self.render_frame_count += 1;
+        Some(frame)
     }
 }
 
 // ── Render Thread ──
 
 fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
+    // egui setup — context + renderer live on the render thread
+    let mut egui_renderer = egui_wgpu::Renderer::new(
+        &gpu.device,
+        gpu.config.format,
+        egui_wgpu::RendererOptions::default(),
+    );
+    let egui_ctx = egui::Context::default();
+    let mut last_raw_input = egui::RawInput::default();
+
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
@@ -943,7 +969,116 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                     bytemuck::cast_slice(&data.hist_cdf_uniforms),
                 );
                 gpu.workgroups = data.workgroups;
-                gpu.render(data.run_compute);
+
+                // Run fractal compute + display passes; get surface for overlay
+                if let Some(surface_texture) = gpu.render(data.run_compute) {
+                    let screen_view = surface_texture.texture.create_view(&Default::default());
+
+                    // Run egui — build UI, tessellate, render overlay
+                    let raw_input = mem::take(&mut last_raw_input);
+                    let hud = &data.hud;
+                    let egui_output = egui_ctx.run_ui(raw_input, |ui| {
+                        egui::Area::new(egui::Id::new("hud_overlay"))
+                            .fixed_pos(egui::pos2(10.0, 10.0))
+                            .show(ui.ctx(), |ui| {
+                                let green = egui::Color32::from_rgb(119, 255, 119);
+                                let dim = egui::Color32::from_rgb(160, 160, 160);
+                                ui.label(
+                                    egui::RichText::new(format!("{:.0} fps", hud.fps))
+                                        .color(green)
+                                        .size(14.0),
+                                );
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "xf:{} morph:{:.0}% accum:{:.2} cd:{:.0}/{:.0}s",
+                                        hud.num_transforms,
+                                        hud.morph_progress * 100.0,
+                                        hud.mutation_accum,
+                                        hud.time_since_mutation,
+                                        hud.cooldown,
+                                    ))
+                                    .color(dim)
+                                    .size(11.0),
+                                );
+                                // Show per-transform morph rates (compact)
+                                let active_rates: Vec<String> = hud
+                                    .morph_xf_rates
+                                    .iter()
+                                    .take(hud.num_transforms)
+                                    .map(|r| format!("{:.1}", r))
+                                    .collect();
+                                if !active_rates.is_empty() {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "rates:[{}]",
+                                            active_rates.join(",")
+                                        ))
+                                        .color(dim)
+                                        .size(10.0),
+                                    );
+                                }
+                            });
+                    });
+
+                    let pixels_per_point = egui_output.pixels_per_point;
+                    let clipped_primitives =
+                        egui_ctx.tessellate(egui_output.shapes, pixels_per_point);
+
+                    // Update egui textures
+                    for (id, image_delta) in &egui_output.textures_delta.set {
+                        egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, image_delta);
+                    }
+
+                    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+                        size_in_pixels: [gpu.config.width, gpu.config.height],
+                        pixels_per_point,
+                    };
+
+                    // Update egui buffers
+                    let mut egui_encoder = gpu.device.create_command_encoder(&Default::default());
+                    let egui_cmd_bufs = egui_renderer.update_buffers(
+                        &gpu.device,
+                        &gpu.queue,
+                        &mut egui_encoder,
+                        &clipped_primitives,
+                        &screen_descriptor,
+                    );
+
+                    // Render egui overlay — LoadOp::Load preserves the fractal
+                    {
+                        let egui_pass =
+                            egui_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("egui"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &screen_view,
+                                    resolve_target: None,
+                                    depth_slice: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                ..Default::default()
+                            });
+                        // egui_wgpu::Renderer::render needs RenderPass<'static>
+                        let mut egui_pass = egui_pass.forget_lifetime();
+                        egui_renderer.render(
+                            &mut egui_pass,
+                            &clipped_primitives,
+                            &screen_descriptor,
+                        );
+                    }
+
+                    let mut cmd_bufs: Vec<wgpu::CommandBuffer> = egui_cmd_bufs;
+                    cmd_bufs.push(egui_encoder.finish());
+                    gpu.queue.submit(cmd_bufs);
+                    surface_texture.present();
+
+                    // Free egui textures no longer needed
+                    for id in &egui_output.textures_delta.free {
+                        egui_renderer.free_texture(id);
+                    }
+                }
             }
             RenderCommand::Resize { width, height } => {
                 gpu.resize(width, height);
@@ -967,6 +1102,9 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                 gpu.compute_pipeline =
                     create_compute_pipeline(&gpu.device, &gpu.compute_pipeline_layout, &src);
                 eprintln!("[render-thread] compute shader reloaded");
+            }
+            RenderCommand::EguiInput(raw_input) => {
+                last_raw_input = raw_input;
             }
             RenderCommand::Shutdown => {
                 eprintln!("[render-thread] shutdown");
@@ -1608,6 +1746,7 @@ struct App {
     prev_zoom: f32,
     genome_frame_count: u32,
     genome_start_time: Instant,
+    egui_state: Option<egui_winit::State>,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1731,6 +1870,7 @@ impl App {
             prev_zoom: 3.0,
             genome_frame_count: 0,
             genome_start_time: Instant::now(),
+            egui_state: None,
         }
     }
 
@@ -2235,6 +2375,18 @@ impl ApplicationHandler for App {
         // Use configured dimensions — inner_size() returns 0×0 on macOS before window is shown
         self.gpu_width = self.weights._config.window_width.max(1);
         self.gpu_height = self.weights._config.window_height.max(1);
+
+        // Initialize egui input state on main thread
+        let egui_ctx = egui::Context::default();
+        self.egui_state = Some(egui_winit::State::new(
+            egui_ctx,
+            egui::ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        ));
+
         self.window = Some(window.clone());
         eprintln!(
             "[debug] window surface={}x{}, gpu_dims={}x{}, samples_per_frame={}, xf_range={}-{}, iters={}",
@@ -2270,6 +2422,16 @@ impl ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        // Forward events to egui for input handling
+        if let Some(egui_state) = &mut self.egui_state
+            && let Some(window) = &self.window
+        {
+            let response = egui_state.on_window_event(window, &event);
+            if response.consumed {
+                return;
+            }
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 if let Some(tx) = self.render_tx.take() {
@@ -2874,6 +3036,32 @@ impl ApplicationHandler for App {
                     self.morph_burst_frames -= 1;
                 }
 
+                // Send egui input to render thread
+                if let (Some(egui_state), Some(window), Some(tx)) =
+                    (&mut self.egui_state, &self.window, &self.render_tx)
+                {
+                    let raw_input = egui_state.take_egui_input(window);
+                    let _ = tx.try_send(RenderCommand::EguiInput(raw_input));
+                }
+
+                // Build HUD data for this frame
+                let time = self.start.elapsed().as_secs_f32();
+                let hud = HudFrameData {
+                    fps: 1.0 / dt,
+                    mutation_accum: self.mutation_accum,
+                    time_since_mutation: time - self.last_mutation_time,
+                    cooldown: self.weights._config.mutation_cooldown,
+                    morph_progress: self.morph_progress,
+                    morph_xf_rates: {
+                        let mut rates = [0.0f32; 12];
+                        for (i, r) in self.morph_xf_rates.iter().take(12).enumerate() {
+                            rates[i] = *r;
+                        }
+                        rates
+                    },
+                    num_transforms: self.num_transforms,
+                };
+
                 // Send to render thread
                 if let Some(tx) = &self.render_tx {
                     let frame_data = FrameData {
@@ -2883,6 +3071,7 @@ impl ApplicationHandler for App {
                         hist_cdf_uniforms,
                         workgroups: computed_workgroups,
                         run_compute: self.frame >= 3,
+                        hud,
                     };
                     let _ = tx.try_send(RenderCommand::Render(Box::new(frame_data)));
                 }
