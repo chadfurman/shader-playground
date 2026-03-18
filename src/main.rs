@@ -24,7 +24,7 @@ mod weights;
 use crate::audio::{AudioCapture, AudioFeatures};
 use crate::genome::{FavoriteProfile, FlameGenome};
 use crate::votes::VoteLedger;
-use crate::weights::{PARAMS_PER_XF, Weights};
+use crate::weights::{DRIFT_MOD_FIELD, PARAMS_PER_XF, SPIN_MOD_FIELD, Weights};
 
 // ── Render Thread Protocol ──
 
@@ -2612,8 +2612,8 @@ impl ApplicationHandler for App {
                     // Clamp per-transform spin_mod and drift_mod
                     let cfg = &self.weights._config;
                     for xf in 0..self.num_transforms {
-                        let spin_idx = xf * PARAMS_PER_XF + 48;
-                        let drift_idx = xf * PARAMS_PER_XF + 49;
+                        let spin_idx = xf * PARAMS_PER_XF + SPIN_MOD_FIELD;
+                        let drift_idx = xf * PARAMS_PER_XF + DRIFT_MOD_FIELD;
                         if spin_idx < self.xf_params.len() {
                             self.xf_params[spin_idx] =
                                 self.xf_params[spin_idx].clamp(0.0, cfg.spin_mod_max);

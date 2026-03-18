@@ -823,39 +823,39 @@ impl FlameGenome {
                 .get("rings2_val")
                 .copied()
                 .unwrap_or(0.5),
-        ); // 34
-        t.push(xf.variation_params.get("blob_low").copied().unwrap_or(0.2)); // 35
-        t.push(xf.variation_params.get("blob_high").copied().unwrap_or(1.0)); // 36
+        ); // 40
+        t.push(xf.variation_params.get("blob_low").copied().unwrap_or(0.2)); // 41
+        t.push(xf.variation_params.get("blob_high").copied().unwrap_or(1.0)); // 42
         t.push(
             xf.variation_params
                 .get("blob_waves")
                 .copied()
                 .unwrap_or(5.0),
-        ); // 37
+        ); // 43
         t.push(
             xf.variation_params
                 .get("julian_power")
                 .copied()
                 .unwrap_or(2.0),
-        ); // 38
+        ); // 44
         t.push(
             xf.variation_params
                 .get("julian_dist")
                 .copied()
                 .unwrap_or(1.0),
-        ); // 39
+        ); // 45
         t.push(
             xf.variation_params
                 .get("ngon_sides")
                 .copied()
                 .unwrap_or(4.0),
-        ); // 40
+        ); // 46
         t.push(
             xf.variation_params
                 .get("ngon_corners")
                 .copied()
                 .unwrap_or(2.0),
-        ); // 41
+        ); // 47
         // Per-transform audio modulation (default 1.0 = full participation)
         t.push(1.0); // 48 spin_mod
         t.push(1.0); // 49 drift_mod

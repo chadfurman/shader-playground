@@ -545,6 +545,8 @@ fn default_drift_mod_max() -> f32 {
 }
 
 const VARIATION_START: usize = 14; // first variation field index in each 50-float transform block
+pub const SPIN_MOD_FIELD: usize = 48; // per-transform spin modulation multiplier
+pub const DRIFT_MOD_FIELD: usize = 49; // per-transform drift modulation multiplier
 
 impl RuntimeConfig {
     /// Apply variation_scales to a flattened transform buffer.
