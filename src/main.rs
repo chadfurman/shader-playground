@@ -2655,7 +2655,7 @@ impl ApplicationHandler for App {
         // Spawn render thread — gpu moves into it permanently
         // Bounded channel (2 frames): prevents main thread from spinning faster than GPU
         // can consume, which would starve keyboard/mouse events.
-        let (tx, rx) = mpsc::sync_channel(2);
+        let (tx, rx) = mpsc::sync_channel(1);
         std::thread::Builder::new()
             .name("render".into())
             .spawn(move || render_thread_loop(rx, gpu))

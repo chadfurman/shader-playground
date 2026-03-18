@@ -218,7 +218,8 @@
   "highs": {},
   "energy": {
     "bloom_intensity": 0.02,
-    "xfN_spin_mod": 0.3
+    "xfN_spin_mod": 0.3,
+    "mutation_rate": 0.05
   },
   "beat": {
     "position_drift": 0.001,
@@ -238,9 +239,7 @@
   },
   "time_drift": {},
   "time_flutter": {},
-  "time_walk": {
-    "mutation_rate": 0.02
-  },
+  "time_walk": {},
   "time_envelope": {
     "drift_speed": 0.3
   }
