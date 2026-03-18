@@ -115,7 +115,8 @@ struct HudFrameData {
     // HUD fade config
     hud_fade_delay: f32,
     hud_fade_duration: f32,
-    mouse_moved_this_frame: bool,
+    /// Seconds since last cursor movement (computed on main thread).
+    time_since_cursor_move: f32,
 }
 
 // ── Uniforms ──
@@ -1911,7 +1912,6 @@ fn render_thread_loop(
         egui_wgpu::RendererOptions::default(),
     );
     let egui_ctx = egui::Context::default();
-    let mut last_mouse_move = Instant::now();
     // Vote feedback popup state: (score, genome_name, text_input)
     let mut vote_feedback: Option<(i32, String, String)> = None;
     // Config panel state
@@ -1958,13 +1958,12 @@ fn render_thread_loop(
                     let screen_w = gpu.config.width as f32;
                     let screen_h = gpu.config.height as f32;
 
-                    // Track mouse movement for HUD fade (flag set by main thread on CursorMoved)
-                    if data.hud.mouse_moved_this_frame {
-                        last_mouse_move = Instant::now();
-                    }
-                    let elapsed = last_mouse_move.elapsed().as_secs_f32();
-                    let hud_opacity =
-                        compute_hud_opacity(elapsed, hud.hud_fade_delay, hud.hud_fade_duration);
+                    // HUD fade — main thread computes time since last cursor move
+                    let hud_opacity = compute_hud_opacity(
+                        hud.time_since_cursor_move,
+                        hud.hud_fade_delay,
+                        hud.hud_fade_duration,
+                    );
 
                     // Track vote feedback actions to apply after egui closure
                     let mut vote_submit: Option<(String, Option<String>)> = None;
@@ -2823,7 +2822,7 @@ struct App {
     genome_start_time: Instant,
     egui_state: Option<egui_winit::State>,
     mutation_paused: bool,
-    cursor_moved: bool, // set on CursorMoved, cleared after building FrameData
+    last_cursor_move: Instant,
     egui_wants_keyboard: bool, // true when vote popup or config panel is capturing keys
 }
 
@@ -2951,7 +2950,7 @@ impl App {
             genome_start_time: Instant::now(),
             egui_state: None,
             mutation_paused: false,
-            cursor_moved: false,
+            last_cursor_move: Instant::now(),
             egui_wants_keyboard: false,
         }
     }
@@ -3509,7 +3508,7 @@ impl ApplicationHandler for App {
     ) {
         // Always track cursor movement (before egui consumes the event)
         if let WindowEvent::CursorMoved { position, .. } = &event {
-            self.cursor_moved = true;
+            self.last_cursor_move = Instant::now();
             self.mouse = [
                 position.x as f32 / self.gpu_width.max(1) as f32,
                 position.y as f32 / self.gpu_height.max(1) as f32,
@@ -4268,9 +4267,8 @@ impl ApplicationHandler for App {
                     },
                     hud_fade_delay: self.weights._config.hud_fade_delay,
                     hud_fade_duration: self.weights._config.hud_fade_duration,
-                    mouse_moved_this_frame: self.cursor_moved,
+                    time_since_cursor_move: self.last_cursor_move.elapsed().as_secs_f32(),
                 };
-                self.cursor_moved = false;
 
                 // Send to render thread
                 if let Some(tx) = &self.render_tx {
