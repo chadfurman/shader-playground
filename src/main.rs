@@ -36,8 +36,10 @@ struct FrameData {
     hist_cdf_uniforms: [f32; 4],
     workgroups: u32,
     run_compute: bool,
-    hud: HudFrameData,
-    egui_input: egui::RawInput,
+    /// Pre-tessellated egui paint jobs (built + tessellated on main thread).
+    egui_primitives: Vec<egui::ClippedPrimitive>,
+    egui_textures_delta: egui::TexturesDelta,
+    egui_pixels_per_point: f32,
 }
 
 /// Commands sent from the main thread to the render thread.
@@ -54,31 +56,8 @@ enum RenderCommand {
     ReloadShader(String),
     /// Hot-reload the compute shader.
     ReloadComputeShader(String),
-    /// A vote was cast — show the feedback popup on the render thread.
-    VoteCast { score: i32, genome_name: String },
-    /// Toggle the live config panel open/closed.
-    ToggleConfigPanel,
-    /// Snapshot of current RuntimeConfig for the config panel to edit.
-    ConfigSnapshot(Box<crate::weights::RuntimeConfig>),
     /// Shut down the render thread.
     Shutdown,
-}
-
-/// Commands sent from the render thread back to the main thread.
-enum UiCommand {
-    /// User submitted a note for a vote (or dismissed without one).
-    VoteNote {
-        genome_name: String,
-        note: Option<String>,
-    },
-    /// Live config panel updated a config value — apply immediately.
-    UpdateConfig(Box<crate::weights::RuntimeConfig>),
-    /// Save current weights to disk.
-    SaveConfig,
-    /// Pause or resume auto-mutation (while config panel is open).
-    PauseMutation(bool),
-    /// Tell main thread egui needs keyboard (text input active).
-    WantsKeyboard(bool),
 }
 
 /// Per-frame HUD data — sent with each FrameData.
@@ -115,8 +94,6 @@ struct HudFrameData {
     // HUD fade config
     hud_fade_delay: f32,
     hud_fade_duration: f32,
-    /// Seconds since last cursor movement (computed on main thread).
-    time_since_cursor_move: f32,
 }
 
 // ── Uniforms ──
@@ -1900,24 +1877,13 @@ fn compute_hud_opacity(elapsed: f32, fade_delay: f32, fade_duration: f32) -> f32
     (1.0 - fade_elapsed / fade_duration).clamp(0.0, 1.0)
 }
 
-fn render_thread_loop(
-    rx: mpsc::Receiver<RenderCommand>,
-    mut gpu: Gpu,
-    ui_tx: mpsc::Sender<UiCommand>,
-) {
-    // egui setup — context + renderer live on the render thread
+fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
+    // egui renderer lives on the render thread (needs GPU device/queue)
     let mut egui_renderer = egui_wgpu::Renderer::new(
         &gpu.device,
         gpu.config.format,
         egui_wgpu::RendererOptions::default(),
     );
-    let egui_ctx = egui::Context::default();
-    // Vote feedback popup state: (score, genome_name, text_input)
-    let mut vote_feedback: Option<(i32, String, String)> = None;
-    // Config panel state
-    let mut config_panel_open = false;
-    let mut config_edit: Option<crate::weights::RuntimeConfig> = None;
-    let mut config_tab: usize = 0; // 0=Config, 1=Rendering, 2=Breeding
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
@@ -1952,147 +1918,22 @@ fn render_thread_loop(
                 if let Some(surface_texture) = gpu.render(data.run_compute) {
                     let screen_view = surface_texture.texture.create_view(&Default::default());
 
-                    // Run egui — build full HUD overlay
-                    let raw_input = data.egui_input;
-                    let hud = &data.hud;
-                    let screen_w = gpu.config.width as f32;
-                    let screen_h = gpu.config.height as f32;
+                    // egui overlay — execute pre-built paint jobs from main thread
+                    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+                        size_in_pixels: [gpu.config.width, gpu.config.height],
+                        pixels_per_point: data.egui_pixels_per_point,
+                    };
 
-                    // HUD fade — main thread computes time since last cursor move
-                    let hud_opacity = compute_hud_opacity(
-                        hud.time_since_cursor_move,
-                        hud.hud_fade_delay,
-                        hud.hud_fade_duration,
-                    );
-
-                    // Track vote feedback actions to apply after egui closure
-                    let mut vote_submit: Option<(String, Option<String>)> = None;
-                    let mut config_changed = false;
-                    let mut config_save_requested = false;
-                    let egui_output = egui_ctx.run_ui(raw_input, |ui| {
-                        // Skip all panel building when fully faded out
-                        if hud_opacity > 0.0 {
-                            let ctx = ui.ctx();
-                            hud_panel_identity(ctx, hud, hud_opacity);
-                            hud_panel_progress(ctx, hud, screen_w, hud_opacity);
-                            hud_panel_audio(ctx, hud, hud_opacity);
-                            hud_panel_time(ctx, hud, hud_opacity);
-                            hud_panel_transforms(ctx, hud, screen_w, hud_opacity);
-                            hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity);
-                        }
-
-                        // Config panel — always visible when open (ignores HUD fade)
-                        if config_panel_open
-                            && let Some(ref mut cfg) = config_edit
-                        {
-                            let (changed, save) = config_panel_ui(
-                                ui.ctx(),
-                                cfg,
-                                &mut config_tab,
-                                screen_w,
-                                screen_h,
-                            );
-                            config_changed = changed;
-                            config_save_requested = save;
-                        }
-
-                        // Vote feedback popup — always visible when active
-                        if let Some((score, ref genome_name, ref mut text)) = vote_feedback {
-                            let ctx = ui.ctx();
-                            let prompt = if score > 0 {
-                                "What do you like about this?"
-                            } else {
-                                "What don't you like?"
-                            };
-                            let popup_w = 360.0;
-                            let popup_h = 100.0;
-                            egui::Area::new(egui::Id::new("vote_feedback"))
-                                .fixed_pos(egui::pos2(
-                                    (screen_w - popup_w) * 0.5,
-                                    (screen_h - popup_h) * 0.5,
-                                ))
-                                .show(ctx, |ui| {
-                                    egui::Frame::NONE
-                                        .fill(egui::Color32::from_rgba_premultiplied(
-                                            20, 20, 20, 200,
-                                        ))
-                                        .corner_radius(8.0)
-                                        .inner_margin(egui::Margin::same(16))
-                                        .show(ui, |ui| {
-                                            ui.set_min_width(popup_w - 32.0);
-                                            let arrow = if score > 0 { "\u{2191}" } else { "\u{2193}" };
-                                            ui.label(
-                                                egui::RichText::new(format!("{arrow} {prompt}"))
-                                                    .size(14.0)
-                                                    .color(egui::Color32::WHITE),
-                                            );
-                                            ui.add_space(6.0);
-                                            let response = ui.add(
-                                                egui::TextEdit::singleline(text)
-                                                    .desired_width(popup_w - 32.0)
-                                                    .hint_text("optional — press Enter to submit, Esc to skip"),
-                                            );
-                                            // Auto-focus the text input
-                                            if response.gained_focus()
-                                                || !response.has_focus()
-                                            {
-                                                response.request_focus();
-                                            }
-                                            // Enter = submit note, Esc = dismiss
-                                            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                                let note = if text.trim().is_empty() {
-                                                    None
-                                                } else {
-                                                    Some(text.trim().to_string())
-                                                };
-                                                vote_submit =
-                                                    Some((genome_name.clone(), note));
-                                            }
-                                            if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                                vote_submit =
-                                                    Some((genome_name.clone(), None));
-                                            }
-                                        });
-                                });
-                        }
-                    });
-
-                    // Apply vote feedback actions outside the egui closure
-                    if let Some((genome_name, note)) = vote_submit {
-                        let _ = ui_tx.send(UiCommand::VoteNote { genome_name, note });
-                        let _ = ui_tx.send(UiCommand::WantsKeyboard(false));
-                        vote_feedback = None;
-                    }
-
-                    // Send config updates to main thread
-                    if config_changed && let Some(ref cfg) = config_edit {
-                        let _ = ui_tx.send(UiCommand::UpdateConfig(Box::new(cfg.clone())));
-                    }
-                    if config_save_requested {
-                        let _ = ui_tx.send(UiCommand::SaveConfig);
-                    }
-
-                    let pixels_per_point = egui_output.pixels_per_point;
-                    let clipped_primitives =
-                        egui_ctx.tessellate(egui_output.shapes, pixels_per_point);
-
-                    // Update egui textures
-                    for (id, image_delta) in &egui_output.textures_delta.set {
+                    for (id, image_delta) in &data.egui_textures_delta.set {
                         egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, image_delta);
                     }
 
-                    let screen_descriptor = egui_wgpu::ScreenDescriptor {
-                        size_in_pixels: [gpu.config.width, gpu.config.height],
-                        pixels_per_point,
-                    };
-
-                    // Update egui buffers
                     let mut egui_encoder = gpu.device.create_command_encoder(&Default::default());
                     let egui_cmd_bufs = egui_renderer.update_buffers(
                         &gpu.device,
                         &gpu.queue,
                         &mut egui_encoder,
-                        &clipped_primitives,
+                        &data.egui_primitives,
                         &screen_descriptor,
                     );
 
@@ -2112,11 +1953,10 @@ fn render_thread_loop(
                                 })],
                                 ..Default::default()
                             });
-                        // egui_wgpu::Renderer::render needs RenderPass<'static>
                         let mut egui_pass = egui_pass.forget_lifetime();
                         egui_renderer.render(
                             &mut egui_pass,
-                            &clipped_primitives,
+                            &data.egui_primitives,
                             &screen_descriptor,
                         );
                     }
@@ -2126,8 +1966,7 @@ fn render_thread_loop(
                     gpu.queue.submit(cmd_bufs);
                     surface_texture.present();
 
-                    // Free egui textures no longer needed
-                    for id in &egui_output.textures_delta.free {
+                    for id in &data.egui_textures_delta.free {
                         egui_renderer.free_texture(id);
                     }
                 }
@@ -2154,30 +1993,6 @@ fn render_thread_loop(
                 gpu.compute_pipeline =
                     create_compute_pipeline(&gpu.device, &gpu.compute_pipeline_layout, &src);
                 eprintln!("[render-thread] compute shader reloaded");
-            }
-            RenderCommand::VoteCast { score, genome_name } => {
-                vote_feedback = Some((score, genome_name, String::new()));
-                let _ = ui_tx.send(UiCommand::WantsKeyboard(true));
-            }
-            RenderCommand::ToggleConfigPanel => {
-                config_panel_open = !config_panel_open;
-                let _ = ui_tx.send(UiCommand::PauseMutation(config_panel_open));
-                if !config_panel_open {
-                    config_edit = None;
-                }
-                eprintln!(
-                    "[config] panel {}",
-                    if config_panel_open {
-                        "opened"
-                    } else {
-                        "closed"
-                    }
-                );
-            }
-            RenderCommand::ConfigSnapshot(cfg) => {
-                if config_panel_open {
-                    config_edit = Some(*cfg);
-                }
             }
             RenderCommand::Shutdown => {
                 eprintln!("[render-thread] shutdown");
@@ -2775,7 +2590,6 @@ fn create_compute_pipeline(
 
 struct App {
     render_tx: Option<mpsc::SyncSender<RenderCommand>>,
-    ui_rx: Option<mpsc::Receiver<UiCommand>>,
     gpu_width: u32,
     gpu_height: u32,
     window: Option<Arc<Window>>,
@@ -2823,8 +2637,12 @@ struct App {
     egui_state: Option<egui_winit::State>,
     mutation_paused: bool,
     last_cursor_move: Instant,
-    pending_egui_events: Vec<egui::Event>, // events from dropped frames, prepended to next send
-    egui_wants_keyboard: bool,             // true when vote popup or config panel is capturing keys
+    // Vote feedback popup state (now on main thread): (score, genome_name, text_input)
+    vote_feedback: Option<(i32, String, String)>,
+    // Config panel state (now on main thread)
+    config_panel_open: bool,
+    config_edit: Option<crate::weights::RuntimeConfig>,
+    config_tab: usize,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -2893,7 +2711,6 @@ impl App {
         let num_transforms = genome.total_buffer_transforms();
         Self {
             render_tx: None,
-            ui_rx: None,
             gpu_width: 1,
             gpu_height: 1,
             window: None,
@@ -2952,8 +2769,10 @@ impl App {
             egui_state: None,
             mutation_paused: false,
             last_cursor_move: Instant::now(),
-            pending_egui_events: Vec::new(),
-            egui_wants_keyboard: false,
+            vote_feedback: None,
+            config_panel_open: false,
+            config_edit: None,
+            config_tab: 0,
         }
     }
 
@@ -2969,6 +2788,153 @@ impl App {
         } else {
             Some(profile)
         }
+    }
+
+    /// Build the full egui UI on the main thread: collect input, run all HUD panels +
+    /// vote popup + config panel, tessellate, and return paint jobs ready for the render thread.
+    fn build_egui_frame(
+        &mut self,
+        hud: &HudFrameData,
+    ) -> (Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32) {
+        let (egui_ctx, raw_input) =
+            if let (Some(egui_state), Some(window)) = (&mut self.egui_state, &self.window) {
+                let raw = egui_state.take_egui_input(window);
+                (egui_state.egui_ctx().clone(), raw)
+            } else {
+                return (Vec::new(), egui::TexturesDelta::default(), 1.0);
+            };
+
+        let screen_w = self.gpu_width as f32;
+        let screen_h = self.gpu_height as f32;
+
+        // HUD fade — compute opacity from cursor idle time
+        let hud_opacity = compute_hud_opacity(
+            self.last_cursor_move.elapsed().as_secs_f32(),
+            hud.hud_fade_delay,
+            hud.hud_fade_duration,
+        );
+
+        // Track vote/config actions to apply after the egui closure
+        let mut vote_submit: Option<(String, Option<String>)> = None;
+        let mut config_changed = false;
+        let mut config_save_requested = false;
+
+        let egui_output = egui_ctx.run_ui(raw_input, |ui| {
+            // HUD panels — skip when fully faded out
+            if hud_opacity > 0.0 {
+                let ctx = ui.ctx();
+                hud_panel_identity(ctx, hud, hud_opacity);
+                hud_panel_progress(ctx, hud, screen_w, hud_opacity);
+                hud_panel_audio(ctx, hud, hud_opacity);
+                hud_panel_time(ctx, hud, hud_opacity);
+                hud_panel_transforms(ctx, hud, screen_w, hud_opacity);
+                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity);
+            }
+
+            // Config panel — always visible when open (ignores HUD fade)
+            if self.config_panel_open
+                && let Some(ref mut cfg) = self.config_edit
+            {
+                let (changed, save) =
+                    config_panel_ui(ui.ctx(), cfg, &mut self.config_tab, screen_w, screen_h);
+                config_changed = changed;
+                config_save_requested = save;
+            }
+
+            // Vote feedback popup — always visible when active
+            if let Some((score, ref genome_name, ref mut text)) = self.vote_feedback {
+                let ctx = ui.ctx();
+                let prompt = if score > 0 {
+                    "What do you like about this?"
+                } else {
+                    "What don't you like?"
+                };
+                let popup_w = 360.0;
+                let popup_h = 100.0;
+                egui::Area::new(egui::Id::new("vote_feedback"))
+                    .fixed_pos(egui::pos2(
+                        (screen_w - popup_w) * 0.5,
+                        (screen_h - popup_h) * 0.5,
+                    ))
+                    .show(ctx, |ui| {
+                        egui::Frame::NONE
+                            .fill(egui::Color32::from_rgba_premultiplied(20, 20, 20, 200))
+                            .corner_radius(8.0)
+                            .inner_margin(egui::Margin::same(16))
+                            .show(ui, |ui| {
+                                ui.set_min_width(popup_w - 32.0);
+                                let arrow = if score > 0 { "\u{2191}" } else { "\u{2193}" };
+                                ui.label(
+                                    egui::RichText::new(format!("{arrow} {prompt}"))
+                                        .size(14.0)
+                                        .color(egui::Color32::WHITE),
+                                );
+                                ui.add_space(6.0);
+                                let response = ui.add(
+                                    egui::TextEdit::singleline(text)
+                                        .desired_width(popup_w - 32.0)
+                                        .hint_text(
+                                            "optional \u{2014} press Enter to submit, Esc to skip",
+                                        ),
+                                );
+                                // Auto-focus the text input
+                                if response.gained_focus() || !response.has_focus() {
+                                    response.request_focus();
+                                }
+                                // Enter = submit note, Esc = dismiss
+                                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                    let note = if text.trim().is_empty() {
+                                        None
+                                    } else {
+                                        Some(text.trim().to_string())
+                                    };
+                                    vote_submit = Some((genome_name.clone(), note));
+                                }
+                                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                    vote_submit = Some((genome_name.clone(), None));
+                                }
+                            });
+                    });
+            }
+        });
+
+        // Handle platform output (cursor changes, clipboard, etc.)
+        if let (Some(egui_state), Some(window)) = (&mut self.egui_state, &self.window) {
+            egui_state.handle_platform_output(window, egui_output.platform_output);
+        }
+
+        // Apply vote feedback actions
+        if let Some((genome_name, note)) = vote_submit {
+            if let Some(note_text) = note {
+                let dir = project_dir().join("genomes");
+                self.vote_ledger.attach_note(&genome_name, note_text, &dir);
+                eprintln!("[vote] note attached to {genome_name}");
+            }
+            self.vote_feedback = None;
+        }
+
+        // Apply config changes directly
+        if config_changed && let Some(ref cfg) = self.config_edit {
+            self.weights._config = cfg.clone();
+        }
+        if config_save_requested {
+            let path = weights_path();
+            match serde_json::to_string_pretty(&self.weights) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&path, json) {
+                        eprintln!("[config] save error: {e}");
+                    } else {
+                        eprintln!("[config] saved to {}", path.display());
+                    }
+                }
+                Err(e) => eprintln!("[config] serialize error: {e}"),
+            }
+        }
+
+        // Tessellate on main thread — send paint jobs to render thread
+        let pixels_per_point = egui_output.pixels_per_point;
+        let primitives = egui_ctx.tessellate(egui_output.shapes, pixels_per_point);
+        (primitives, egui_output.textures_delta, pixels_per_point)
     }
 
     /// If mid-morph, snapshot the interpolated state as a new genome. Otherwise return current.
@@ -3446,18 +3412,15 @@ impl ApplicationHandler for App {
         gpu.resize_transform_buffer(self.num_transforms);
 
         // Spawn render thread — gpu moves into it permanently
-        // Bounded channel (2 frames): prevents main thread from spinning faster than GPU
+        // Bounded channel (1 frame): prevents main thread from spinning faster than GPU
         // can consume, which would starve keyboard/mouse events.
         let (tx, rx) = mpsc::sync_channel(1);
-        // Reverse channel: render thread → main thread (for UI commands like vote notes)
-        let (ui_tx, ui_rx) = mpsc::channel();
         std::thread::Builder::new()
             .name("render".into())
-            .spawn(move || render_thread_loop(rx, gpu, ui_tx))
+            .spawn(move || render_thread_loop(rx, gpu))
             .expect("failed to spawn render thread");
 
         self.render_tx = Some(tx);
-        self.ui_rx = Some(ui_rx);
         // Use configured dimensions — inner_size() returns 0×0 on macOS before window is shown
         self.gpu_width = self.weights._config.window_width.max(1);
         self.gpu_height = self.weights._config.window_height.max(1);
@@ -3560,7 +3523,7 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } if !self.egui_wants_keyboard => match logical_key {
+            } if self.vote_feedback.is_none() && !self.config_panel_open => match logical_key {
                 Key::Named(NamedKey::Space) => {
                     self.genome_history.push(self.genome.clone());
                     if self.genome_history.len() > 10 {
@@ -3626,12 +3589,7 @@ impl ApplicationHandler for App {
                     let igmm_path = dir.join("taste_model.json");
                     self.taste_engine.on_upvote(&self.genome, Some(&igmm_path));
                     self.rebuild_taste_model();
-                    if let Some(tx) = &self.render_tx {
-                        let _ = tx.try_send(RenderCommand::VoteCast {
-                            score: 1,
-                            genome_name: vote_genome.name.clone(),
-                        });
-                    }
+                    self.vote_feedback = Some((1, vote_genome.name.clone(), String::new()));
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} +1 (score: {})",
@@ -3649,12 +3607,7 @@ impl ApplicationHandler for App {
                     let score = self.vote_ledger.vote(&vote_genome, -1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
                     self.rebuild_taste_model();
-                    if let Some(tx) = &self.render_tx {
-                        let _ = tx.try_send(RenderCommand::VoteCast {
-                            score: -1,
-                            genome_name: vote_genome.name.clone(),
-                        });
-                    }
+                    self.vote_feedback = Some((-1, vote_genome.name.clone(), String::new()));
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} -1 (score: {})",
@@ -3747,12 +3700,21 @@ impl ApplicationHandler for App {
                         );
                     }
                     "c" => {
-                        if let Some(tx) = &self.render_tx {
-                            let _ = tx.try_send(RenderCommand::ToggleConfigPanel);
-                            let _ = tx.try_send(RenderCommand::ConfigSnapshot(Box::new(
-                                self.weights._config.clone(),
-                            )));
+                        self.config_panel_open = !self.config_panel_open;
+                        self.mutation_paused = self.config_panel_open;
+                        if self.config_panel_open {
+                            self.config_edit = Some(self.weights._config.clone());
+                        } else {
+                            self.config_edit = None;
                         }
+                        eprintln!(
+                            "[config] panel {}",
+                            if self.config_panel_open {
+                                "opened"
+                            } else {
+                                "closed"
+                            }
+                        );
                     }
                     "i" => {
                         self.audio_info = !self.audio_info;
@@ -3788,42 +3750,6 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if self.frame < 3 {
                     eprintln!("[debug] RedrawRequested frame={}", self.frame);
-                }
-                // Poll reverse channel for UI commands from render thread
-                if let Some(ref ui_rx) = self.ui_rx {
-                    while let Ok(cmd) = ui_rx.try_recv() {
-                        match cmd {
-                            UiCommand::VoteNote { genome_name, note } => {
-                                if let Some(note_text) = note {
-                                    let dir = project_dir().join("genomes");
-                                    self.vote_ledger.attach_note(&genome_name, note_text, &dir);
-                                    eprintln!("[vote] note attached to {genome_name}");
-                                }
-                            }
-                            UiCommand::PauseMutation(paused) => {
-                                self.mutation_paused = paused;
-                            }
-                            UiCommand::WantsKeyboard(wants) => {
-                                self.egui_wants_keyboard = wants;
-                            }
-                            UiCommand::UpdateConfig(cfg) => {
-                                self.weights._config = *cfg;
-                            }
-                            UiCommand::SaveConfig => {
-                                let path = weights_path();
-                                match serde_json::to_string_pretty(&self.weights) {
-                                    Ok(json) => {
-                                        if let Err(e) = std::fs::write(&path, json) {
-                                            eprintln!("[config] save error: {e}");
-                                        } else {
-                                            eprintln!("[config] saved to {}", path.display());
-                                        }
-                                    }
-                                    Err(e) => eprintln!("[config] serialize error: {e}"),
-                                }
-                            }
-                        }
-                    }
                 }
                 self.check_file_changes();
 
@@ -4189,16 +4115,6 @@ impl ApplicationHandler for App {
                     self.morph_burst_frames -= 1;
                 }
 
-                // Send egui input to render thread
-                // Collect egui input for this frame
-                let egui_input = if let (Some(egui_state), Some(window)) =
-                    (&mut self.egui_state, &self.window)
-                {
-                    egui_state.take_egui_input(window)
-                } else {
-                    egui::RawInput::default()
-                };
-
                 // Build HUD data for this frame
                 let time = self.start.elapsed().as_secs_f32();
                 let hud_time_signals = crate::weights::TimeSignals::compute(
@@ -4269,18 +4185,13 @@ impl ApplicationHandler for App {
                     },
                     hud_fade_delay: self.weights._config.hud_fade_delay,
                     hud_fade_duration: self.weights._config.hud_fade_duration,
-                    time_since_cursor_move: self.last_cursor_move.elapsed().as_secs_f32(),
                 };
 
-                // Prepend any events from previously dropped frames
-                let mut egui_input = egui_input;
-                if !self.pending_egui_events.is_empty() {
-                    let mut merged = std::mem::take(&mut self.pending_egui_events);
-                    merged.append(&mut egui_input.events);
-                    egui_input.events = merged;
-                }
+                // Build egui UI on main thread — collect input, run panels, tessellate
+                let (egui_primitives, egui_textures_delta, egui_pixels_per_point) =
+                    self.build_egui_frame(&hud);
 
-                // Send to render thread — if channel is full, save events for next frame
+                // Send pre-built paint jobs to render thread
                 if let Some(tx) = &self.render_tx {
                     let frame_data = FrameData {
                         uniforms: final_uniforms,
@@ -4289,25 +4200,14 @@ impl ApplicationHandler for App {
                         hist_cdf_uniforms,
                         workgroups: computed_workgroups,
                         run_compute: self.frame >= 3,
-                        hud,
-                        egui_input,
+                        egui_primitives,
+                        egui_textures_delta,
+                        egui_pixels_per_point,
                     };
                     match tx.try_send(RenderCommand::Render(Box::new(frame_data))) {
                         Ok(()) => {}
-                        Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
-                            // Channel full — save keyboard/text events for next frame
-                            self.pending_egui_events.extend(
-                                dropped.egui_input.events.into_iter().filter(|e| {
-                                    matches!(
-                                        e,
-                                        egui::Event::Key { .. }
-                                            | egui::Event::Text(_)
-                                            | egui::Event::Ime(_)
-                                    )
-                                }),
-                            );
-                        }
-                        Err(_) => {} // disconnected
+                        Err(mpsc::TrySendError::Full(_)) => {} // drop frame
+                        Err(_) => {}                           // disconnected
                     }
                 }
                 self.frame += 1;
