@@ -37,6 +37,7 @@ struct FrameData {
     workgroups: u32,
     run_compute: bool,
     hud: HudFrameData,
+    egui_input: egui::RawInput,
 }
 
 /// Commands sent from the main thread to the render thread.
@@ -53,8 +54,6 @@ enum RenderCommand {
     ReloadShader(String),
     /// Hot-reload the compute shader.
     ReloadComputeShader(String),
-    /// egui raw input collected on main thread.
-    EguiInput(egui::RawInput),
     /// Shut down the render thread.
     Shutdown,
 }
@@ -1263,8 +1262,6 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
         egui_wgpu::RendererOptions::default(),
     );
     let egui_ctx = egui::Context::default();
-    let mut last_raw_input = egui::RawInput::default();
-
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
@@ -1300,7 +1297,7 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                     let screen_view = surface_texture.texture.create_view(&Default::default());
 
                     // Run egui — build full HUD overlay
-                    let raw_input = mem::take(&mut last_raw_input);
+                    let raw_input = data.egui_input;
                     let hud = &data.hud;
                     let screen_w = gpu.config.width as f32;
                     let screen_h = gpu.config.height as f32;
@@ -1396,9 +1393,6 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                 gpu.compute_pipeline =
                     create_compute_pipeline(&gpu.device, &gpu.compute_pipeline_layout, &src);
                 eprintln!("[render-thread] compute shader reloaded");
-            }
-            RenderCommand::EguiInput(raw_input) => {
-                last_raw_input = raw_input;
             }
             RenderCommand::Shutdown => {
                 eprintln!("[render-thread] shutdown");
@@ -3337,12 +3331,14 @@ impl ApplicationHandler for App {
                 }
 
                 // Send egui input to render thread
-                if let (Some(egui_state), Some(window), Some(tx)) =
-                    (&mut self.egui_state, &self.window, &self.render_tx)
+                // Collect egui input for this frame
+                let egui_input = if let (Some(egui_state), Some(window)) =
+                    (&mut self.egui_state, &self.window)
                 {
-                    let raw_input = egui_state.take_egui_input(window);
-                    let _ = tx.try_send(RenderCommand::EguiInput(raw_input));
-                }
+                    egui_state.take_egui_input(window)
+                } else {
+                    egui::RawInput::default()
+                };
 
                 // Build HUD data for this frame
                 let time = self.start.elapsed().as_secs_f32();
@@ -3406,6 +3402,7 @@ impl ApplicationHandler for App {
                         workgroups: computed_workgroups,
                         run_compute: self.frame >= 3,
                         hud,
+                        egui_input,
                     };
                     let _ = tx.try_send(RenderCommand::Render(Box::new(frame_data)));
                 }
