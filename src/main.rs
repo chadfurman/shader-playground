@@ -1681,6 +1681,7 @@ struct ConfigPanelState<'a> {
     tab: &'a mut usize,
     auto_position_panels: &'a mut bool,
     cached_audio_devices: &'a [String],
+    selected_audio_device: &'a mut String,
     refresh_audio_devices: &'a mut bool,
 }
 
@@ -1700,102 +1701,106 @@ fn config_panel_ui(
     let x = (screen_w - panel_w) * 0.5;
     let y = (screen_h - panel_h) * 0.5;
 
-    egui::Area::new(egui::Id::new("config_panel"))
-        .fixed_pos(egui::pos2(x, y))
-        .show(ctx, |ui| {
+    egui::Window::new("Config")
+        .id(egui::Id::new("config_panel"))
+        .collapsible(false)
+        .resizable(false)
+        .default_pos(egui::pos2(x, y))
+        .frame(
             egui::Frame::NONE
                 .fill(egui::Color32::from_rgba_premultiplied(15, 15, 15, 210))
                 .corner_radius(8.0)
-                .inner_margin(egui::Margin::same(12))
-                .show(ui, |ui| {
-                    ui.set_min_width(panel_w - 24.0);
-                    ui.label(
-                        egui::RichText::new("Config Panel")
-                            .size(14.0)
-                            .color(egui::Color32::WHITE),
-                    );
-                    ui.add_space(4.0);
+                .inner_margin(egui::Margin::same(12)),
+        )
+        .show(ctx, |ui| {
+            ui.set_min_width(panel_w - 24.0);
+            ui.label(
+                egui::RichText::new("Config Panel")
+                    .size(14.0)
+                    .color(egui::Color32::WHITE),
+            );
+            ui.add_space(4.0);
 
-                    // Tab buttons
-                    ui.horizontal(|ui| {
-                        for (i, name) in ["Config", "Rendering", "Breeding", "Signals", "Audio"]
-                            .iter()
-                            .enumerate()
-                        {
-                            let color = if *state.tab == i {
-                                egui::Color32::from_rgb(100, 200, 255)
-                            } else {
-                                egui::Color32::from_rgb(140, 140, 140)
-                            };
-                            if ui
-                                .add(egui::Button::new(
-                                    egui::RichText::new(*name).size(11.0).color(color),
-                                ))
-                                .clicked()
-                            {
-                                *state.tab = i;
-                            }
-                        }
-                    });
-                    ui.add_space(4.0);
+            // Tab buttons
+            ui.horizontal(|ui| {
+                for (i, name) in ["Config", "Rendering", "Breeding", "Signals", "Audio"]
+                    .iter()
+                    .enumerate()
+                {
+                    let color = if *state.tab == i {
+                        egui::Color32::from_rgb(100, 200, 255)
+                    } else {
+                        egui::Color32::from_rgb(140, 140, 140)
+                    };
+                    if ui
+                        .add(egui::Button::new(
+                            egui::RichText::new(*name).size(11.0).color(color),
+                        ))
+                        .clicked()
+                    {
+                        *state.tab = i;
+                    }
+                }
+            });
+            ui.add_space(4.0);
 
-                    // Tab content in a scroll area
-                    egui::ScrollArea::vertical()
-                        .max_height(380.0)
-                        .show(ui, |ui| match *state.tab {
-                            0 => changed = config_tab_main(ui, &mut state.weights._config),
-                            1 => changed = config_tab_rendering(ui, &mut state.weights._config),
-                            2 => changed = config_tab_breeding(ui, &mut state.weights._config),
-                            3 => changed = config_tab_signals(ui, state.weights),
-                            4 => config_tab_audio(
-                                ui,
-                                state.cached_audio_devices,
-                                state.refresh_audio_devices,
-                            ),
-                            _ => {}
-                        });
-
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add(egui::Button::new(
-                                egui::RichText::new("Save")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(100, 255, 100)),
-                            ))
-                            .clicked()
-                        {
-                            save = true;
-                        }
-                        if ui
-                            .add(egui::Button::new(
-                                egui::RichText::new("Reset")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(255, 200, 100)),
-                            ))
-                            .clicked()
-                        {
-                            reset = true;
-                        }
-                        if ui
-                            .add(egui::Button::new(
-                                egui::RichText::new("Cancel")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(200, 100, 100)),
-                            ))
-                            .clicked()
-                        {
-                            cancel = true;
-                        }
-                        ui.add_space(8.0);
-                        ui.add(egui::Checkbox::new(
-                            state.auto_position_panels,
-                            egui::RichText::new("Auto-position")
-                                .size(11.0)
-                                .color(egui::Color32::from_rgb(180, 180, 255)),
-                        ));
-                    });
+            // Tab content in a scroll area
+            egui::ScrollArea::vertical()
+                .max_height(380.0)
+                .show(ui, |ui| match *state.tab {
+                    0 => changed = config_tab_main(ui, &mut state.weights._config),
+                    1 => changed = config_tab_rendering(ui, &mut state.weights._config),
+                    2 => changed = config_tab_breeding(ui, &mut state.weights._config),
+                    3 => changed = config_tab_signals(ui, state.weights),
+                    4 => config_tab_audio(
+                        ui,
+                        state.cached_audio_devices,
+                        state.selected_audio_device,
+                        state.refresh_audio_devices,
+                    ),
+                    _ => {}
                 });
+
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Save")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(100, 255, 100)),
+                    ))
+                    .clicked()
+                {
+                    save = true;
+                }
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Reset")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(255, 200, 100)),
+                    ))
+                    .clicked()
+                {
+                    reset = true;
+                }
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Cancel")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(200, 100, 100)),
+                    ))
+                    .clicked()
+                {
+                    cancel = true;
+                }
+                ui.add_space(8.0);
+                ui.add(egui::Checkbox::new(
+                    state.auto_position_panels,
+                    egui::RichText::new("Auto-position")
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(180, 180, 255)),
+                ));
+            });
         });
     ConfigAction {
         changed,
@@ -2066,40 +2071,52 @@ fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) 
     changed
 }
 
-/// Audio tab: show cached audio device list (no per-frame enumeration).
-fn config_tab_audio(ui: &mut egui::Ui, cached_devices: &[String], refresh: &mut bool) {
+/// Audio tab: dropdown device selector + refresh.
+fn config_tab_audio(
+    ui: &mut egui::Ui,
+    cached_devices: &[String],
+    selected_device: &mut String,
+    refresh: &mut bool,
+) {
     let dim = egui::Color32::from_rgb(160, 160, 160);
     ui.label(
-        egui::RichText::new("Audio Devices")
+        egui::RichText::new("Audio Device")
             .size(12.0)
             .color(egui::Color32::WHITE),
     );
     ui.add_space(4.0);
 
-    // System Audio option (always available)
-    ui.label(
-        egui::RichText::new("System Audio (ScreenCaptureKit)")
-            .size(10.0)
-            .color(egui::Color32::from_rgb(100, 200, 255)),
-    );
-    ui.add_space(4.0);
+    // Build device options: System Audio first, then cached devices
+    let system_audio = "System Audio (ScreenCaptureKit)".to_string();
+    let mut all_devices = vec![system_audio.clone()];
+    all_devices.extend_from_slice(cached_devices);
 
-    if cached_devices.is_empty() {
-        ui.label(
-            egui::RichText::new("No devices found")
-                .size(10.0)
-                .color(egui::Color32::from_rgb(200, 100, 100)),
-        );
-    } else {
-        for entry in cached_devices {
-            ui.label(egui::RichText::new(entry).size(9.0).color(dim));
-        }
+    // Default to system audio if nothing selected
+    if selected_device.is_empty() {
+        *selected_device = system_audio;
     }
+
+    egui::ComboBox::from_label(egui::RichText::new("Device").size(10.0).color(dim))
+        .width(280.0)
+        .selected_text(
+            egui::RichText::new(selected_device.as_str())
+                .size(10.0)
+                .color(egui::Color32::from_rgb(100, 200, 255)),
+        )
+        .show_ui(ui, |ui| {
+            for device in &all_devices {
+                ui.selectable_value(
+                    selected_device,
+                    device.clone(),
+                    egui::RichText::new(device).size(10.0),
+                );
+            }
+        });
 
     ui.add_space(4.0);
     if ui
         .add(egui::Button::new(
-            egui::RichText::new("Refresh")
+            egui::RichText::new("Refresh devices")
                 .size(10.0)
                 .color(egui::Color32::from_rgb(100, 200, 255)),
         ))
@@ -2949,6 +2966,7 @@ struct App {
     auto_position_panels: bool,
     // Cached audio device names (populated once, refreshed on demand)
     cached_audio_devices: Vec<String>,
+    selected_audio_device: String,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -3082,6 +3100,7 @@ impl App {
             config_tab: 0,
             auto_position_panels: true,
             cached_audio_devices: enumerate_audio_devices(),
+            selected_audio_device: String::new(),
         }
     }
 
@@ -3155,6 +3174,7 @@ impl App {
                     tab: &mut self.config_tab,
                     auto_position_panels: &mut self.auto_position_panels,
                     cached_audio_devices: &self.cached_audio_devices,
+                    selected_audio_device: &mut self.selected_audio_device,
                     refresh_audio_devices: &mut refresh_audio_devices,
                 };
                 config_action = config_panel_ui(ui.ctx(), &mut panel_state, screen_w, screen_h);
