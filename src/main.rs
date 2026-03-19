@@ -4235,14 +4235,17 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
-                // Throttle: if the render channel was full last frame, skip all heavy work.
-                // Just request another redraw and try again — keeps winit event loop responsive.
+                // Throttle: skip heavy work when render channel was recently full.
+                // Only clear after enough time for the render thread to consume.
                 if self.render_channel_full {
-                    self.render_channel_full = false;
-                    if let Some(w) = &self.window {
-                        w.request_redraw();
+                    let since_last = self.last_frame_time.elapsed();
+                    if since_last < std::time::Duration::from_millis(4) {
+                        if let Some(w) = &self.window {
+                            w.request_redraw();
+                        }
+                        return;
                     }
-                    return;
+                    self.render_channel_full = false;
                 }
 
                 if self.frame < 3 {
