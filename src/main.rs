@@ -1043,12 +1043,12 @@ fn fade_color(c: egui::Color32, opacity: f32) -> egui::Color32 {
 }
 
 /// Create a HUD window with a minimal title-bar drag handle.
-/// When `auto_position` is true the window is pinned to `pos` every frame.
+/// When `override_pos` is Some, the window is forced to that position for one frame.
 fn hud_window(
     name: &str,
-    pos: egui::Pos2,
+    default_pos: egui::Pos2,
     opacity: f32,
-    auto_position: bool,
+    override_pos: Option<egui::Pos2>,
 ) -> egui::Window<'static> {
     let mut win = egui::Window::new(
         egui::RichText::new("≡")
@@ -1058,9 +1058,9 @@ fn hud_window(
     .id(egui::Id::new(name))
     .collapsible(false)
     .resizable(false)
-    .default_pos(pos)
+    .default_pos(default_pos)
     .frame(hud_frame(opacity));
-    if auto_position {
+    if let Some(pos) = override_pos {
         win = win.current_pos(pos);
     }
     win
@@ -1072,9 +1072,14 @@ fn disable_text_selection(ui: &mut egui::Ui) {
 }
 
 /// Top-left: Identity panel — FPS, transform count, mutation info.
-fn hud_panel_identity(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, auto_position: bool) {
-    let pos = egui::pos2(10.0, 10.0);
-    hud_window("hud_identity", pos, opacity, auto_position).show(ctx, |ui| {
+fn hud_panel_identity(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(10.0, 10.0);
+    hud_window("hud_identity", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         ui.label(
             egui::RichText::new(format!("{:.0} fps", hud.fps))
@@ -1104,10 +1109,10 @@ fn hud_panel_progress(
     hud: &HudFrameData,
     screen_w: f32,
     opacity: f32,
-    auto_position: bool,
+    override_pos: Option<egui::Pos2>,
 ) {
-    let pos = egui::pos2(screen_w - 220.0, 10.0);
-    hud_window("hud_progress", pos, opacity, auto_position).show(ctx, |ui| {
+    let default_pos = egui::pos2(screen_w - 220.0, 10.0);
+    hud_window("hud_progress", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
@@ -1174,9 +1179,14 @@ fn hud_panel_progress(
 }
 
 /// Left side: Audio signals panel.
-fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, auto_position: bool) {
-    let pos = egui::pos2(10.0, 90.0);
-    hud_window("hud_audio", pos, opacity, auto_position).show(ctx, |ui| {
+fn hud_panel_audio(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(10.0, 90.0);
+    hud_window("hud_audio", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         ui.label(egui::RichText::new("audio").size(10.0).color(dim));
@@ -1239,9 +1249,14 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, auto_p
 }
 
 /// Left side: Time signals panel (below audio).
-fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, auto_position: bool) {
-    let pos = egui::pos2(10.0, 310.0);
-    hud_window("hud_time", pos, opacity, auto_position).show(ctx, |ui| {
+fn hud_panel_time(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(10.0, 310.0);
+    hud_window("hud_time", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
@@ -1603,10 +1618,10 @@ fn hud_panel_transforms(
     hud: &HudFrameData,
     screen_w: f32,
     opacity: f32,
-    auto_position: bool,
+    override_pos: Option<egui::Pos2>,
 ) {
-    let pos = egui::pos2(screen_w - 220.0, 250.0);
-    hud_window("hud_transforms", pos, opacity, auto_position).show(ctx, |ui| {
+    let default_pos = egui::pos2(screen_w - 220.0, 250.0);
+    hud_window("hud_transforms", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         ui.label(egui::RichText::new("transforms").size(10.0).color(dim));
@@ -1637,10 +1652,10 @@ fn hud_panel_hotkeys(
     screen_w: f32,
     screen_h: f32,
     opacity: f32,
-    auto_position: bool,
+    override_pos: Option<egui::Pos2>,
 ) {
-    let pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0);
-    let win = hud_window("hud_hotkeys", pos, opacity, auto_position)
+    let default_pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0);
+    let win = hud_window("hud_hotkeys", default_pos, opacity, override_pos)
         .frame(hud_frame(opacity).inner_margin(egui::Margin::symmetric(10, 4)));
     win.show(ctx, |ui| {
         disable_text_selection(ui);
@@ -1679,7 +1694,7 @@ struct ConfigAction {
 struct ConfigPanelState<'a> {
     weights: &'a mut crate::weights::Weights,
     tab: &'a mut usize,
-    auto_position_panels: &'a mut bool,
+    reposition_panels: &'a mut bool,
     cached_audio_devices: &'a [String],
     selected_audio_device: &'a mut String,
     refresh_audio_devices: &'a mut bool,
@@ -1794,12 +1809,16 @@ fn config_panel_ui(
                     cancel = true;
                 }
                 ui.add_space(8.0);
-                ui.add(egui::Checkbox::new(
-                    state.auto_position_panels,
-                    egui::RichText::new("Auto-position")
-                        .size(11.0)
-                        .color(egui::Color32::from_rgb(180, 180, 255)),
-                ));
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Reset positions")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(180, 180, 255)),
+                    ))
+                    .clicked()
+                {
+                    *state.reposition_panels = true;
+                }
             });
         });
     ConfigAction {
@@ -2962,8 +2981,10 @@ struct App {
     config_edit: Option<crate::weights::RuntimeConfig>,
     config_edit_weights: Option<crate::weights::Weights>,
     config_tab: usize,
-    // When true, HUD panels are pinned to their default positions every frame
-    auto_position_panels: bool,
+    // Previous screen size for resize-aware panel repositioning
+    prev_screen_size: (f32, f32),
+    // One-shot flag: reset HUD panels to default non-overlapping positions
+    reposition_panels: bool,
     // Cached audio device names (populated once, refreshed on demand)
     cached_audio_devices: Vec<String>,
     selected_audio_device: String,
@@ -3098,7 +3119,8 @@ impl App {
             config_edit: None,
             config_edit_weights: None,
             config_tab: 0,
-            auto_position_panels: true,
+            prev_screen_size: (1.0, 1.0),
+            reposition_panels: true,
             cached_audio_devices: enumerate_audio_devices(),
             selected_audio_device: String::new(),
         }
@@ -3142,6 +3164,64 @@ impl App {
             hud.hud_fade_duration,
         );
 
+        // --- Resize-aware panel repositioning ---
+        // Detect window size change and compute per-panel position overrides so
+        // panels maintain their distance from the nearest edge.
+        let size_changed = (screen_w - self.prev_screen_size.0).abs() > 0.5
+            || (screen_h - self.prev_screen_size.1).abs() > 0.5;
+        let dw = screen_w - self.prev_screen_size.0;
+        let dh = screen_h - self.prev_screen_size.1;
+        let old_w = self.prev_screen_size.0;
+        let old_h = self.prev_screen_size.1;
+        self.prev_screen_size = (screen_w, screen_h);
+
+        // Build per-panel override positions for this frame.
+        // - On resize: shift panels that are right-anchored / bottom-anchored
+        // - On reposition (reset button): snap to default non-overlapping layout
+        // - Otherwise: None (let egui manage drag state)
+        let panel_ids: [&str; 6] = [
+            "hud_identity",
+            "hud_progress",
+            "hud_audio",
+            "hud_time",
+            "hud_transforms",
+            "hud_hotkeys",
+        ];
+
+        let override_positions: [Option<egui::Pos2>; 6] = if self.reposition_panels {
+            // One-shot reset to default non-overlapping positions
+            self.reposition_panels = false;
+            [
+                Some(egui::pos2(10.0, 10.0)),                              // identity
+                Some(egui::pos2(screen_w - 220.0, 10.0)),                  // progress
+                Some(egui::pos2(10.0, 90.0)),                              // audio
+                Some(egui::pos2(10.0, 310.0)),                             // time
+                Some(egui::pos2(screen_w - 220.0, 250.0)),                 // transforms
+                Some(egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0)), // hotkeys
+            ]
+        } else if size_changed {
+            // Shift panels based on their anchor edge
+            let mut positions: [Option<egui::Pos2>; 6] = [None; 6];
+            for (i, name) in panel_ids.iter().enumerate() {
+                let id = egui::Id::new(*name);
+                if let Some(rect) = egui_ctx.memory(|m| m.area_rect(id)) {
+                    let mut pos = rect.min;
+                    // Right-anchored if panel center is past 40% of old width
+                    if pos.x > old_w * 0.4 {
+                        pos.x += dw;
+                    }
+                    // Bottom-anchored if panel center is past 60% of old height
+                    if pos.y > old_h * 0.6 {
+                        pos.y += dh;
+                    }
+                    positions[i] = Some(pos);
+                }
+            }
+            positions
+        } else {
+            [None; 6]
+        };
+
         // Track vote/config actions to apply after the egui closure
         let mut vote_submit: Option<(String, Option<String>)> = None;
         let mut config_action = ConfigAction {
@@ -3156,13 +3236,12 @@ impl App {
             // HUD panels — skip when fully faded out
             if hud_opacity > 0.0 {
                 let ctx = ui.ctx();
-                let auto_pos = self.auto_position_panels;
-                hud_panel_identity(ctx, hud, hud_opacity, auto_pos);
-                hud_panel_progress(ctx, hud, screen_w, hud_opacity, auto_pos);
-                hud_panel_audio(ctx, hud, hud_opacity, auto_pos);
-                hud_panel_time(ctx, hud, hud_opacity, auto_pos);
-                hud_panel_transforms(ctx, hud, screen_w, hud_opacity, auto_pos);
-                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity, auto_pos);
+                hud_panel_identity(ctx, hud, hud_opacity, override_positions[0]);
+                hud_panel_progress(ctx, hud, screen_w, hud_opacity, override_positions[1]);
+                hud_panel_audio(ctx, hud, hud_opacity, override_positions[2]);
+                hud_panel_time(ctx, hud, hud_opacity, override_positions[3]);
+                hud_panel_transforms(ctx, hud, screen_w, hud_opacity, override_positions[4]);
+                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity, override_positions[5]);
             }
 
             // Config panel — always visible when open (ignores HUD fade)
@@ -3172,7 +3251,7 @@ impl App {
                 let mut panel_state = ConfigPanelState {
                     weights: edit_weights,
                     tab: &mut self.config_tab,
-                    auto_position_panels: &mut self.auto_position_panels,
+                    reposition_panels: &mut self.reposition_panels,
                     cached_audio_devices: &self.cached_audio_devices,
                     selected_audio_device: &mut self.selected_audio_device,
                     refresh_audio_devices: &mut refresh_audio_devices,
