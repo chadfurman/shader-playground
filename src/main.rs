@@ -4675,15 +4675,28 @@ impl UiState {
 
 fn ui_thread_loop(rx: mpsc::Receiver<UiEvent>, mut state: UiState) {
     let mut last_tick = Instant::now();
+    let mut pending_input: Option<egui::RawInput> = None;
     loop {
         match rx.recv() {
             Ok(UiEvent::EguiInput(raw_input)) => {
-                // 120fps cap — skip if too soon since last tick
+                // Merge events into pending buffer — NEVER drop pointer/key events
+                if let Some(ref mut pending) = pending_input {
+                    pending.events.extend(raw_input.events);
+                    pending.time = raw_input.time;
+                    pending.predicted_dt = raw_input.predicted_dt;
+                    pending.screen_rect = raw_input.screen_rect;
+                    pending.modifiers = raw_input.modifiers;
+                } else {
+                    pending_input = Some(raw_input);
+                }
+                // 120fps cap — accumulate but only tick when enough time passed
                 if state.frame >= 3 && last_tick.elapsed() < Duration::from_micros(8333) {
                     continue;
                 }
                 last_tick = Instant::now();
-                state.tick(raw_input);
+                if let Some(input) = pending_input.take() {
+                    state.tick(input);
+                }
             }
             Ok(UiEvent::CursorMoved { x, y }) => {
                 state.on_cursor_moved(x, y);
