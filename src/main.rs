@@ -1633,16 +1633,26 @@ fn hud_panel_hotkeys(ctx: &egui::Context, screen_w: f32, screen_h: f32, opacity:
 
 // ── Config Panel ──
 
-/// Main config panel UI. Returns (config_changed, save_requested).
+/// Config panel actions.
+struct ConfigAction {
+    changed: bool,
+    save: bool,
+    reset: bool,
+    cancel: bool,
+}
+
+/// Main config panel UI.
 fn config_panel_ui(
     ctx: &egui::Context,
     cfg: &mut crate::weights::RuntimeConfig,
     tab: &mut usize,
     screen_w: f32,
     screen_h: f32,
-) -> (bool, bool) {
+) -> ConfigAction {
     let mut changed = false;
     let mut save = false;
+    let mut reset = false;
+    let mut cancel = false;
     let panel_w = 300.0;
     let panel_h = 420.0;
     let x = (screen_w - panel_w) * 0.5;
@@ -1695,19 +1705,46 @@ fn config_panel_ui(
                         });
 
                     ui.add_space(6.0);
-                    if ui
-                        .add(egui::Button::new(
-                            egui::RichText::new("Save to disk")
-                                .size(11.0)
-                                .color(egui::Color32::from_rgb(100, 255, 100)),
-                        ))
-                        .clicked()
-                    {
-                        save = true;
-                    }
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(egui::Button::new(
+                                egui::RichText::new("Save")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(100, 255, 100)),
+                            ))
+                            .clicked()
+                        {
+                            save = true;
+                        }
+                        if ui
+                            .add(egui::Button::new(
+                                egui::RichText::new("Reset")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(255, 200, 100)),
+                            ))
+                            .clicked()
+                        {
+                            reset = true;
+                        }
+                        if ui
+                            .add(egui::Button::new(
+                                egui::RichText::new("Cancel")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(200, 100, 100)),
+                            ))
+                            .clicked()
+                        {
+                            cancel = true;
+                        }
+                    });
                 });
         });
-    (changed, save)
+    ConfigAction {
+        changed,
+        save,
+        reset,
+        cancel,
+    }
 }
 
 /// Config tab: morph, mutation, motion, and accumulation sliders.
@@ -2635,7 +2672,6 @@ struct App {
     genome_frame_count: u32,
     genome_start_time: Instant,
     egui_state: Option<egui_winit::State>,
-    mutation_paused: bool,
     last_cursor_move: Instant,
     pending_egui_textures: egui::TexturesDelta,
     // Vote feedback popup state: (score, genome_name, text_input, prev_genome_name)
@@ -2768,7 +2804,6 @@ impl App {
             genome_frame_count: 0,
             genome_start_time: Instant::now(),
             egui_state: None,
-            mutation_paused: false,
             last_cursor_move: Instant::now(),
             pending_egui_textures: egui::TexturesDelta::default(),
             vote_feedback: None,
@@ -2818,8 +2853,12 @@ impl App {
 
         // Track vote/config actions to apply after the egui closure
         let mut vote_submit: Option<(String, Option<String>)> = None;
-        let mut config_changed = false;
-        let mut config_save_requested = false;
+        let mut config_action = ConfigAction {
+            changed: false,
+            save: false,
+            reset: false,
+            cancel: false,
+        };
 
         let egui_output = egui_ctx.run_ui(raw_input, |ui| {
             // HUD panels — skip when fully faded out
@@ -2837,10 +2876,8 @@ impl App {
             if self.config_panel_open
                 && let Some(ref mut cfg) = self.config_edit
             {
-                let (changed, save) =
+                config_action =
                     config_panel_ui(ui.ctx(), cfg, &mut self.config_tab, screen_w, screen_h);
-                config_changed = changed;
-                config_save_requested = save;
             }
 
             // Vote feedback popup — always visible when active
@@ -2930,11 +2967,17 @@ impl App {
             self.vote_feedback = None;
         }
 
-        // Apply config changes directly
-        if config_changed && let Some(ref cfg) = self.config_edit {
+        // Apply config actions
+        if config_action.changed
+            && let Some(ref cfg) = self.config_edit
+        {
             self.weights._config = cfg.clone();
         }
-        if config_save_requested {
+        if config_action.save {
+            // Save applies edit to live config AND writes to disk
+            if let Some(ref cfg) = self.config_edit {
+                self.weights._config = cfg.clone();
+            }
             let path = weights_path();
             match serde_json::to_string_pretty(&self.weights) {
                 Ok(json) => {
@@ -2945,6 +2988,24 @@ impl App {
                     }
                 }
                 Err(e) => eprintln!("[config] serialize error: {e}"),
+            }
+            self.config_panel_open = false;
+            self.config_edit = None;
+        }
+        if config_action.reset {
+            // Reset to serde defaults
+            self.config_edit = Some(serde_json::from_str("{}").unwrap());
+            self.weights._config = self.config_edit.clone().unwrap();
+            eprintln!("[config] reset to defaults");
+        }
+        if config_action.cancel {
+            // Revert to what was on disk before editing
+            self.config_edit = None;
+            self.config_panel_open = false;
+            // Reload from disk
+            if let Ok(w) = crate::weights::Weights::load(&weights_path()) {
+                self.weights = w;
+                eprintln!("[config] cancelled — reverted to saved config");
             }
         }
 
@@ -3315,7 +3376,7 @@ impl App {
             self.morph_base_globals[..n].copy_from_slice(&override_params[..n]);
             eprintln!("[params] reloaded (overriding globals)");
         }
-        if reload_weights && !self.mutation_paused {
+        if reload_weights {
             match Weights::load(&weights_path()) {
                 Ok(w) => {
                     self.weights = w;
@@ -3540,7 +3601,7 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } if self.vote_feedback.is_none() && !self.config_panel_open => match logical_key {
+            } if self.vote_feedback.is_none() => match logical_key {
                 Key::Named(NamedKey::Space) => {
                     self.genome_history.push(self.genome.clone());
                     if self.genome_history.len() > 10 {
@@ -3734,7 +3795,6 @@ impl ApplicationHandler for App {
                     }
                     "c" => {
                         self.config_panel_open = !self.config_panel_open;
-                        self.mutation_paused = self.config_panel_open;
                         if self.config_panel_open {
                             self.config_edit = Some(self.weights._config.clone());
                         } else {
@@ -3909,16 +3969,12 @@ impl ApplicationHandler for App {
                         || self.morph_xf_rates.is_empty();
 
                     // Signal-driven: mutation_rate accumulated to 1.0 (min 10s between)
-                    let signal_trigger = !self.flame_locked
-                        && !self.mutation_paused
-                        && self.mutation_accum >= 1.0
-                        && time_since_last >= 10.0;
+                    let signal_trigger =
+                        !self.flame_locked && self.mutation_accum >= 1.0 && time_since_last >= 10.0;
                     // Time-based: all morphed + cooldown elapsed
                     let cooldown = self.weights._config.mutation_cooldown;
-                    let time_trigger = !self.flame_locked
-                        && !self.mutation_paused
-                        && all_morphed
-                        && time_since_last >= cooldown;
+                    let time_trigger =
+                        !self.flame_locked && all_morphed && time_since_last >= cooldown;
 
                     if signal_trigger || time_trigger {
                         self.mutation_accum = 0.0;
