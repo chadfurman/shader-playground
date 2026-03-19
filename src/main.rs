@@ -957,7 +957,7 @@ impl Gpu {
 
 /// Semi-transparent dark background frame for HUD panels.
 fn hud_frame(opacity: f32) -> egui::Frame {
-    let alpha = (153.0 * opacity) as u8;
+    let alpha = (210.0 * opacity) as u8;
     egui::Frame::NONE
         .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, alpha))
         .corner_radius(6.0)
@@ -973,10 +973,10 @@ fn signal_bar(
     max: f32,
     opacity: f32,
 ) {
-    let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+    let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
     let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).size(9.0).color(dim));
+        ui.label(egui::RichText::new(label).size(11.0).color(dim));
         let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
         ui.painter().rect_filled(rect, 2.0, bg);
         let fill_frac = (value / max).clamp(0.0, 1.0);
@@ -988,7 +988,7 @@ fn signal_bar(
             .rect_filled(fill_rect, 2.0, fade_color(color, opacity));
         ui.label(
             egui::RichText::new(format!("{:.2}", value))
-                .size(9.0)
+                .size(11.0)
                 .color(dim),
         );
     });
@@ -996,10 +996,10 @@ fn signal_bar(
 
 /// Draw a bipolar signal bar (center-zero): fills left for negative, right for positive.
 fn bipolar_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32, opacity: f32) {
-    let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+    let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
     let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(label).size(9.0).color(dim));
+        ui.label(egui::RichText::new(label).size(11.0).color(dim));
         let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
         ui.painter().rect_filled(rect, 2.0, bg);
         let center_x = rect.min.x + rect.width() * 0.5;
@@ -1019,7 +1019,7 @@ fn bipolar_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32,
             .rect_filled(fill_rect, 2.0, fade_color(color, opacity));
         ui.label(
             egui::RichText::new(format!("{:+.2}", value))
-                .size(9.0)
+                .size(11.0)
                 .color(dim),
         );
     });
@@ -1086,11 +1086,11 @@ fn hud_panel_identity(
                 .color(fade_color(egui::Color32::from_rgb(119, 255, 119), opacity))
                 .size(16.0),
         );
-        let dim = fade_color(egui::Color32::from_rgb(160, 160, 160), opacity);
+        let dim = fade_color(egui::Color32::from_rgb(210, 210, 210), opacity);
         ui.label(
             egui::RichText::new(format!("{} transforms", hud.num_transforms))
                 .color(dim)
-                .size(10.0),
+                .size(12.0),
         );
         ui.label(
             egui::RichText::new(format!(
@@ -1098,7 +1098,7 @@ fn hud_panel_identity(
                 hud.time_since_mutation, hud.cooldown
             ))
             .color(dim)
-            .size(10.0),
+            .size(12.0),
         );
     });
 }
@@ -1114,13 +1114,13 @@ fn hud_panel_progress(
     let default_pos = egui::pos2(screen_w - 220.0, 10.0);
     hud_window("hud_progress", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
         let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
 
         // Next evolve — signal-driven trigger bar
         ui.label(
             egui::RichText::new("next evolve (signal)")
-                .size(9.0)
+                .size(11.0)
                 .color(dim),
         );
         let (rect, _) = ui.allocate_exact_size(egui::vec2(180.0, 6.0), egui::Sense::hover());
@@ -1156,7 +1156,7 @@ fn hud_panel_progress(
         );
 
         ui.add_space(4.0);
-        ui.label(egui::RichText::new("morph").size(9.0).color(dim));
+        ui.label(egui::RichText::new("morph").size(11.0).color(dim));
 
         // Per-transform morph bars
         for i in 0..hud.num_transforms.min(12) {
@@ -1188,8 +1188,8 @@ fn hud_panel_audio(
     let default_pos = egui::pos2(10.0, 90.0);
     hud_window("hud_audio", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
-        ui.label(egui::RichText::new("audio").size(10.0).color(dim));
+        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
+        ui.label(egui::RichText::new("audio").size(12.0).color(dim));
         signal_bar(
             ui,
             "bass ",
@@ -1258,9 +1258,9 @@ fn hud_panel_time(
     let default_pos = egui::pos2(10.0, 310.0);
     hud_window("hud_time", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
         let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
-        ui.label(egui::RichText::new("time").size(10.0).color(dim));
+        ui.label(egui::RichText::new("time").size(12.0).color(dim));
         // Bipolar signals (-1 to 1): slow, med, fast, noise, drift, flutter
         bipolar_bar(ui, "slow ", hud.time_slow, bipolar_color, opacity);
         bipolar_bar(ui, "med  ", hud.time_med, bipolar_color, opacity);
@@ -1623,14 +1623,14 @@ fn hud_panel_transforms(
     let default_pos = egui::pos2(screen_w - 220.0, 250.0);
     hud_window("hud_transforms", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
-        ui.label(egui::RichText::new("transforms").size(10.0).color(dim));
+        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
+        ui.label(egui::RichText::new("transforms").size(12.0).color(dim));
         for i in 0..hud.num_transforms.min(12) {
             let w = hud.transform_weights[i];
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new(format!("xf{i:>2} w:{w:.3}"))
-                        .size(9.0)
+                        .size(11.0)
                         .color(dim)
                         .family(egui::FontFamily::Monospace),
                 );
@@ -1672,8 +1672,8 @@ fn hud_panel_hotkeys(
                 ("I", "info"),
                 ("Esc", "quit"),
             ] {
-                ui.label(egui::RichText::new(key).size(9.0).color(key_color));
-                ui.label(egui::RichText::new(desc).size(9.0).color(label_color));
+                ui.label(egui::RichText::new(key).size(11.0).color(key_color));
+                ui.label(egui::RichText::new(desc).size(11.0).color(label_color));
                 ui.add_space(6.0);
             }
         });
@@ -1869,8 +1869,8 @@ fn config_tab_rendering(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConf
     let mut mode = cfg.tonemap_mode as usize;
     let labels = ["Reinhard (0)", "ACES (1)", "Filmic (2)"];
     ui.horizontal(|ui| {
-        let dim = egui::Color32::from_rgb(160, 160, 160);
-        ui.label(egui::RichText::new("tonemap_mode").size(10.0).color(dim));
+        let dim = egui::Color32::from_rgb(210, 210, 210);
+        ui.label(egui::RichText::new("tonemap_mode").size(12.0).color(dim));
         for (i, label) in labels.iter().enumerate() {
             let color = if mode == i {
                 egui::Color32::from_rgb(100, 200, 255)
@@ -1879,7 +1879,7 @@ fn config_tab_rendering(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConf
             };
             if ui
                 .add(egui::Button::new(
-                    egui::RichText::new(*label).size(9.0).color(color),
+                    egui::RichText::new(*label).size(11.0).color(color),
                 ))
                 .clicked()
             {
@@ -1969,7 +1969,7 @@ fn config_tab_breeding(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConfi
 /// Signals tab: show and edit audio/time signal weight mappings.
 fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) -> bool {
     let mut changed = false;
-    let dim = egui::Color32::from_rgb(160, 160, 160);
+    let dim = egui::Color32::from_rgb(210, 210, 210);
 
     // Signal groups in order matching Weights struct
     let signal_names = [
@@ -2030,7 +2030,7 @@ fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) 
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new(key)
-                                    .size(9.0)
+                                    .size(11.0)
                                     .color(dim)
                                     .family(egui::FontFamily::Monospace),
                             );
@@ -2042,7 +2042,7 @@ fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) 
                             if ui
                                 .add(egui::Button::new(
                                     egui::RichText::new("X")
-                                        .size(9.0)
+                                        .size(11.0)
                                         .color(egui::Color32::from_rgb(200, 100, 100)),
                                 ))
                                 .clicked()
@@ -2062,7 +2062,7 @@ fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) 
                     let add_id = egui::Id::new(format!("signals_add_{signal_name}"));
                     let mut new_param =
                         ui.data_mut(|d| d.get_temp::<String>(add_id).unwrap_or_default());
-                    ui.label(egui::RichText::new("+").size(10.0).color(dim));
+                    ui.label(egui::RichText::new("+").size(12.0).color(dim));
                     ui.add(
                         egui::TextEdit::singleline(&mut new_param)
                             .desired_width(120.0)
@@ -2071,7 +2071,7 @@ fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) 
                     if ui
                         .add(egui::Button::new(
                             egui::RichText::new("Add")
-                                .size(9.0)
+                                .size(11.0)
                                 .color(egui::Color32::from_rgb(100, 200, 100)),
                         ))
                         .clicked()
@@ -2097,7 +2097,7 @@ fn config_tab_audio(
     selected_device: &mut String,
     refresh: &mut bool,
 ) {
-    let dim = egui::Color32::from_rgb(160, 160, 160);
+    let dim = egui::Color32::from_rgb(210, 210, 210);
     ui.label(
         egui::RichText::new("Audio Device")
             .size(12.0)
@@ -2115,11 +2115,11 @@ fn config_tab_audio(
         *selected_device = system_audio;
     }
 
-    egui::ComboBox::from_label(egui::RichText::new("Device").size(10.0).color(dim))
+    egui::ComboBox::from_label(egui::RichText::new("Device").size(12.0).color(dim))
         .width(280.0)
         .selected_text(
             egui::RichText::new(selected_device.as_str())
-                .size(10.0)
+                .size(12.0)
                 .color(egui::Color32::from_rgb(100, 200, 255)),
         )
         .show_ui(ui, |ui| {
@@ -2127,7 +2127,7 @@ fn config_tab_audio(
                 ui.selectable_value(
                     selected_device,
                     device.clone(),
-                    egui::RichText::new(device).size(10.0),
+                    egui::RichText::new(device).size(12.0),
                 );
             }
         });
@@ -2136,7 +2136,7 @@ fn config_tab_audio(
     if ui
         .add(egui::Button::new(
             egui::RichText::new("Refresh devices")
-                .size(10.0)
+                .size(12.0)
                 .color(egui::Color32::from_rgb(100, 200, 255)),
         ))
         .clicked()
@@ -2147,7 +2147,7 @@ fn config_tab_audio(
     ui.add_space(8.0);
     ui.label(
         egui::RichText::new("Device switching requires restart.")
-            .size(9.0)
+            .size(11.0)
             .color(egui::Color32::from_rgb(180, 140, 80)),
     );
 }
@@ -3295,13 +3295,13 @@ impl App {
                                 let dim = egui::Color32::from_rgb(120, 120, 120);
                                 ui.label(
                                     egui::RichText::new(format!("current: {genome_name}"))
-                                        .size(9.0)
+                                        .size(11.0)
                                         .color(dim),
                                 );
                                 if let Some(prev) = prev_name {
                                     ui.label(
                                         egui::RichText::new(format!("previous: {prev}"))
-                                            .size(9.0)
+                                            .size(11.0)
                                             .color(dim),
                                     );
                                 }
