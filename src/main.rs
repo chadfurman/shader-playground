@@ -1042,6 +1042,30 @@ fn fade_color(c: egui::Color32, opacity: f32) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(r, g, b, (a as f32 * opacity) as u8)
 }
 
+/// Create a HUD window: non-selectable text, no title bar, not resizable.
+fn hud_window(
+    name: &str,
+    pos: egui::Pos2,
+    opacity: f32,
+    force_reposition: bool,
+) -> egui::Window<'static> {
+    let mut win = egui::Window::new("")
+        .id(egui::Id::new(name))
+        .title_bar(false)
+        .resizable(false)
+        .default_pos(pos)
+        .frame(hud_frame(opacity));
+    if force_reposition {
+        win = win.current_pos(pos);
+    }
+    win
+}
+
+/// Disable text selection inside a UI (so dragging works on text).
+fn disable_text_selection(ui: &mut egui::Ui) {
+    ui.style_mut().interaction.selectable_labels = false;
+}
+
 /// Top-left: Identity panel — FPS, transform count, mutation info.
 fn hud_panel_identity(
     ctx: &egui::Context,
@@ -1050,15 +1074,8 @@ fn hud_panel_identity(
     force_reposition: bool,
 ) {
     let pos = egui::pos2(10.0, 10.0);
-    let mut win = egui::Window::new("hud_identity")
-        .title_bar(false)
-        .resizable(false)
-        .default_pos(pos)
-        .frame(hud_frame(opacity));
-    if force_reposition {
-        win = win.current_pos(pos);
-    }
-    win.show(ctx, |ui| {
+    hud_window("hud_identity", pos, opacity, force_reposition).show(ctx, |ui| {
+        disable_text_selection(ui);
         ui.label(
             egui::RichText::new(format!("{:.0} fps", hud.fps))
                 .color(fade_color(egui::Color32::from_rgb(119, 255, 119), opacity))
@@ -1090,15 +1107,8 @@ fn hud_panel_progress(
     force_reposition: bool,
 ) {
     let pos = egui::pos2(screen_w - 220.0, 10.0);
-    let mut win = egui::Window::new("hud_progress")
-        .title_bar(false)
-        .resizable(false)
-        .default_pos(pos)
-        .frame(hud_frame(opacity));
-    if force_reposition {
-        win = win.current_pos(pos);
-    }
-    win.show(ctx, |ui| {
+    hud_window("hud_progress", pos, opacity, force_reposition).show(ctx, |ui| {
+        disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
 
@@ -1165,16 +1175,9 @@ fn hud_panel_progress(
 
 /// Left side: Audio signals panel.
 fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, force_reposition: bool) {
-    let pos = egui::pos2(10.0, 100.0);
-    let mut win = egui::Window::new("hud_audio")
-        .title_bar(false)
-        .resizable(false)
-        .default_pos(pos)
-        .frame(hud_frame(opacity));
-    if force_reposition {
-        win = win.current_pos(pos);
-    }
-    win.show(ctx, |ui| {
+    let pos = egui::pos2(10.0, 90.0);
+    hud_window("hud_audio", pos, opacity, force_reposition).show(ctx, |ui| {
+        disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         ui.label(egui::RichText::new("audio").size(10.0).color(dim));
         signal_bar(
@@ -1238,15 +1241,8 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, force_
 /// Left side: Time signals panel (below audio).
 fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, force_reposition: bool) {
     let pos = egui::pos2(10.0, 310.0);
-    let mut win = egui::Window::new("hud_time")
-        .title_bar(false)
-        .resizable(false)
-        .default_pos(pos)
-        .frame(hud_frame(opacity));
-    if force_reposition {
-        win = win.current_pos(pos);
-    }
-    win.show(ctx, |ui| {
+    hud_window("hud_time", pos, opacity, force_reposition).show(ctx, |ui| {
+        disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
         ui.label(egui::RichText::new("time").size(10.0).color(dim));
@@ -1610,15 +1606,8 @@ fn hud_panel_transforms(
     force_reposition: bool,
 ) {
     let pos = egui::pos2(screen_w - 220.0, 250.0);
-    let mut win = egui::Window::new("hud_transforms")
-        .title_bar(false)
-        .resizable(false)
-        .default_pos(pos)
-        .frame(hud_frame(opacity));
-    if force_reposition {
-        win = win.current_pos(pos);
-    }
-    win.show(ctx, |ui| {
+    hud_window("hud_transforms", pos, opacity, force_reposition).show(ctx, |ui| {
+        disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         ui.label(egui::RichText::new("transforms").size(10.0).color(dim));
         for i in 0..hud.num_transforms.min(12) {
@@ -1651,15 +1640,10 @@ fn hud_panel_hotkeys(
     force_reposition: bool,
 ) {
     let pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0);
-    let mut win = egui::Window::new("hud_hotkeys")
-        .title_bar(false)
-        .resizable(false)
-        .default_pos(pos)
+    let win = hud_window("hud_hotkeys", pos, opacity, force_reposition)
         .frame(hud_frame(opacity).inner_margin(egui::Margin::symmetric(10, 4)));
-    if force_reposition {
-        win = win.current_pos(pos);
-    }
     win.show(ctx, |ui| {
+        disable_text_selection(ui);
         let key_color = fade_color(egui::Color32::from_rgb(187, 187, 187), opacity);
         let label_color = fade_color(egui::Color32::from_rgb(102, 102, 102), opacity);
         ui.horizontal(|ui| {
