@@ -2985,8 +2985,6 @@ struct App {
     prev_screen_size: (f32, f32),
     // One-shot flag: reset HUD panels to default non-overlapping positions
     reposition_panels: bool,
-    // Throttle: skip heavy work (egui, modulation) when render channel was full
-    render_channel_full: bool,
     // Cached audio device names (populated once, refreshed on demand)
     cached_audio_devices: Vec<String>,
     selected_audio_device: String,
@@ -3123,7 +3121,6 @@ impl App {
             config_tab: 0,
             prev_screen_size: (1.0, 1.0),
             reposition_panels: true,
-            render_channel_full: false,
             cached_audio_devices: enumerate_audio_devices(),
             selected_audio_device: String::new(),
         }
@@ -4235,17 +4232,14 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
-                // Throttle: skip heavy work when render channel was recently full.
-                // Only clear after enough time for the render thread to consume.
-                if self.render_channel_full {
-                    let since_last = self.last_frame_time.elapsed();
-                    if since_last < std::time::Duration::from_millis(4) {
-                        if let Some(w) = &self.window {
-                            w.request_redraw();
-                        }
-                        return;
+                // Cap at 120fps — prevents wasting CPU on frames that get dropped
+                if self.frame >= 3
+                    && self.last_frame_time.elapsed() < std::time::Duration::from_micros(8333)
+                {
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
                     }
-                    self.render_channel_full = false;
+                    return;
                 }
 
                 if self.frame < 3 {
@@ -4713,13 +4707,10 @@ impl ApplicationHandler for App {
                         egui_pixels_per_point,
                     };
                     match tx.try_send(RenderCommand::Render(Box::new(frame_data))) {
-                        Ok(()) => {
-                            self.render_channel_full = false;
-                        }
+                        Ok(()) => {}
                         Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
                             // Save texture deltas from dropped frame for next send
                             self.pending_egui_textures = dropped.egui_textures_delta;
-                            self.render_channel_full = true;
                         }
                         Err(_) => {} // disconnected
                     }
