@@ -1,13 +1,13 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{fs, mem};
 
 use bytemuck::{Pod, Zeroable};
 use notify::{Event, EventKind, RecursiveMode, Watcher};
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, KeyEvent, MouseButton, WindowEvent};
+use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowAttributes};
@@ -57,6 +57,22 @@ enum RenderCommand {
     /// Hot-reload the compute shader.
     ReloadComputeShader(String),
     /// Shut down the render thread.
+    Shutdown,
+}
+
+// ── UI Thread Protocol ──
+
+/// Events sent from the main (winit) thread to the UI thread.
+enum UiEvent {
+    /// egui raw input collected on the main thread — triggers a tick.
+    EguiInput(egui::RawInput),
+    /// Cursor moved — tracked for HUD fade.
+    CursorMoved { x: f32, y: f32 },
+    /// Key pressed (logical key name string).
+    KeyPressed(String),
+    /// Window resized.
+    Resize { width: u32, height: u32 },
+    /// Shut down the UI thread.
     Shutdown,
 }
 
@@ -2923,19 +2939,19 @@ fn create_compute_pipeline(
     })
 }
 
-// ── App ──
+// ── UiState — all heavy state, lives on the UI thread ──
 
-struct App {
-    render_tx: Option<mpsc::SyncSender<RenderCommand>>,
-    gpu_width: u32,
-    gpu_height: u32,
-    window: Option<Arc<Window>>,
-    watcher: Option<FileWatcher>,
+struct UiState {
+    render_tx: mpsc::SyncSender<RenderCommand>,
+    egui_ctx: egui::Context,
+    // Core state
     start: Instant,
     frame: u32,
     fps_frame_count: u32,
     last_fps_time: Instant,
     mouse: [f32; 2],
+    gpu_width: u32,
+    gpu_height: u32,
     globals: [f32; 20],
     xf_params: Vec<f32>,
     num_transforms: usize,
@@ -2950,16 +2966,17 @@ struct App {
     audio_samples: Vec<AudioFeatures>,
     mutation_accum: f32,
     last_mutation_time: f32,
-    flame_locked: bool,      // true = imported flame, skip auto-evolve/mutate
-    morph_burst_frames: u32, // extra compute passes after mutation for faster fill
+    flame_locked: bool,
+    morph_burst_frames: u32,
     random_walk: f32,
-    // Ease-in-out genome morph
+    // Morph state
     morph_start_globals: [f32; 20],
     morph_start_xf: Vec<f32>,
-    morph_base_globals: [f32; 20], // current interpolated genome base (no audio)
-    morph_base_xf: Vec<f32>,       // current interpolated xf base (no audio)
-    morph_progress: f32,           // 0.0 → 1.0
-    morph_xf_rates: Vec<f32>,      // per-transform morph speed multiplier (0.5 - 2.0)
+    morph_base_globals: [f32; 20],
+    morph_base_xf: Vec<f32>,
+    morph_progress: f32,
+    morph_xf_rates: Vec<f32>,
+    // Genetics / taste / archive
     favorite_profile: Option<FavoriteProfile>,
     vote_ledger: VoteLedger,
     lineage_cache: crate::votes::LineageCache,
@@ -2971,23 +2988,47 @@ struct App {
     prev_zoom: f32,
     genome_frame_count: u32,
     genome_start_time: Instant,
-    egui_state: Option<egui_winit::State>,
+    // HUD / egui state
     last_cursor_move: Instant,
     pending_egui_textures: egui::TexturesDelta,
-    // Vote feedback popup state: (score, genome_name, text_input, prev_genome_name)
     vote_feedback: Option<(i32, String, String, Option<String>)>,
-    // Config panel state (now on main thread)
     config_panel_open: bool,
     config_edit: Option<crate::weights::RuntimeConfig>,
     config_edit_weights: Option<crate::weights::Weights>,
     config_tab: usize,
-    // Previous screen size for resize-aware panel repositioning
     prev_screen_size: (f32, f32),
-    // One-shot flag: reset HUD panels to default non-overlapping positions
     reposition_panels: bool,
-    // Cached audio device names (populated once, refreshed on demand)
     cached_audio_devices: Vec<String>,
     selected_audio_device: String,
+    // File watcher
+    watcher: Option<FileWatcher>,
+}
+
+// ── App — paper-thin, lives on the main (winit) thread ──
+
+struct App {
+    window: Option<Arc<Window>>,
+    egui_state: Option<egui_winit::State>,
+    ui_tx: Option<mpsc::Sender<UiEvent>>,
+    gpu_width: u32,
+    gpu_height: u32,
+    // Held temporarily during init before UI thread spawns
+    init_state: Option<UiInitState>,
+}
+
+/// Temporary state held on App before the UI thread is spawned.
+struct UiInitState {
+    weights: Weights,
+    genome: FlameGenome,
+    initial_globals: [f32; 20],
+    initial_xf: Vec<f32>,
+    num_transforms: usize,
+    favorite_profile: Option<FavoriteProfile>,
+    vote_ledger: VoteLedger,
+    lineage_cache: crate::votes::LineageCache,
+    taste_engine: crate::taste::TasteEngine,
+    perf_model: crate::taste::PerfModel,
+    archive: crate::archive::MapElitesArchive,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -2997,7 +3038,6 @@ fn smoothstep(t: f32) -> f32 {
 
 impl App {
     fn new() -> Self {
-        // Try loading a flame file first, then fall back to seeds, then default
         let t = Instant::now();
         let weights = load_weights();
         eprintln!(
@@ -3006,14 +3046,13 @@ impl App {
         );
 
         let t = Instant::now();
-        let favorite_profile = Self::scan_favorite_profile();
+        let favorite_profile = scan_favorite_profile();
         eprintln!(
             "[boot] favorite profile scanned ({:.0}ms)",
             t.elapsed().as_secs_f64() * 1000.0
         );
 
         let genomes_root = project_dir().join("genomes");
-        // Ensure genome subdirectories exist
         let _ = std::fs::create_dir_all(genomes_root.join("voted"));
         let _ = std::fs::create_dir_all(genomes_root.join("history"));
         if weights._config.archive_on_startup {
@@ -3054,25 +3093,78 @@ impl App {
         let initial_globals = genome.flatten_globals(&weights._config);
         let initial_xf = genome.flatten_transforms();
         let num_transforms = genome.total_buffer_transforms();
+
         Self {
-            render_tx: None,
+            window: None,
+            egui_state: None,
+            ui_tx: None,
             gpu_width: 1,
             gpu_height: 1,
-            window: None,
-            watcher: None,
+            init_state: Some(UiInitState {
+                weights,
+                genome,
+                initial_globals,
+                initial_xf,
+                num_transforms,
+                favorite_profile,
+                vote_ledger,
+                lineage_cache,
+                taste_engine: crate::taste::TasteEngine::new(),
+                perf_model: crate::taste::PerfModel::load(
+                    &project_dir().join("genomes").join("perf_model.json"),
+                )
+                .unwrap_or_default(),
+                archive: {
+                    let archive_path = genomes_root.join("archive.json");
+                    crate::archive::MapElitesArchive::load(&archive_path)
+                        .unwrap_or_else(|_| crate::archive::MapElitesArchive::new())
+                },
+            }),
+        }
+    }
+}
+
+/// Scan genomes/ directory for favorite profile (excludes seeds/).
+fn scan_favorite_profile() -> Option<FavoriteProfile> {
+    let genomes_dir = project_dir().join("genomes");
+    if !genomes_dir.exists() {
+        return None;
+    }
+    let profile = FavoriteProfile::from_directory(&genomes_dir);
+    if profile.variation_freq.is_empty() {
+        None
+    } else {
+        Some(profile)
+    }
+}
+
+impl UiState {
+    fn new(
+        render_tx: mpsc::SyncSender<RenderCommand>,
+        egui_ctx: egui::Context,
+        init: UiInitState,
+        watcher: Option<FileWatcher>,
+        gpu_width: u32,
+        gpu_height: u32,
+    ) -> Self {
+        Self {
+            render_tx,
+            egui_ctx,
             start: Instant::now(),
             frame: 0,
             fps_frame_count: 0,
             last_fps_time: Instant::now(),
             mouse: [0.5, 0.5],
-            globals: initial_globals,
-            xf_params: initial_xf.clone(),
-            num_transforms,
+            gpu_width,
+            gpu_height,
+            globals: init.initial_globals,
+            xf_params: init.initial_xf.clone(),
+            num_transforms: init.num_transforms,
             last_frame_time: Instant::now(),
-            genome,
+            genome: init.genome,
             genome_history: Vec::new(),
             audio_features: AudioFeatures::default(),
-            weights,
+            weights: init.weights,
             audio_enabled: true,
             audio_info: false,
             audio_info_timer: 0.0,
@@ -3082,26 +3174,18 @@ impl App {
             flame_locked: false,
             morph_burst_frames: 0,
             random_walk: 0.0,
-            // Start fully morphed (no transition at launch)
-            morph_start_globals: initial_globals,
-            morph_start_xf: initial_xf.clone(),
-            morph_base_globals: initial_globals,
-            morph_base_xf: initial_xf,
+            morph_start_globals: init.initial_globals,
+            morph_start_xf: init.initial_xf.clone(),
+            morph_base_globals: init.initial_globals,
+            morph_base_xf: init.initial_xf,
             morph_progress: 1.0,
             morph_xf_rates: Vec::new(),
-            favorite_profile,
-            vote_ledger,
-            lineage_cache,
-            taste_engine: crate::taste::TasteEngine::new(),
-            perf_model: crate::taste::PerfModel::load(
-                &project_dir().join("genomes").join("perf_model.json"),
-            )
-            .unwrap_or_default(),
-            archive: {
-                let archive_path = genomes_root.join("archive.json");
-                crate::archive::MapElitesArchive::load(&archive_path)
-                    .unwrap_or_else(|_| crate::archive::MapElitesArchive::new())
-            },
+            favorite_profile: init.favorite_profile,
+            vote_ledger: init.vote_ledger,
+            lineage_cache: init.lineage_cache,
+            taste_engine: init.taste_engine,
+            perf_model: init.perf_model,
+            archive: init.archive,
             last_profile_scan: 0.0,
             perf_log: std::fs::OpenOptions::new()
                 .create(true)
@@ -3111,7 +3195,6 @@ impl App {
             prev_zoom: 3.0,
             genome_frame_count: 0,
             genome_start_time: Instant::now(),
-            egui_state: None,
             last_cursor_move: Instant::now(),
             pending_egui_textures: egui::TexturesDelta::default(),
             vote_feedback: None,
@@ -3123,36 +3206,275 @@ impl App {
             reposition_panels: true,
             cached_audio_devices: enumerate_audio_devices(),
             selected_audio_device: String::new(),
+            watcher,
         }
     }
 
-    /// Scan genomes/ directory for favorite profile (excludes seeds/).
-    fn scan_favorite_profile() -> Option<FavoriteProfile> {
-        let genomes_dir = project_dir().join("genomes");
-        if !genomes_dir.exists() {
-            return None;
-        }
-        let profile = FavoriteProfile::from_directory(&genomes_dir);
-        if profile.variation_freq.is_empty() {
-            None
-        } else {
-            Some(profile)
+    /// Handle cursor movement from the main thread.
+    fn on_cursor_moved(&mut self, x: f32, y: f32) {
+        self.last_cursor_move = Instant::now();
+        self.mouse = [
+            x / self.gpu_width.max(1) as f32,
+            y / self.gpu_height.max(1) as f32,
+        ];
+    }
+
+    /// Handle window resize from the main thread.
+    fn on_resize(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            self.gpu_width = width;
+            self.gpu_height = height;
         }
     }
 
-    /// Build the full egui UI on the main thread: collect input, run all HUD panels +
-    /// vote popup + config panel, tessellate, and return paint jobs ready for the render thread.
+    /// Handle a key press forwarded from the main thread.
+    fn on_key(&mut self, key: &str) {
+        // If vote feedback popup is open, keys are handled by egui
+        if self.vote_feedback.is_some() {
+            return;
+        }
+        match key {
+            "Space" => {
+                self.genome_history.push(self.genome.clone());
+                if self.genome_history.len() > 10 {
+                    self.genome_history.remove(0);
+                }
+                self.flame_locked = false;
+                self.mutation_accum = 0.0;
+                let (pa, pb, community) = self.pick_breeding_parents();
+                self.genome = FlameGenome::mutate(
+                    &pa,
+                    &pb,
+                    &community,
+                    &self.audio_features,
+                    &self.weights._config,
+                    &self.favorite_profile,
+                    &mut Some(&mut self.taste_engine),
+                );
+                let genomes_dir = project_dir().join("genomes");
+                self.lineage_cache.register_and_save(
+                    &self.genome.name,
+                    &self.genome.parent_a,
+                    &self.genome.parent_b,
+                    self.genome.generation,
+                    &genomes_dir,
+                );
+                let history_dir = genomes_dir.join("history");
+                if let Err(e) = self.genome.save(&history_dir) {
+                    eprintln!("[history] save error: {e}");
+                }
+                self.archive_genome();
+                self.last_mutation_time = self.start.elapsed().as_secs_f32();
+                self.begin_morph();
+                if let Some(taste_score) = self.taste_engine.score_genome(&self.genome) {
+                    eprintln!(
+                        "[evolve] t={:.1}s → {} (gen {}, taste={:.2})",
+                        self.start.elapsed().as_secs_f32(),
+                        self.genome.name,
+                        self.genome.generation,
+                        taste_score
+                    );
+                } else {
+                    eprintln!(
+                        "[evolve] t={:.1}s → {} (gen {})",
+                        self.start.elapsed().as_secs_f32(),
+                        self.genome.name,
+                        self.genome.generation
+                    );
+                }
+            }
+            "Backspace" => {
+                if let Some(prev) = self.genome_history.pop() {
+                    self.genome = prev;
+                    self.begin_morph();
+                    eprintln!("[revert] back to previous");
+                }
+            }
+            "ArrowUp" => {
+                let dir = project_dir().join("genomes");
+                let vote_genome = self.morph_snapshot_or_current();
+                let score = self.vote_ledger.vote(&vote_genome, 1, &dir);
+                self.favorite_profile = scan_favorite_profile();
+                let igmm_path = dir.join("taste_model.json");
+                self.taste_engine.on_upvote(&self.genome, Some(&igmm_path));
+                self.rebuild_taste_model();
+                let existing_note = self
+                    .vote_ledger
+                    .entries
+                    .get(&vote_genome.name)
+                    .and_then(|e| e.note.clone())
+                    .unwrap_or_default();
+                let prev_name = self.genome_history.last().map(|g| g.name.clone());
+                self.vote_feedback = Some((1, vote_genome.name.clone(), existing_note, prev_name));
+                if vote_genome.name != self.genome.name {
+                    eprintln!(
+                        "[vote] captured morph {:.0}% → {} +1 (score: {})",
+                        self.morph_progress * 100.0,
+                        vote_genome.name,
+                        score
+                    );
+                } else {
+                    eprintln!("[vote] {} → +1 (score: {})", self.genome.name, score);
+                }
+            }
+            "ArrowDown" => {
+                let dir = project_dir().join("genomes");
+                let vote_genome = self.morph_snapshot_or_current();
+                let score = self.vote_ledger.vote(&vote_genome, -1, &dir);
+                self.favorite_profile = scan_favorite_profile();
+                self.rebuild_taste_model();
+                let existing_note = self
+                    .vote_ledger
+                    .entries
+                    .get(&vote_genome.name)
+                    .and_then(|e| e.note.clone())
+                    .unwrap_or_default();
+                let prev_name = self.genome_history.last().map(|g| g.name.clone());
+                self.vote_feedback = Some((-1, vote_genome.name.clone(), existing_note, prev_name));
+                if vote_genome.name != self.genome.name {
+                    eprintln!(
+                        "[vote] captured morph {:.0}% → {} -1 (score: {})",
+                        self.morph_progress * 100.0,
+                        vote_genome.name,
+                        score
+                    );
+                } else {
+                    eprintln!("[vote] {} → -1 (score: {})", self.genome.name, score);
+                }
+            }
+            "s" => {
+                let save_genome = self.morph_snapshot_or_current();
+                let dir = project_dir().join("genomes");
+                match save_genome.save(&dir) {
+                    Ok(p) => {
+                        if save_genome.name != self.genome.name {
+                            eprintln!(
+                                "[save] morph snapshot at {:.0}% → {}",
+                                self.morph_progress * 100.0,
+                                p.display()
+                            );
+                        } else {
+                            eprintln!("[save] {}", p.display());
+                        }
+                    }
+                    Err(e) => eprintln!("[save] error: {e}"),
+                }
+                self.favorite_profile = scan_favorite_profile();
+                self.last_profile_scan = self.start.elapsed().as_secs_f32();
+            }
+            "l" => {
+                let dir = project_dir().join("genomes");
+                match FlameGenome::load_random(&dir) {
+                    Ok(mut g) => {
+                        g.adjust_transform_count(&self.weights._config);
+                        self.genome_history.push(self.genome.clone());
+                        if self.genome_history.len() > 10 {
+                            self.genome_history.remove(0);
+                        }
+                        eprintln!("[load] {}", g.name);
+                        self.genome = g;
+                        self.begin_morph();
+                    }
+                    Err(e) => eprintln!("[load] error: {e}"),
+                }
+            }
+            "1" | "2" | "3" | "4" => {
+                let idx: usize = key.parse::<usize>().unwrap() - 1;
+                if idx < self.num_transforms {
+                    let base = idx * PARAMS_PER_XF;
+                    if base < self.xf_params.len() {
+                        if self.xf_params[base] < 0.01 {
+                            self.xf_params[base] = 0.25;
+                        } else {
+                            self.xf_params[base] = 0.0;
+                        }
+                        eprintln!("[solo] transform {} = {}", idx, self.xf_params[base]);
+                    }
+                }
+            }
+            "f" => {
+                let flames_dir = project_dir().join("genomes").join("flames");
+                match crate::flam3::load_random_flame(&flames_dir) {
+                    Ok(mut g) => {
+                        g.adjust_transform_count(&self.weights._config);
+                        self.genome_history.push(self.genome.clone());
+                        if self.genome_history.len() > 10 {
+                            self.genome_history.remove(0);
+                        }
+                        self.genome = g;
+                        self.flame_locked = true;
+                        self.mutation_accum = 0.0;
+                        self.begin_morph();
+                        eprintln!("[flame] loaded (locked): {}", self.genome.name);
+                    }
+                    Err(e) => eprintln!("[flame] error: {e}"),
+                }
+            }
+            "a" => {
+                self.audio_enabled = !self.audio_enabled;
+                eprintln!(
+                    "[audio] {}",
+                    if self.audio_enabled {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
+                );
+            }
+            "c" => {
+                self.config_panel_open = !self.config_panel_open;
+                if self.config_panel_open {
+                    self.config_edit = Some(self.weights._config.clone());
+                    self.config_edit_weights = Some(self.weights.clone());
+                } else {
+                    self.config_edit = None;
+                    self.config_edit_weights = None;
+                }
+                eprintln!(
+                    "[config] panel {}",
+                    if self.config_panel_open {
+                        "opened"
+                    } else {
+                        "closed"
+                    }
+                );
+            }
+            "i" => {
+                self.audio_info = !self.audio_info;
+                if self.audio_info {
+                    self.audio_samples.clear();
+                    eprintln!("[info] ON — recording audio features (press i again to save)");
+                } else {
+                    let count = self.audio_samples.len();
+                    if count > 0 {
+                        let timestamp = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_secs();
+                        let path = format!("audio_samples_{}.json", timestamp);
+                        match serde_json::to_string_pretty(&self.audio_samples) {
+                            Ok(json) => {
+                                std::fs::write(&path, json).ok();
+                                eprintln!("[info] OFF — saved {count} samples to {path}");
+                            }
+                            Err(e) => eprintln!("[info] OFF — serialize error: {e}"),
+                        }
+                    } else {
+                        eprintln!("[info] OFF — no samples collected");
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Build the egui UI on the UI thread using pre-collected RawInput.
     fn build_egui_frame(
         &mut self,
         hud: &HudFrameData,
+        raw_input: egui::RawInput,
     ) -> (Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32) {
-        let (egui_ctx, raw_input) =
-            if let (Some(egui_state), Some(window)) = (&mut self.egui_state, &self.window) {
-                let raw = egui_state.take_egui_input(window);
-                (egui_state.egui_ctx().clone(), raw)
-            } else {
-                return (Vec::new(), egui::TexturesDelta::default(), 1.0);
-            };
+        let egui_ctx = &self.egui_ctx;
 
         let screen_w = self.gpu_width as f32;
         let screen_h = self.gpu_height as f32;
@@ -3331,10 +3653,8 @@ impl App {
             }
         });
 
-        // Handle platform output (cursor changes, clipboard, etc.)
-        if let (Some(egui_state), Some(window)) = (&mut self.egui_state, &self.window) {
-            egui_state.handle_platform_output(window, egui_output.platform_output);
-        }
+        // Note: handle_platform_output (cursor changes) requires Window, which lives
+        // on the main thread. We skip it here — cursor shape changes are cosmetic.
 
         // Apply vote feedback actions
         if let Some((genome_name, note)) = vote_submit {
@@ -3668,9 +3988,9 @@ impl App {
         let max_xf = (self.xf_params.len().max(target_xf.len())) / PARAMS_PER_XF;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
-            if let Some(tx) = &self.render_tx {
-                let _ = tx.send(RenderCommand::ResizeTransformBuffer(self.num_transforms));
-            }
+            let _ = self
+                .render_tx
+                .send(RenderCommand::ResizeTransformBuffer(self.num_transforms));
         }
         // Pad start vectors to match
         self.morph_start_xf.resize(max_xf * PARAMS_PER_XF, 0.0);
@@ -3702,10 +4022,10 @@ impl App {
         self.morph_burst_frames = 60;
 
         // Upload palette for the new genome
-        if let Some(tx) = &self.render_tx {
-            let palette_data = crate::genome::palette_rgba_data(&self.genome);
-            let _ = tx.send(RenderCommand::UpdatePalette(palette_data));
-        }
+        let palette_data = crate::genome::palette_rgba_data(&self.genome);
+        let _ = self
+            .render_tx
+            .send(RenderCommand::UpdatePalette(palette_data));
     }
 
     fn check_file_changes(&mut self) {
@@ -3745,16 +4065,12 @@ impl App {
         }
         if reload_shader {
             let src = load_shader_source();
-            if let Some(tx) = &self.render_tx {
-                let _ = tx.send(RenderCommand::ReloadShader(src));
-            }
+            let _ = self.render_tx.send(RenderCommand::ReloadShader(src));
             eprintln!("[shader] reloaded");
         }
         if reload_compute {
             let src = load_compute_source();
-            if let Some(tx) = &self.render_tx {
-                let _ = tx.send(RenderCommand::ReloadComputeShader(src));
-            }
+            let _ = self.render_tx.send(RenderCommand::ReloadComputeShader(src));
             eprintln!("[compute] reloaded");
         }
         if reload_params {
@@ -3793,6 +4109,602 @@ impl App {
             eprintln!("[reload] votes.json");
         }
     }
+
+    /// Main per-frame tick. Called on the UI thread with pre-collected egui RawInput.
+    /// This is the body of what used to be RedrawRequested on the main thread.
+    fn tick(&mut self, raw_input: egui::RawInput) {
+        if self.frame < 3 {
+            eprintln!("[debug] UI tick frame={}", self.frame);
+        }
+        self.check_file_changes();
+
+        let now = Instant::now();
+        let dt = now
+            .duration_since(self.last_frame_time)
+            .as_secs_f32()
+            .max(0.001);
+        self.last_frame_time = now;
+
+        // Apply weight matrix (audio features from background thread, plus time)
+        if self.audio_enabled {
+            let time = self.start.elapsed().as_secs_f32();
+            let time_since_mutation = time - self.last_mutation_time;
+            self.random_walk += crate::weights::value_noise_pub(time * 0.3) * dt * 0.5;
+            let time_signals =
+                crate::weights::TimeSignals::compute(time, time_since_mutation, self.random_walk);
+
+            // Advance morph progress
+            let morph_dur = self.weights._config.morph_duration;
+            let min_rate = self
+                .morph_xf_rates
+                .iter()
+                .copied()
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap_or(1.0)
+                .max(0.1);
+            let morph_done_at = 1.0 / min_rate;
+            if self.morph_progress < morph_done_at {
+                self.morph_progress = (self.morph_progress + dt / morph_dur).min(morph_done_at);
+            }
+            let t = smoothstep(self.morph_progress.min(1.0));
+
+            // Interpolate genome base values (ease-in-out)
+            let genome_globals = self.genome.flatten_globals(&self.weights._config);
+            let genome_xf = self.genome.flatten_transforms();
+
+            for (base, (start, target)) in self
+                .morph_base_globals
+                .iter_mut()
+                .zip(self.morph_start_globals.iter().zip(genome_globals.iter()))
+            {
+                *base = start + (target - start) * t;
+            }
+            let max_len = self.morph_start_xf.len().max(genome_xf.len());
+            self.morph_base_xf.resize(max_len, 0.0);
+            let mut padded_start = self.morph_start_xf.clone();
+            padded_start.resize(max_len, 0.0);
+            let mut padded_genome = genome_xf;
+            padded_genome.resize(max_len, 0.0);
+            let num_xf = max_len / PARAMS_PER_XF;
+            for xi in 0..num_xf {
+                let rate = self.morph_xf_rates.get(xi).copied().unwrap_or(1.0);
+                let xf_t = smoothstep((self.morph_progress * rate).min(1.0));
+                let base = xi * PARAMS_PER_XF;
+                for j in 0..48 {
+                    let idx = base + j;
+                    if idx < max_len {
+                        self.morph_base_xf[idx] =
+                            padded_start[idx] + (padded_genome[idx] - padded_start[idx]) * xf_t;
+                    }
+                }
+            }
+
+            // Apply audio modulation on top of morphed base
+            let modulated_globals = self.weights.apply_globals(
+                &self.morph_base_globals,
+                &self.audio_features,
+                &time_signals,
+            );
+            let modulated_xf = self.weights.apply_transforms(
+                &self.morph_base_xf,
+                self.num_transforms,
+                &self.audio_features,
+                &time_signals,
+            );
+
+            self.globals = modulated_globals;
+            self.xf_params = modulated_xf;
+
+            // Apply variation CRISPR
+            self.weights
+                ._config
+                .apply_variation_scales(&mut self.xf_params, self.num_transforms);
+
+            // Clamp per-transform spin_mod and drift_mod
+            let cfg = &self.weights._config;
+            for xf in 0..self.num_transforms {
+                let spin_idx = xf * PARAMS_PER_XF + SPIN_MOD_FIELD;
+                let drift_idx = xf * PARAMS_PER_XF + DRIFT_MOD_FIELD;
+                if spin_idx < self.xf_params.len() {
+                    self.xf_params[spin_idx] =
+                        self.xf_params[spin_idx].clamp(0.0, cfg.spin_mod_max);
+                }
+                if drift_idx < self.xf_params.len() {
+                    self.xf_params[drift_idx] =
+                        self.xf_params[drift_idx].clamp(0.0, cfg.drift_mod_max);
+                }
+            }
+
+            // Accumulate signal-driven mutation_rate
+            let mr = self
+                .weights
+                .compute_mutation_rate(&self.audio_features, &time_signals);
+            let decay = self.weights._config.mutation_accum_decay;
+            self.mutation_accum =
+                ((self.mutation_accum + mr * dt) * (1.0 - decay * dt)).clamp(0.0, 1.0);
+
+            // Evolution logic
+            let time_since_last = time - self.last_mutation_time;
+            let all_morphed = self
+                .morph_xf_rates
+                .iter()
+                .all(|r| self.morph_progress * r >= 1.0)
+                || self.morph_xf_rates.is_empty();
+
+            let signal_trigger =
+                !self.flame_locked && self.mutation_accum >= 1.0 && time_since_last >= 10.0;
+            let cooldown = self.weights._config.mutation_cooldown;
+            let time_trigger = !self.flame_locked && all_morphed && time_since_last >= cooldown;
+
+            if signal_trigger || time_trigger {
+                self.mutation_accum = 0.0;
+                let reason = if signal_trigger { "signal" } else { "auto" };
+                self.genome_history.push(self.genome.clone());
+                if self.genome_history.len() > 10 {
+                    self.genome_history.remove(0);
+                }
+                let (pa, pb, community) = self.pick_breeding_parents();
+                self.genome = FlameGenome::mutate(
+                    &pa,
+                    &pb,
+                    &community,
+                    &self.audio_features,
+                    &self.weights._config,
+                    &self.favorite_profile,
+                    &mut Some(&mut self.taste_engine),
+                );
+                let genomes_dir = project_dir().join("genomes");
+                self.lineage_cache.register_and_save(
+                    &self.genome.name,
+                    &self.genome.parent_a,
+                    &self.genome.parent_b,
+                    self.genome.generation,
+                    &genomes_dir,
+                );
+                let history_dir = genomes_dir.join("history");
+                if let Err(e) = self.genome.save(&history_dir) {
+                    eprintln!("[history] save error: {e}");
+                }
+                self.archive_genome();
+                self.last_mutation_time = self.start.elapsed().as_secs_f32();
+                self.begin_morph();
+                eprintln!(
+                    "[evolve:{reason}] t={:.1}s → {} (gen {})",
+                    self.start.elapsed().as_secs_f32(),
+                    self.genome.name,
+                    self.genome.generation,
+                );
+            }
+
+            // Periodic favorite profile refresh (every 30s)
+            let profile_scan_interval = 30.0;
+            if time - self.last_profile_scan >= profile_scan_interval {
+                self.favorite_profile = scan_favorite_profile();
+                self.last_profile_scan = time;
+            }
+
+            // Info mode
+            if self.audio_info {
+                self.audio_info_timer += dt;
+                if self.audio_info_timer >= 0.1 {
+                    self.audio_info_timer = 0.0;
+                    self.audio_samples.push(self.audio_features.clone());
+                    let f = &self.audio_features;
+                    eprintln!(
+                        "[info] bass={:.3} mids={:.3} highs={:.3} energy={:.3} beat={:.2} accum={:.2}",
+                        f.bass, f.mids, f.highs, f.energy, f.beat, f.beat_accum
+                    );
+                }
+            }
+        }
+
+        // Build uniforms
+        let uniforms = Uniforms {
+            time: self.start.elapsed().as_secs_f32(),
+            frame: self.frame,
+            resolution: [self.gpu_width as f32, self.gpu_height as f32],
+            mouse: self.mouse,
+            transform_count: self.genome.transform_count(),
+            has_final_xform: (if self.genome.final_transform.is_some() {
+                1u32
+            } else {
+                0u32
+            }) | (self.weights._config.iterations_per_thread.clamp(10, 2000)
+                << 16),
+            globals: [
+                self.globals[0],
+                self.globals[1],
+                self.globals[2],
+                self.globals[3],
+            ],
+            kifs: [
+                self.globals[4],
+                self.globals[5],
+                self.globals[6],
+                self.globals[7],
+            ],
+            extra: [
+                self.globals[8],
+                self.globals[9],
+                self.globals[10],
+                self.genome.symmetry as f32,
+            ],
+            extra2: [
+                self.globals[12],
+                self.globals[13],
+                self.globals[14],
+                self.globals[15],
+            ],
+            extra3: [
+                self.globals[16],
+                self.globals[17],
+                self.globals[18],
+                self.globals[19],
+            ],
+            extra4: [
+                self.weights._config.jitter_amount,
+                self.weights._config.tonemap_mode as f32,
+                self.weights._config.histogram_equalization,
+                self.weights._config.dof_strength,
+            ],
+            extra5: [
+                self.weights._config.dof_focal_distance,
+                if self.weights._config.spectral_rendering {
+                    1.0
+                } else {
+                    0.0
+                },
+                self.weights._config.temporal_reprojection,
+                self.prev_zoom,
+            ],
+            extra6: [
+                self.weights._config.dist_lum_strength,
+                self.weights._config.iter_lum_range,
+                0.0,
+                0.0,
+            ],
+            extra7: [
+                self.weights._config.camera_pitch,
+                self.weights._config.camera_yaw,
+                self.weights._config.camera_focal,
+                self.weights._config.dof_focal_distance,
+            ],
+            extra8: [self.weights._config.dof_strength, 0.0, 0.0, 0.0],
+        };
+
+        self.prev_zoom = self.globals[1];
+
+        // Adaptive compute budget
+        let effective_xforms =
+            self.genome.transform_count() * (self.genome.symmetry.unsigned_abs().max(1));
+        let budget_baseline = 4u32;
+        let base_wg = self.weights._config.samples_per_frame;
+        let base_iters = self.weights._config.iterations_per_thread;
+        let (final_uniforms, computed_workgroups) = if effective_xforms > budget_baseline {
+            let ratio = budget_baseline as f32 / effective_xforms as f32;
+            let sqrt_ratio = ratio.sqrt();
+            let wg = (base_wg as f32 * sqrt_ratio).max(256.0) as u32;
+            let scaled_iters = (base_iters as f32 * sqrt_ratio).max(40.0) as u32;
+            let has_final = if self.genome.final_transform.is_some() {
+                1u32
+            } else {
+                0u32
+            };
+            let patched = Uniforms {
+                has_final_xform: has_final | (scaled_iters.clamp(10, 2000) << 16),
+                ..uniforms
+            };
+            (patched, wg)
+        } else {
+            (uniforms, base_wg)
+        };
+
+        // Jacobian importance sampling
+        let xf_write_len = self.num_transforms * PARAMS_PER_XF;
+        let xf_len = xf_write_len.min(self.xf_params.len());
+        let final_xf_params: Vec<f32> = {
+            let jac_strength = self.weights._config.jacobian_weight_strength;
+            if jac_strength > 0.001 && self.num_transforms > 0 {
+                let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
+                let n = (xf_len / PARAMS_PER_XF).min(self.num_transforms);
+                let mut weights: Vec<f32> = Vec::with_capacity(n);
+                for i in 0..n {
+                    let base = i * PARAMS_PER_XF;
+                    let w = adjusted[base];
+                    let a = adjusted[base + 1];
+                    let b = adjusted[base + 2];
+                    let c = adjusted[base + 4];
+                    let d = adjusted[base + 5];
+                    let det = (a * d - b * c).abs();
+                    weights.push(w * (1.0 - jac_strength) + det * jac_strength);
+                }
+                let total: f32 = weights.iter().sum();
+                if total > 0.0 {
+                    for (i, jw) in weights.iter().enumerate() {
+                        adjusted[i * PARAMS_PER_XF] = jw / total;
+                    }
+                }
+                adjusted
+            } else {
+                self.xf_params[..xf_len].to_vec()
+            }
+        };
+
+        // Accumulation uniforms
+        let base_decay = self.weights._config.accumulation_decay;
+        let morph_burst_decay = self.weights._config.morph_burst_decay;
+        let decay = if self.morph_burst_frames > 0 {
+            let burst_t = self.morph_burst_frames as f32 / 60.0;
+            base_decay + (morph_burst_decay - base_decay) * burst_t
+        } else {
+            base_decay
+        };
+        let accum_uniforms: [f32; 4] = [
+            self.gpu_width as f32,
+            self.gpu_height as f32,
+            decay,
+            self.weights._config.accumulation_cap,
+        ];
+
+        // Histogram CDF uniforms
+        let hist_cdf_uniforms: [f32; 4] = [
+            self.gpu_width as f32,
+            self.gpu_height as f32,
+            self.globals[3],
+            (self.gpu_width * self.gpu_height) as f32,
+        ];
+
+        if self.morph_burst_frames > 0 {
+            self.morph_burst_frames -= 1;
+        }
+
+        // Build HUD data
+        let time = self.start.elapsed().as_secs_f32();
+        let hud_time_signals = crate::weights::TimeSignals::compute(
+            time,
+            time - self.last_mutation_time,
+            self.random_walk,
+        );
+        let hud = HudFrameData {
+            fps: 1.0 / dt,
+            mutation_accum: self.mutation_accum,
+            time_since_mutation: time - self.last_mutation_time,
+            cooldown: self.weights._config.mutation_cooldown,
+            morph_progress: self.morph_progress,
+            morph_xf_rates: {
+                let mut rates = [0.0f32; 12];
+                for (i, r) in self.morph_xf_rates.iter().take(12).enumerate() {
+                    rates[i] = *r;
+                }
+                rates
+            },
+            num_transforms: self.num_transforms,
+            audio_bass: self.audio_features.bass,
+            audio_mids: self.audio_features.mids,
+            audio_highs: self.audio_features.highs,
+            audio_energy: self.audio_features.energy,
+            audio_beat: self.audio_features.beat,
+            audio_beat_accum: self.audio_features.beat_accum,
+            audio_change: self.audio_features.change,
+            time_slow: hud_time_signals.time_slow,
+            time_med: hud_time_signals.time_med,
+            time_fast: hud_time_signals.time_fast,
+            time_noise: hud_time_signals.time_noise,
+            time_drift: hud_time_signals.time_drift,
+            time_flutter: hud_time_signals.time_flutter,
+            time_walk: hud_time_signals.time_walk,
+            time_envelope: hud_time_signals.time_envelope,
+            transform_weights: {
+                let mut w = [0.0f32; 12];
+                for (i, slot) in w.iter_mut().enumerate().take(self.num_transforms.min(12)) {
+                    let idx = i * PARAMS_PER_XF;
+                    if idx < self.xf_params.len() {
+                        *slot = self.xf_params[idx];
+                    }
+                }
+                w
+            },
+            transform_variations: {
+                let mut vars = [[0.0f32; 26]; 12];
+                for (i, xf_vars) in vars
+                    .iter_mut()
+                    .enumerate()
+                    .take(self.num_transforms.min(12))
+                {
+                    let base = i * PARAMS_PER_XF + 14;
+                    for (v, slot) in xf_vars.iter_mut().enumerate() {
+                        let idx = base + v;
+                        if idx < self.xf_params.len() {
+                            *slot = self.xf_params[idx];
+                        }
+                    }
+                }
+                vars
+            },
+            hud_fade_delay: self.weights._config.hud_fade_delay,
+            hud_fade_duration: self.weights._config.hud_fade_duration,
+        };
+
+        // Build egui UI and tessellate
+        let (egui_primitives, egui_textures_delta, egui_pixels_per_point) =
+            self.build_egui_frame(&hud, raw_input);
+
+        // Merge pending texture deltas from dropped frames
+        let mut egui_textures_delta = egui_textures_delta;
+        if !self.pending_egui_textures.set.is_empty() || !self.pending_egui_textures.free.is_empty()
+        {
+            let mut merged = std::mem::take(&mut self.pending_egui_textures);
+            merged.set.append(&mut egui_textures_delta.set);
+            merged.free.append(&mut egui_textures_delta.free);
+            egui_textures_delta = merged;
+        }
+
+        let frame_data = FrameData {
+            uniforms: final_uniforms,
+            xf_params: final_xf_params,
+            accum_uniforms,
+            hist_cdf_uniforms,
+            workgroups: computed_workgroups,
+            run_compute: self.frame >= 3,
+            egui_primitives,
+            egui_textures_delta,
+            egui_pixels_per_point,
+        };
+        match self
+            .render_tx
+            .try_send(RenderCommand::Render(Box::new(frame_data)))
+        {
+            Ok(()) => {}
+            Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
+                self.pending_egui_textures = dropped.egui_textures_delta;
+            }
+            Err(_) => {}
+        }
+        self.frame += 1;
+
+        // Per-genome performance tracking
+        self.genome_frame_count += 1;
+        let genome_elapsed = self.genome_start_time.elapsed().as_secs_f32();
+        let mut perf_skip = false;
+        if genome_elapsed > 3.0 && self.genome_frame_count > 30 {
+            let genome_fps = self.genome_frame_count as f32 / genome_elapsed;
+            let min_fps = self.weights._config.min_genome_fps;
+            let good_fps = self.weights._config.perf_good_fps;
+
+            let comp = crate::taste::CompositionFeatures::extract(&self.genome);
+            let mut perf_features = comp.to_vec();
+            for xf in &self.genome.transforms {
+                let tf = crate::taste::TransformFeatures::extract(xf);
+                perf_features.extend(tf.to_vec());
+            }
+            perf_features.resize(5 + 6 * 8, 0.0);
+            perf_features.push(self.genome.symmetry.unsigned_abs() as f32);
+            if genome_fps < min_fps && !self.flame_locked {
+                self.perf_model.record_slow(&perf_features, 0.1);
+                eprintln!(
+                    "[perf-skip] {} avg {genome_fps:.1}fps < {min_fps}fps \
+                     (xf={}, sym={}, frames={})",
+                    self.genome.name,
+                    self.genome.transform_count(),
+                    self.genome.symmetry,
+                    self.genome_frame_count,
+                );
+                perf_skip = true;
+            } else if genome_fps >= good_fps {
+                self.perf_model.record_fast(&perf_features, 0.1);
+            }
+
+            if self.perf_model.is_active() && self.genome_frame_count.is_multiple_of(600) {
+                let _ = self
+                    .perf_model
+                    .save(&project_dir().join("genomes").join("perf_model.json"));
+            }
+        }
+
+        // FPS logging
+        self.fps_frame_count += 1;
+        if self.fps_frame_count >= 60 {
+            let elapsed = self.last_fps_time.elapsed();
+            let fps = self.fps_frame_count as f64 / elapsed.as_secs_f64();
+            let ms = elapsed.as_millis() as f64 / self.fps_frame_count as f64;
+            log::info!("[perf] {fps:.1} fps ({ms:.1}ms/frame)");
+            self.fps_frame_count = 0;
+            self.last_fps_time = Instant::now();
+        }
+
+        // Perf log
+        let ms_per_frame = dt * 1000.0;
+        let is_slow = ms_per_frame > 33.0;
+        let is_periodic = self.frame.is_multiple_of(300);
+        if (is_slow || is_periodic)
+            && let Some(ref mut log) = self.perf_log
+        {
+            let tag = if is_slow { "SLOW" } else { "ok" };
+            let _ = writeln!(
+                log,
+                "[{}] f={} {:.1}ms/f {:.0}fps wg={} morph={:.2} burst={} decay={:.3} | {}",
+                tag,
+                self.frame,
+                ms_per_frame,
+                1.0 / dt.max(0.001),
+                computed_workgroups,
+                self.morph_progress,
+                self.morph_burst_frames,
+                decay,
+                self.genome.perf_summary()
+            );
+        }
+
+        // Perf-skip: auto-evolve away from expensive genomes
+        if perf_skip {
+            self.genome_history.push(self.genome.clone());
+            if self.genome_history.len() > 10 {
+                self.genome_history.remove(0);
+            }
+            let (pa, pb, community) = self.pick_breeding_parents();
+            self.genome = FlameGenome::mutate(
+                &pa,
+                &pb,
+                &community,
+                &self.audio_features,
+                &self.weights._config,
+                &self.favorite_profile,
+                &mut Some(&mut self.taste_engine),
+            );
+            let genomes_dir = project_dir().join("genomes");
+            self.lineage_cache.register_and_save(
+                &self.genome.name,
+                &self.genome.parent_a,
+                &self.genome.parent_b,
+                self.genome.generation,
+                &genomes_dir,
+            );
+            self.last_mutation_time = self.start.elapsed().as_secs_f32();
+            self.begin_morph();
+            eprintln!(
+                "[auto-evolve] t={:.1}s → {} (gen {}) [perf skip]",
+                self.start.elapsed().as_secs_f32(),
+                self.genome.name,
+                self.genome.generation,
+            );
+        }
+    }
+}
+
+// ── UI Thread Loop ──
+
+fn ui_thread_loop(rx: mpsc::Receiver<UiEvent>, mut state: UiState) {
+    let mut last_tick = Instant::now();
+    loop {
+        match rx.recv() {
+            Ok(UiEvent::EguiInput(raw_input)) => {
+                // 120fps cap — skip if too soon since last tick
+                if state.frame >= 3 && last_tick.elapsed() < Duration::from_micros(8333) {
+                    continue;
+                }
+                last_tick = Instant::now();
+                state.tick(raw_input);
+            }
+            Ok(UiEvent::CursorMoved { x, y }) => {
+                state.on_cursor_moved(x, y);
+            }
+            Ok(UiEvent::KeyPressed(key)) => {
+                state.on_key(&key);
+            }
+            Ok(UiEvent::Resize { width, height }) => {
+                state.on_resize(width, height);
+                // Forward resize to render thread too
+                let _ = state
+                    .render_tx
+                    .send(RenderCommand::Resize { width, height });
+            }
+            Ok(UiEvent::Shutdown) | Err(_) => {
+                let _ = state.render_tx.send(RenderCommand::Shutdown);
+                eprintln!("[ui-thread] shutdown");
+                break;
+            }
+        }
+    }
 }
 
 impl ApplicationHandler for App {
@@ -3800,11 +4712,14 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
+
+        let init = self.init_state.take().expect("init_state consumed twice");
+
         let attrs = WindowAttributes::default()
             .with_title("Shader Playground")
             .with_inner_size(winit::dpi::LogicalSize::new(
-                self.weights._config.window_width,
-                self.weights._config.window_height,
+                init.weights._config.window_width,
+                init.weights._config.window_height,
             ))
             .with_resizable(true);
         let window = Arc::new(event_loop.create_window(attrs).unwrap());
@@ -3823,7 +4738,6 @@ impl ApplicationHandler for App {
             #[allow(deprecated)]
             ns_app.activateIgnoringOtherApps(true);
 
-            // Set the process name so window pickers show "Shader Playground"
             let process_info: *mut AnyObject =
                 unsafe { msg_send![objc2::class!(NSProcessInfo), processInfo] };
             let name = NSString::from_str("Shader Playground");
@@ -3839,7 +4753,7 @@ impl ApplicationHandler for App {
             t.elapsed().as_secs_f64() * 1000.0
         );
 
-        // Watch all shader files + params
+        // File watcher
         let paths = vec![
             shader_path(),
             compute_path(),
@@ -3848,86 +4762,96 @@ impl ApplicationHandler for App {
             audio_features_path(),
             project_dir().join("genomes").join("votes.json"),
         ];
-        match FileWatcher::new(&paths) {
-            Ok(w) => self.watcher = Some(w),
-            Err(e) => eprintln!("warning: file watcher failed: {e}"),
-        }
+        let watcher = match FileWatcher::new(&paths) {
+            Ok(w) => Some(w),
+            Err(e) => {
+                eprintln!("warning: file watcher failed: {e}");
+                None
+            }
+        };
 
         // Try loading a random genome (before gpu moves to render thread)
+        let mut init = init;
         let genomes_dir = project_dir().join("genomes");
         if genomes_dir.exists()
             && let Ok(mut g) = FlameGenome::load_random(&genomes_dir)
         {
-            g.adjust_transform_count(&self.weights._config);
+            g.adjust_transform_count(&init.weights._config);
             eprintln!("[genome] loaded: {}", g.name);
-            self.genome = g;
-            let g_globals = self.genome.flatten_globals(&self.weights._config);
-            let g_xf = self.genome.flatten_transforms();
-            self.globals = g_globals;
-            self.xf_params = g_xf.clone();
-            self.morph_base_globals = g_globals;
-            self.morph_base_xf = g_xf.clone();
-            self.morph_start_globals = g_globals;
-            self.morph_start_xf = g_xf;
-            self.morph_progress = 1.0;
-            self.num_transforms = self.genome.total_buffer_transforms();
+            let g_globals = g.flatten_globals(&init.weights._config);
+            let g_xf = g.flatten_transforms();
+            init.initial_globals = g_globals;
+            init.initial_xf = g_xf;
+            init.num_transforms = g.total_buffer_transforms();
+            init.genome = g;
         }
 
         // Upload palette + resize transform buffer while we still own gpu
-        let palette_data = crate::genome::palette_rgba_data(&self.genome);
+        let palette_data = crate::genome::palette_rgba_data(&init.genome);
         upload_palette_texture(&gpu.queue, &gpu.palette_texture, &palette_data);
-        gpu.resize_transform_buffer(self.num_transforms);
+        gpu.resize_transform_buffer(init.num_transforms);
 
-        // Spawn render thread — gpu moves into it permanently
-        // Bounded channel (1 frame): prevents main thread from spinning faster than GPU
-        // can consume, which would starve keyboard/mouse events.
-        let (tx, rx) = mpsc::sync_channel(1);
+        // Spawn render thread
+        let (render_tx, render_rx) = mpsc::sync_channel(1);
         std::thread::Builder::new()
             .name("render".into())
-            .spawn(move || render_thread_loop(rx, gpu))
+            .spawn(move || render_thread_loop(render_rx, gpu))
             .expect("failed to spawn render thread");
 
-        self.render_tx = Some(tx);
-        // Use configured dimensions — inner_size() returns 0×0 on macOS before window is shown
-        self.gpu_width = self.weights._config.window_width.max(1);
-        self.gpu_height = self.weights._config.window_height.max(1);
+        // Use configured dimensions
+        self.gpu_width = init.weights._config.window_width.max(1);
+        self.gpu_height = init.weights._config.window_height.max(1);
 
-        // Initialize egui input state on main thread
-        let egui_ctx = egui::Context::default();
-        self.egui_state = Some(egui_winit::State::new(
-            egui_ctx,
-            egui::ViewportId::ROOT,
-            &window,
-            Some(window.scale_factor() as f32),
-            None,
-            None,
-        ));
-
-        self.window = Some(window.clone());
         eprintln!(
             "[debug] window surface={}x{}, gpu_dims={}x{}, samples_per_frame={}, xf_range={}-{}, iters={}",
             initial_width,
             initial_height,
             self.gpu_width,
             self.gpu_height,
-            self.weights._config.samples_per_frame,
-            self.weights._config.transform_count_min,
-            self.weights._config.transform_count_max,
-            self.weights._config.iterations_per_thread,
+            init.weights._config.samples_per_frame,
+            init.weights._config.transform_count_min,
+            init.weights._config.transform_count_max,
+            init.weights._config.iterations_per_thread,
         );
-        window.request_redraw();
 
-        // Build initial taste model from voted/imported genomes
+        // Initialize egui — State stays on main thread, Context goes to UI thread
+        let egui_ctx = egui::Context::default();
+        let egui_state = egui_winit::State::new(
+            egui_ctx.clone(),
+            egui::ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        );
+        self.egui_state = Some(egui_state);
+
+        // Create UiState and spawn UI thread
+        let gpu_w = self.gpu_width;
+        let gpu_h = self.gpu_height;
+        let mut ui_state = UiState::new(render_tx, egui_ctx, init, watcher, gpu_w, gpu_h);
+
+        // Build initial taste model before spawning
         let t = Instant::now();
-        self.rebuild_taste_model();
+        ui_state.rebuild_taste_model();
         eprintln!(
             "[boot] taste model rebuilt ({:.0}ms)",
             t.elapsed().as_secs_f64() * 1000.0
         );
 
+        let (ui_tx, ui_rx) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("ui".into())
+            .spawn(move || ui_thread_loop(ui_rx, ui_state))
+            .expect("failed to spawn UI thread");
+        self.ui_tx = Some(ui_tx);
+
+        self.window = Some(window.clone());
+        window.request_redraw();
+
         eprintln!(
             "[boot] total startup: {:.0}ms",
-            self.start.elapsed().as_secs_f64() * 1000.0
+            Instant::now().elapsed().as_secs_f64() * 1000.0
         );
         eprintln!("shader playground running — edit playground.wgsl or flame_compute.wgsl");
     }
@@ -3938,16 +4862,17 @@ impl ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
-        // Always track cursor movement (before egui consumes the event)
-        if let WindowEvent::CursorMoved { position, .. } = &event {
-            self.last_cursor_move = Instant::now();
-            self.mouse = [
-                position.x as f32 / self.gpu_width.max(1) as f32,
-                position.y as f32 / self.gpu_height.max(1) as f32,
-            ];
+        // Forward cursor position to UI thread for HUD fade
+        if let WindowEvent::CursorMoved { position, .. } = &event
+            && let Some(tx) = &self.ui_tx
+        {
+            let _ = tx.send(UiEvent::CursorMoved {
+                x: position.x as f32,
+                y: position.y as f32,
+            });
         }
 
-        // Forward events to egui for input handling
+        // Feed events to egui (on main thread — egui_winit::State needs Window)
         if let Some(egui_state) = &mut self.egui_state
             && let Some(window) = &self.window
         {
@@ -3959,8 +4884,8 @@ impl ApplicationHandler for App {
 
         match event {
             WindowEvent::CloseRequested => {
-                if let Some(tx) = self.render_tx.take() {
-                    let _ = tx.send(RenderCommand::Shutdown);
+                if let Some(tx) = self.ui_tx.take() {
+                    let _ = tx.send(UiEvent::Shutdown);
                 }
                 event_loop.exit();
             }
@@ -3968,20 +4893,17 @@ impl ApplicationHandler for App {
                 if size.width > 0 && size.height > 0 {
                     self.gpu_width = size.width;
                     self.gpu_height = size.height;
-                    if let Some(tx) = &self.render_tx {
-                        let _ = tx.send(RenderCommand::Resize {
+                    if let Some(tx) = &self.ui_tx {
+                        let _ = tx.send(UiEvent::Resize {
                             width: size.width,
                             height: size.height,
                         });
                     }
                 }
             }
-            WindowEvent::CursorMoved { .. } => {} // handled above (before egui consumes it)
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Left,
-                ..
-            } => {}
+            WindowEvent::CursorMoved { .. } => {} // forwarded above
+            WindowEvent::MouseInput { .. } => {}
+            // Forward key presses to UI thread
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -3990,856 +4912,44 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } if self.vote_feedback.is_none() => match logical_key {
-                Key::Named(NamedKey::Space) => {
-                    self.genome_history.push(self.genome.clone());
-                    if self.genome_history.len() > 10 {
-                        self.genome_history.remove(0);
-                    }
-                    self.flame_locked = false; // unlock on manual mutate
-                    self.mutation_accum = 0.0;
-                    let (pa, pb, community) = self.pick_breeding_parents();
-                    self.genome = FlameGenome::mutate(
-                        &pa,
-                        &pb,
-                        &community,
-                        &self.audio_features,
-                        &self.weights._config,
-                        &self.favorite_profile,
-                        &mut Some(&mut self.taste_engine),
-                    );
-                    let genomes_dir = project_dir().join("genomes");
-                    self.lineage_cache.register_and_save(
-                        &self.genome.name,
-                        &self.genome.parent_a,
-                        &self.genome.parent_b,
-                        self.genome.generation,
-                        &genomes_dir,
-                    );
-                    // Auto-save to history
-                    let history_dir = genomes_dir.join("history");
-                    if let Err(e) = self.genome.save(&history_dir) {
-                        eprintln!("[history] save error: {e}");
-                    }
-                    self.archive_genome();
-                    self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                    self.begin_morph();
-                    if let Some(taste_score) = self.taste_engine.score_genome(&self.genome) {
-                        eprintln!(
-                            "[evolve] t={:.1}s → {} (gen {}, taste={:.2})",
-                            self.start.elapsed().as_secs_f32(),
-                            self.genome.name,
-                            self.genome.generation,
-                            taste_score
-                        );
-                    } else {
-                        eprintln!(
-                            "[evolve] t={:.1}s → {} (gen {})",
-                            self.start.elapsed().as_secs_f32(),
-                            self.genome.name,
-                            self.genome.generation
-                        );
-                    }
+            } => {
+                let key_str = match &logical_key {
+                    Key::Named(NamedKey::Space) => Some("Space"),
+                    Key::Named(NamedKey::Backspace) => Some("Backspace"),
+                    Key::Named(NamedKey::ArrowUp) => Some("ArrowUp"),
+                    Key::Named(NamedKey::ArrowDown) => Some("ArrowDown"),
+                    Key::Character(c) => match c.as_str() {
+                        "s" | "l" | "1" | "2" | "3" | "4" | "f" | "a" | "c" | "i" => {
+                            Some(c.as_str())
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                if let Some(key) = key_str
+                    && let Some(tx) = &self.ui_tx
+                {
+                    let _ = tx.send(UiEvent::KeyPressed(key.to_string()));
                 }
-                Key::Named(NamedKey::Backspace) => {
-                    if let Some(prev) = self.genome_history.pop() {
-                        self.genome = prev;
-                        self.begin_morph();
-                        eprintln!("[revert] back to previous");
-                    }
-                }
-                Key::Named(NamedKey::ArrowUp) => {
-                    let dir = project_dir().join("genomes");
-                    let vote_genome = self.morph_snapshot_or_current();
-                    let score = self.vote_ledger.vote(&vote_genome, 1, &dir);
-                    self.favorite_profile = Self::scan_favorite_profile();
-                    let igmm_path = dir.join("taste_model.json");
-                    self.taste_engine.on_upvote(&self.genome, Some(&igmm_path));
-                    self.rebuild_taste_model();
-                    let existing_note = self
-                        .vote_ledger
-                        .entries
-                        .get(&vote_genome.name)
-                        .and_then(|e| e.note.clone())
-                        .unwrap_or_default();
-                    let prev_name = self.genome_history.last().map(|g| g.name.clone());
-                    self.vote_feedback =
-                        Some((1, vote_genome.name.clone(), existing_note, prev_name));
-                    if vote_genome.name != self.genome.name {
-                        eprintln!(
-                            "[vote] captured morph {:.0}% → {} +1 (score: {})",
-                            self.morph_progress * 100.0,
-                            vote_genome.name,
-                            score
-                        );
-                    } else {
-                        eprintln!("[vote] {} → +1 (score: {})", self.genome.name, score);
-                    }
-                }
-                Key::Named(NamedKey::ArrowDown) => {
-                    let dir = project_dir().join("genomes");
-                    let vote_genome = self.morph_snapshot_or_current();
-                    let score = self.vote_ledger.vote(&vote_genome, -1, &dir);
-                    self.favorite_profile = Self::scan_favorite_profile();
-                    self.rebuild_taste_model();
-                    let existing_note = self
-                        .vote_ledger
-                        .entries
-                        .get(&vote_genome.name)
-                        .and_then(|e| e.note.clone())
-                        .unwrap_or_default();
-                    let prev_name = self.genome_history.last().map(|g| g.name.clone());
-                    self.vote_feedback =
-                        Some((-1, vote_genome.name.clone(), existing_note, prev_name));
-                    if vote_genome.name != self.genome.name {
-                        eprintln!(
-                            "[vote] captured morph {:.0}% → {} -1 (score: {})",
-                            self.morph_progress * 100.0,
-                            vote_genome.name,
-                            score
-                        );
-                    } else {
-                        eprintln!("[vote] {} → -1 (score: {})", self.genome.name, score);
-                    }
-                }
-                Key::Character(ref c) => match c.as_str() {
-                    "s" => {
-                        let save_genome = self.morph_snapshot_or_current();
-                        let dir = project_dir().join("genomes");
-                        match save_genome.save(&dir) {
-                            Ok(p) => {
-                                if save_genome.name != self.genome.name {
-                                    eprintln!(
-                                        "[save] morph snapshot at {:.0}% → {}",
-                                        self.morph_progress * 100.0,
-                                        p.display()
-                                    );
-                                } else {
-                                    eprintln!("[save] {}", p.display());
-                                }
-                            }
-                            Err(e) => eprintln!("[save] error: {e}"),
-                        }
-                        self.favorite_profile = Self::scan_favorite_profile();
-                        self.last_profile_scan = self.start.elapsed().as_secs_f32();
-                    }
-                    "l" => {
-                        let dir = project_dir().join("genomes");
-                        match FlameGenome::load_random(&dir) {
-                            Ok(mut g) => {
-                                g.adjust_transform_count(&self.weights._config);
-                                self.genome_history.push(self.genome.clone());
-                                if self.genome_history.len() > 10 {
-                                    self.genome_history.remove(0);
-                                }
-                                eprintln!("[load] {}", g.name);
-                                self.genome = g;
-                                self.begin_morph();
-                            }
-                            Err(e) => eprintln!("[load] error: {e}"),
-                        }
-                    }
-                    "1" | "2" | "3" | "4" => {
-                        let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
-                        if idx < self.num_transforms {
-                            let base = idx * PARAMS_PER_XF; // weight is first field
-                            if base < self.xf_params.len() {
-                                if self.xf_params[base] < 0.01 {
-                                    self.xf_params[base] = 0.25;
-                                } else {
-                                    self.xf_params[base] = 0.0;
-                                }
-                                eprintln!("[solo] transform {} = {}", idx, self.xf_params[base]);
-                            }
-                        }
-                    }
-                    "f" => {
-                        let flames_dir = project_dir().join("genomes").join("flames");
-                        match crate::flam3::load_random_flame(&flames_dir) {
-                            Ok(mut g) => {
-                                g.adjust_transform_count(&self.weights._config);
-                                self.genome_history.push(self.genome.clone());
-                                if self.genome_history.len() > 10 {
-                                    self.genome_history.remove(0);
-                                }
-                                self.genome = g;
-                                self.flame_locked = true;
-                                self.mutation_accum = 0.0;
-                                self.begin_morph();
-                                eprintln!("[flame] loaded (locked): {}", self.genome.name);
-                            }
-                            Err(e) => eprintln!("[flame] error: {e}"),
-                        }
-                    }
-                    "a" => {
-                        self.audio_enabled = !self.audio_enabled;
-                        eprintln!(
-                            "[audio] {}",
-                            if self.audio_enabled {
-                                "enabled"
-                            } else {
-                                "disabled"
-                            }
-                        );
-                    }
-                    "c" => {
-                        self.config_panel_open = !self.config_panel_open;
-                        if self.config_panel_open {
-                            self.config_edit = Some(self.weights._config.clone());
-                            self.config_edit_weights = Some(self.weights.clone());
-                        } else {
-                            self.config_edit = None;
-                            self.config_edit_weights = None;
-                        }
-                        eprintln!(
-                            "[config] panel {}",
-                            if self.config_panel_open {
-                                "opened"
-                            } else {
-                                "closed"
-                            }
-                        );
-                    }
-                    "i" => {
-                        self.audio_info = !self.audio_info;
-                        if self.audio_info {
-                            self.audio_samples.clear();
-                            eprintln!(
-                                "[info] ON — recording audio features (press i again to save)"
-                            );
-                        } else {
-                            let count = self.audio_samples.len();
-                            if count > 0 {
-                                let timestamp = std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap()
-                                    .as_secs();
-                                let path = format!("audio_samples_{}.json", timestamp);
-                                match serde_json::to_string_pretty(&self.audio_samples) {
-                                    Ok(json) => {
-                                        std::fs::write(&path, json).ok();
-                                        eprintln!("[info] OFF — saved {count} samples to {path}");
-                                    }
-                                    Err(e) => eprintln!("[info] OFF — serialize error: {e}"),
-                                }
-                            } else {
-                                eprintln!("[info] OFF — no samples collected");
-                            }
-                        }
-                    }
-                    _ => {}
-                },
-                _ => {}
-            },
+            }
             WindowEvent::RedrawRequested => {
-                // Cap at 120fps — prevents wasting CPU on frames that get dropped
-                if self.frame >= 3
-                    && self.last_frame_time.elapsed() < std::time::Duration::from_micros(8333)
+                // Collect egui input and send to UI thread — the UI thread does all heavy work
+                if let Some(egui_state) = &mut self.egui_state
+                    && let Some(window) = &self.window
                 {
-                    if let Some(w) = &self.window {
-                        w.request_redraw();
-                    }
-                    return;
-                }
-
-                if self.frame < 3 {
-                    eprintln!("[debug] RedrawRequested frame={}", self.frame);
-                }
-                self.check_file_changes();
-
-                let now = Instant::now();
-                let dt = now
-                    .duration_since(self.last_frame_time)
-                    .as_secs_f32()
-                    .max(0.001);
-                self.last_frame_time = now;
-
-                // Apply weight matrix (audio features from background thread, plus time)
-                if self.audio_enabled {
-                    let time = self.start.elapsed().as_secs_f32();
-                    let time_since_mutation = time - self.last_mutation_time;
-                    self.random_walk += crate::weights::value_noise_pub(time * 0.3) * dt * 0.5;
-                    let time_signals = crate::weights::TimeSignals::compute(
-                        time,
-                        time_since_mutation,
-                        self.random_walk,
-                    );
-
-                    // Advance morph progress
-                    let morph_dur = self.weights._config.morph_duration;
-                    // morph_progress can exceed 1.0 so slow transforms finish
-                    let min_rate = self
-                        .morph_xf_rates
-                        .iter()
-                        .copied()
-                        .min_by(|a, b| a.partial_cmp(b).unwrap())
-                        .unwrap_or(1.0)
-                        .max(0.1);
-                    let morph_done_at = 1.0 / min_rate; // e.g. 2.5 for rate=0.4
-                    if self.morph_progress < morph_done_at {
-                        self.morph_progress =
-                            (self.morph_progress + dt / morph_dur).min(morph_done_at);
-                    }
-                    let t = smoothstep(self.morph_progress.min(1.0));
-
-                    // Interpolate genome base values (ease-in-out)
-                    let genome_globals = self.genome.flatten_globals(&self.weights._config);
-                    let genome_xf = self.genome.flatten_transforms();
-
-                    for (base, (start, target)) in self
-                        .morph_base_globals
-                        .iter_mut()
-                        .zip(self.morph_start_globals.iter().zip(genome_globals.iter()))
-                    {
-                        *base = start + (target - start) * t;
-                    }
-                    let max_len = self.morph_start_xf.len().max(genome_xf.len());
-                    self.morph_base_xf.resize(max_len, 0.0);
-                    let mut padded_start = self.morph_start_xf.clone();
-                    padded_start.resize(max_len, 0.0);
-                    let mut padded_genome = genome_xf;
-                    padded_genome.resize(max_len, 0.0);
-                    let num_xf = max_len / PARAMS_PER_XF;
-                    for xi in 0..num_xf {
-                        // Each transform morphs at its own rate
-                        let rate = self.morph_xf_rates.get(xi).copied().unwrap_or(1.0);
-                        let xf_t = smoothstep((self.morph_progress * rate).min(1.0));
-                        let base = xi * PARAMS_PER_XF;
-                        // Only morph genome-owned fields (0..48), not audio modulation fields (48-49)
-                        for j in 0..48 {
-                            let idx = base + j;
-                            if idx < max_len {
-                                self.morph_base_xf[idx] = padded_start[idx]
-                                    + (padded_genome[idx] - padded_start[idx]) * xf_t;
-                            }
-                        }
-                    }
-
-                    // Apply audio modulation on top of morphed base
-                    let modulated_globals = self.weights.apply_globals(
-                        &self.morph_base_globals,
-                        &self.audio_features,
-                        &time_signals,
-                    );
-                    let modulated_xf = self.weights.apply_transforms(
-                        &self.morph_base_xf,
-                        self.num_transforms,
-                        &self.audio_features,
-                        &time_signals,
-                    );
-
-                    // Set final values directly (morph handles smoothing)
-                    self.globals = modulated_globals;
-                    self.xf_params = modulated_xf;
-
-                    // Apply variation CRISPR — scale/zero out variations from config
-                    self.weights
-                        ._config
-                        .apply_variation_scales(&mut self.xf_params, self.num_transforms);
-
-                    // Clamp per-transform spin_mod and drift_mod
-                    let cfg = &self.weights._config;
-                    for xf in 0..self.num_transforms {
-                        let spin_idx = xf * PARAMS_PER_XF + SPIN_MOD_FIELD;
-                        let drift_idx = xf * PARAMS_PER_XF + DRIFT_MOD_FIELD;
-                        if spin_idx < self.xf_params.len() {
-                            self.xf_params[spin_idx] =
-                                self.xf_params[spin_idx].clamp(0.0, cfg.spin_mod_max);
-                        }
-                        if drift_idx < self.xf_params.len() {
-                            self.xf_params[drift_idx] =
-                                self.xf_params[drift_idx].clamp(0.0, cfg.drift_mod_max);
-                        }
-                    }
-
-                    // Accumulate signal-driven mutation_rate from weights
-                    let mr = self
-                        .weights
-                        .compute_mutation_rate(&self.audio_features, &time_signals);
-                    // Decay so accum drains during silence, signals must outpace decay
-                    let decay = self.weights._config.mutation_accum_decay;
-                    self.mutation_accum =
-                        ((self.mutation_accum + mr * dt) * (1.0 - decay * dt)).clamp(0.0, 1.0);
-
-                    // Two evolution paths: signal-driven OR time-based
-                    let time_since_last = time - self.last_mutation_time;
-                    let all_morphed = self
-                        .morph_xf_rates
-                        .iter()
-                        .all(|r| self.morph_progress * r >= 1.0)
-                        || self.morph_xf_rates.is_empty();
-
-                    // Signal-driven: mutation_rate accumulated to 1.0 (min 10s between)
-                    let signal_trigger =
-                        !self.flame_locked && self.mutation_accum >= 1.0 && time_since_last >= 10.0;
-                    // Time-based: all morphed + cooldown elapsed
-                    let cooldown = self.weights._config.mutation_cooldown;
-                    let time_trigger =
-                        !self.flame_locked && all_morphed && time_since_last >= cooldown;
-
-                    if signal_trigger || time_trigger {
-                        self.mutation_accum = 0.0;
-                        let reason = if signal_trigger { "signal" } else { "auto" };
-                        self.genome_history.push(self.genome.clone());
-                        if self.genome_history.len() > 10 {
-                            self.genome_history.remove(0);
-                        }
-                        let (pa, pb, community) = self.pick_breeding_parents();
-                        self.genome = FlameGenome::mutate(
-                            &pa,
-                            &pb,
-                            &community,
-                            &self.audio_features,
-                            &self.weights._config,
-                            &self.favorite_profile,
-                            &mut Some(&mut self.taste_engine),
-                        );
-                        let genomes_dir = project_dir().join("genomes");
-                        self.lineage_cache.register_and_save(
-                            &self.genome.name,
-                            &self.genome.parent_a,
-                            &self.genome.parent_b,
-                            self.genome.generation,
-                            &genomes_dir,
-                        );
-                        let history_dir = genomes_dir.join("history");
-                        if let Err(e) = self.genome.save(&history_dir) {
-                            eprintln!("[history] save error: {e}");
-                        }
-                        self.archive_genome();
-                        self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                        self.begin_morph();
-                        eprintln!(
-                            "[evolve:{reason}] t={:.1}s → {} (gen {})",
-                            self.start.elapsed().as_secs_f32(),
-                            self.genome.name,
-                            self.genome.generation,
-                        );
-                    }
-
-                    // Periodic favorite profile refresh (every 30s)
-                    let profile_scan_interval = 30.0;
-                    if time - self.last_profile_scan >= profile_scan_interval {
-                        self.favorite_profile = Self::scan_favorite_profile();
-                        self.last_profile_scan = time;
-                    }
-
-                    // Info mode — collect samples + print
-                    if self.audio_info {
-                        self.audio_info_timer += dt;
-                        if self.audio_info_timer >= 0.1 {
-                            self.audio_info_timer = 0.0;
-                            self.audio_samples.push(self.audio_features.clone());
-                            let f = &self.audio_features;
-                            eprintln!(
-                                "[info] bass={:.3} mids={:.3} highs={:.3} energy={:.3} beat={:.2} accum={:.2}",
-                                f.bass, f.mids, f.highs, f.energy, f.beat, f.beat_accum
-                            );
-                        }
+                    let raw = egui_state.take_egui_input(window);
+                    if let Some(tx) = &self.ui_tx {
+                        let _ = tx.send(UiEvent::EguiInput(raw));
                     }
                 }
-
-                // Build uniforms (using cached gpu dimensions)
-                let uniforms = Uniforms {
-                    time: self.start.elapsed().as_secs_f32(),
-                    frame: self.frame,
-                    resolution: [self.gpu_width as f32, self.gpu_height as f32],
-                    mouse: self.mouse,
-                    transform_count: self.genome.transform_count(),
-                    has_final_xform: (if self.genome.final_transform.is_some() {
-                        1u32
-                    } else {
-                        0u32
-                    }) | (self
-                        .weights
-                        ._config
-                        .iterations_per_thread
-                        .clamp(10, 2000)
-                        << 16),
-                    globals: [
-                        self.globals[0],
-                        self.globals[1],
-                        self.globals[2],
-                        self.globals[3],
-                    ],
-                    kifs: [
-                        self.globals[4],
-                        self.globals[5],
-                        self.globals[6],
-                        self.globals[7],
-                    ],
-                    extra: [
-                        self.globals[8],
-                        self.globals[9],
-                        self.globals[10],
-                        self.genome.symmetry as f32,
-                    ],
-                    extra2: [
-                        self.globals[12],
-                        self.globals[13],
-                        self.globals[14],
-                        self.globals[15],
-                    ],
-                    extra3: [
-                        self.globals[16],
-                        self.globals[17],
-                        self.globals[18],
-                        self.globals[19],
-                    ],
-                    extra4: [
-                        self.weights._config.jitter_amount,
-                        self.weights._config.tonemap_mode as f32,
-                        self.weights._config.histogram_equalization,
-                        self.weights._config.dof_strength,
-                    ],
-                    extra5: [
-                        self.weights._config.dof_focal_distance,
-                        if self.weights._config.spectral_rendering {
-                            1.0
-                        } else {
-                            0.0
-                        },
-                        self.weights._config.temporal_reprojection,
-                        self.prev_zoom,
-                    ],
-                    extra6: [
-                        self.weights._config.dist_lum_strength,
-                        self.weights._config.iter_lum_range,
-                        0.0,
-                        0.0,
-                    ],
-                    extra7: [
-                        self.weights._config.camera_pitch,
-                        self.weights._config.camera_yaw,
-                        self.weights._config.camera_focal,
-                        self.weights._config.dof_focal_distance,
-                    ],
-                    extra8: [self.weights._config.dof_strength, 0.0, 0.0, 0.0],
-                };
-
-                // Update prev_zoom AFTER building uniforms (this frame → next frame)
-                self.prev_zoom = self.globals[1];
-
-                // Adaptive compute budget
-                let effective_xforms =
-                    self.genome.transform_count() * (self.genome.symmetry.unsigned_abs().max(1));
-                let budget_baseline = 4u32;
-                let base_wg = self.weights._config.samples_per_frame;
-                let base_iters = self.weights._config.iterations_per_thread;
-                let (final_uniforms, computed_workgroups) = if effective_xforms > budget_baseline {
-                    let ratio = budget_baseline as f32 / effective_xforms as f32;
-                    let sqrt_ratio = ratio.sqrt();
-                    let wg = (base_wg as f32 * sqrt_ratio).max(256.0) as u32;
-                    let scaled_iters = (base_iters as f32 * sqrt_ratio).max(40.0) as u32;
-                    let has_final = if self.genome.final_transform.is_some() {
-                        1u32
-                    } else {
-                        0u32
-                    };
-                    let patched = Uniforms {
-                        has_final_xform: has_final | (scaled_iters.clamp(10, 2000) << 16),
-                        ..uniforms
-                    };
-                    (patched, wg)
-                } else {
-                    (uniforms, base_wg)
-                };
-
-                // Jacobian importance sampling (CPU work, stays on main thread)
-                let xf_write_len = self.num_transforms * PARAMS_PER_XF;
-                let xf_len = xf_write_len.min(self.xf_params.len());
-                let final_xf_params: Vec<f32> = {
-                    let jac_strength = self.weights._config.jacobian_weight_strength;
-                    if jac_strength > 0.001 && self.num_transforms > 0 {
-                        let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
-                        let n = (xf_len / PARAMS_PER_XF).min(self.num_transforms);
-                        let mut weights: Vec<f32> = Vec::with_capacity(n);
-                        for i in 0..n {
-                            let base = i * PARAMS_PER_XF;
-                            let w = adjusted[base];
-                            let a = adjusted[base + 1];
-                            let b = adjusted[base + 2];
-                            let c = adjusted[base + 4];
-                            let d = adjusted[base + 5];
-                            let det = (a * d - b * c).abs();
-                            weights.push(w * (1.0 - jac_strength) + det * jac_strength);
-                        }
-                        let total: f32 = weights.iter().sum();
-                        if total > 0.0 {
-                            for (i, jw) in weights.iter().enumerate() {
-                                adjusted[i * PARAMS_PER_XF] = jw / total;
-                            }
-                        }
-                        adjusted
-                    } else {
-                        self.xf_params[..xf_len].to_vec()
-                    }
-                };
-
-                // Accumulation uniforms — faster decay during morph transition
-                let base_decay = self.weights._config.accumulation_decay;
-                let morph_burst_decay = self.weights._config.morph_burst_decay;
-                let decay = if self.morph_burst_frames > 0 {
-                    let burst_t = self.morph_burst_frames as f32 / 60.0;
-                    base_decay + (morph_burst_decay - base_decay) * burst_t
-                } else {
-                    base_decay
-                };
-                let accum_uniforms: [f32; 4] = [
-                    self.gpu_width as f32,
-                    self.gpu_height as f32,
-                    decay,
-                    self.weights._config.accumulation_cap,
-                ];
-
-                // Histogram CDF uniforms
-                let hist_cdf_uniforms: [f32; 4] = [
-                    self.gpu_width as f32,
-                    self.gpu_height as f32,
-                    self.globals[3], // flame_brightness
-                    (self.gpu_width * self.gpu_height) as f32,
-                ];
-
-                // Tick down morph burst
-                if self.morph_burst_frames > 0 {
-                    self.morph_burst_frames -= 1;
-                }
-
-                // Build HUD data for this frame
-                let time = self.start.elapsed().as_secs_f32();
-                let hud_time_signals = crate::weights::TimeSignals::compute(
-                    time,
-                    time - self.last_mutation_time,
-                    self.random_walk,
-                );
-                let hud = HudFrameData {
-                    fps: 1.0 / dt,
-                    mutation_accum: self.mutation_accum,
-                    time_since_mutation: time - self.last_mutation_time,
-                    cooldown: self.weights._config.mutation_cooldown,
-                    morph_progress: self.morph_progress,
-                    morph_xf_rates: {
-                        let mut rates = [0.0f32; 12];
-                        for (i, r) in self.morph_xf_rates.iter().take(12).enumerate() {
-                            rates[i] = *r;
-                        }
-                        rates
-                    },
-                    num_transforms: self.num_transforms,
-                    // Audio signals
-                    audio_bass: self.audio_features.bass,
-                    audio_mids: self.audio_features.mids,
-                    audio_highs: self.audio_features.highs,
-                    audio_energy: self.audio_features.energy,
-                    audio_beat: self.audio_features.beat,
-                    audio_beat_accum: self.audio_features.beat_accum,
-                    audio_change: self.audio_features.change,
-                    // Time signals
-                    time_slow: hud_time_signals.time_slow,
-                    time_med: hud_time_signals.time_med,
-                    time_fast: hud_time_signals.time_fast,
-                    time_noise: hud_time_signals.time_noise,
-                    time_drift: hud_time_signals.time_drift,
-                    time_flutter: hud_time_signals.time_flutter,
-                    time_walk: hud_time_signals.time_walk,
-                    time_envelope: hud_time_signals.time_envelope,
-                    // Per-transform weights
-                    transform_weights: {
-                        let mut w = [0.0f32; 12];
-                        for (i, slot) in w.iter_mut().enumerate().take(self.num_transforms.min(12))
-                        {
-                            let idx = i * PARAMS_PER_XF;
-                            if idx < self.xf_params.len() {
-                                *slot = self.xf_params[idx];
-                            }
-                        }
-                        w
-                    },
-                    // Per-transform variation weights (26 variations per transform)
-                    transform_variations: {
-                        let mut vars = [[0.0f32; 26]; 12];
-                        for (i, xf_vars) in vars
-                            .iter_mut()
-                            .enumerate()
-                            .take(self.num_transforms.min(12))
-                        {
-                            let base = i * PARAMS_PER_XF + 14; // variations start at offset 14
-                            for (v, slot) in xf_vars.iter_mut().enumerate() {
-                                let idx = base + v;
-                                if idx < self.xf_params.len() {
-                                    *slot = self.xf_params[idx];
-                                }
-                            }
-                        }
-                        vars
-                    },
-                    hud_fade_delay: self.weights._config.hud_fade_delay,
-                    hud_fade_duration: self.weights._config.hud_fade_duration,
-                };
-
-                // Build egui UI on main thread — collect input, run panels, tessellate
-                let (egui_primitives, egui_textures_delta, egui_pixels_per_point) =
-                    self.build_egui_frame(&hud);
-
-                // Send pre-built paint jobs to render thread
-                // Merge any pending texture deltas from previously dropped frames
-                let mut egui_textures_delta = egui_textures_delta;
-                if !self.pending_egui_textures.set.is_empty()
-                    || !self.pending_egui_textures.free.is_empty()
-                {
-                    // Prepend pending texture sets (creations must come before partial updates)
-                    let mut merged = std::mem::take(&mut self.pending_egui_textures);
-                    merged.set.append(&mut egui_textures_delta.set);
-                    merged.free.append(&mut egui_textures_delta.free);
-                    egui_textures_delta = merged;
-                }
-
-                if let Some(tx) = &self.render_tx {
-                    let frame_data = FrameData {
-                        uniforms: final_uniforms,
-                        xf_params: final_xf_params,
-                        accum_uniforms,
-                        hist_cdf_uniforms,
-                        workgroups: computed_workgroups,
-                        run_compute: self.frame >= 3,
-                        egui_primitives,
-                        egui_textures_delta,
-                        egui_pixels_per_point,
-                    };
-                    match tx.try_send(RenderCommand::Render(Box::new(frame_data))) {
-                        Ok(()) => {}
-                        Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
-                            // Save texture deltas from dropped frame for next send
-                            self.pending_egui_textures = dropped.egui_textures_delta;
-                        }
-                        Err(_) => {} // disconnected
-                    }
-                }
-                self.frame += 1;
-
-                // Per-genome performance tracking — flag for post-render evolve
-                self.genome_frame_count += 1;
-                let genome_elapsed = self.genome_start_time.elapsed().as_secs_f32();
-                let mut perf_skip = false;
-                if genome_elapsed > 3.0 && self.genome_frame_count > 30 {
-                    let genome_fps = self.genome_frame_count as f32 / genome_elapsed;
-                    let min_fps = self.weights._config.min_genome_fps;
-                    let good_fps = self.weights._config.perf_good_fps;
-
-                    // Feed performance model
-                    // Rich feature vector for perf model — throw everything in,
-                    // dimensionality reduction can sort it out later
-                    let comp = crate::taste::CompositionFeatures::extract(&self.genome);
-                    let mut perf_features = comp.to_vec(); // 5 dims
-                    // Add per-transform features (up to 6 transforms × 8 features = 48 dims)
-                    for xf in &self.genome.transforms {
-                        let tf = crate::taste::TransformFeatures::extract(xf);
-                        perf_features.extend(tf.to_vec());
-                    }
-                    // Pad to fixed length so model doesn't choke on varying transform counts
-                    perf_features.resize(5 + 6 * 8, 0.0); // 53 dims
-                    // Add symmetry as a raw feature
-                    perf_features.push(self.genome.symmetry.unsigned_abs() as f32);
-                    if genome_fps < min_fps && !self.flame_locked {
-                        self.perf_model.record_slow(&perf_features, 0.1);
-                        eprintln!(
-                            "[perf-skip] {} avg {genome_fps:.1}fps < {min_fps}fps \
-                             (xf={}, sym={}, frames={})",
-                            self.genome.name,
-                            self.genome.transform_count(),
-                            self.genome.symmetry,
-                            self.genome_frame_count,
-                        );
-                        perf_skip = true;
-                    } else if genome_fps >= good_fps {
-                        self.perf_model.record_fast(&perf_features, 0.1);
-                    }
-
-                    // Save perf model periodically (every 10 samples)
-                    if self.perf_model.is_active() && self.genome_frame_count.is_multiple_of(600) {
-                        let _ = self
-                            .perf_model
-                            .save(&project_dir().join("genomes").join("perf_model.json"));
-                    }
-                }
-
-                // FPS logging
-                self.fps_frame_count += 1;
-                if self.fps_frame_count >= 60 {
-                    let elapsed = self.last_fps_time.elapsed();
-                    let fps = self.fps_frame_count as f64 / elapsed.as_secs_f64();
-                    let ms = elapsed.as_millis() as f64 / self.fps_frame_count as f64;
-                    log::info!("[perf] {fps:.1} fps ({ms:.1}ms/frame)");
-                    self.fps_frame_count = 0;
-                    self.last_fps_time = Instant::now();
-                }
-
-                // Log to perf.log: every slow frame (<30fps) + periodic baseline every 300 frames
-                let ms_per_frame = dt * 1000.0;
-                let is_slow = ms_per_frame > 33.0;
-                let is_periodic = self.frame.is_multiple_of(300);
-                if (is_slow || is_periodic)
-                    && let Some(ref mut log) = self.perf_log
-                {
-                    let tag = if is_slow { "SLOW" } else { "ok" };
-                    let _ = writeln!(
-                        log,
-                        "[{}] f={} {:.1}ms/f {:.0}fps wg={} morph={:.2} burst={} decay={:.3} | {}",
-                        tag,
-                        self.frame,
-                        ms_per_frame,
-                        1.0 / dt.max(0.001),
-                        computed_workgroups,
-                        self.morph_progress,
-                        self.morph_burst_frames,
-                        decay,
-                        self.genome.perf_summary()
-                    );
-                }
-
                 if let Some(w) = &self.window {
                     w.request_redraw();
-                }
-
-                // Perf-skip: auto-evolve away from expensive genomes (after gpu borrow ends)
-                if perf_skip {
-                    self.genome_history.push(self.genome.clone());
-                    if self.genome_history.len() > 10 {
-                        self.genome_history.remove(0);
-                    }
-                    let (pa, pb, community) = self.pick_breeding_parents();
-                    self.genome = FlameGenome::mutate(
-                        &pa,
-                        &pb,
-                        &community,
-                        &self.audio_features,
-                        &self.weights._config,
-                        &self.favorite_profile,
-                        &mut Some(&mut self.taste_engine),
-                    );
-                    let genomes_dir = project_dir().join("genomes");
-                    self.lineage_cache.register_and_save(
-                        &self.genome.name,
-                        &self.genome.parent_a,
-                        &self.genome.parent_b,
-                        self.genome.generation,
-                        &genomes_dir,
-                    );
-                    self.last_mutation_time = self.start.elapsed().as_secs_f32();
-                    self.begin_morph();
-                    eprintln!(
-                        "[auto-evolve] t={:.1}s → {} (gen {}) [perf skip]",
-                        self.start.elapsed().as_secs_f32(),
-                        self.genome.name,
-                        self.genome.generation,
-                    );
                 }
             }
             _ => {}
         }
     }
 }
-
 // ── Main ──
 
 fn main() {
