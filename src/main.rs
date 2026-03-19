@@ -4872,14 +4872,11 @@ impl ApplicationHandler for App {
             });
         }
 
-        // Feed events to egui (on main thread — egui_winit::State needs Window)
+        // Feed ALL events to egui — never skip (UI thread needs them via take_egui_input)
         if let Some(egui_state) = &mut self.egui_state
             && let Some(window) = &self.window
         {
-            let response = egui_state.on_window_event(window, &event);
-            if response.consumed {
-                return;
-            }
+            let _ = egui_state.on_window_event(window, &event);
         }
 
         match event {
