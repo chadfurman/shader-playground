@@ -1127,7 +1127,7 @@ fn hud_panel_progress(
     opacity: f32,
     override_pos: Option<egui::Pos2>,
 ) {
-    let default_pos = egui::pos2(screen_w - 220.0, 10.0);
+    let default_pos = egui::pos2(screen_w - 230.0, 10.0);
     hud_window("hud_progress", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
@@ -1201,7 +1201,7 @@ fn hud_panel_audio(
     opacity: f32,
     override_pos: Option<egui::Pos2>,
 ) {
-    let default_pos = egui::pos2(10.0, 90.0);
+    let default_pos = egui::pos2(10.0, 80.0);
     hud_window("hud_audio", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
@@ -1271,7 +1271,7 @@ fn hud_panel_time(
     opacity: f32,
     override_pos: Option<egui::Pos2>,
 ) {
-    let default_pos = egui::pos2(10.0, 310.0);
+    let default_pos = egui::pos2(10.0, 300.0);
     hud_window("hud_time", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
@@ -1636,7 +1636,7 @@ fn hud_panel_transforms(
     opacity: f32,
     override_pos: Option<egui::Pos2>,
 ) {
-    let default_pos = egui::pos2(screen_w - 220.0, 250.0);
+    let default_pos = egui::pos2(screen_w - 230.0, 260.0);
     hud_window("hud_transforms", default_pos, opacity, override_pos).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
@@ -1670,7 +1670,7 @@ fn hud_panel_hotkeys(
     opacity: f32,
     override_pos: Option<egui::Pos2>,
 ) {
-    let default_pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0);
+    let default_pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 40.0);
     let win = hud_window("hud_hotkeys", default_pos, opacity, override_pos)
         .frame(hud_frame(opacity).inner_margin(egui::Margin::symmetric(10, 4)));
     win.show(ctx, |ui| {
@@ -3514,12 +3514,12 @@ impl UiState {
             // One-shot reset to default non-overlapping positions
             self.reposition_panels = false;
             [
-                Some(egui::pos2(10.0, 10.0)),                              // identity
-                Some(egui::pos2(screen_w - 220.0, 10.0)),                  // progress
-                Some(egui::pos2(10.0, 90.0)),                              // audio
-                Some(egui::pos2(10.0, 310.0)),                             // time
-                Some(egui::pos2(screen_w - 220.0, 250.0)),                 // transforms
-                Some(egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0)), // hotkeys
+                Some(egui::pos2(10.0, 10.0)),              // identity: top-left
+                Some(egui::pos2(screen_w - 230.0, 10.0)),  // progress: top-right
+                Some(egui::pos2(10.0, 80.0)),              // audio: left, below identity
+                Some(egui::pos2(10.0, 300.0)),             // time: left, below audio
+                Some(egui::pos2(screen_w - 230.0, 260.0)), // transforms: right, below progress
+                Some(egui::pos2(screen_w * 0.5 - 250.0, screen_h - 40.0)), // hotkeys: bottom center
             ]
         } else if size_changed {
             // Shift panels based on their anchor edge
