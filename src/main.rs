@@ -2985,6 +2985,8 @@ struct App {
     prev_screen_size: (f32, f32),
     // One-shot flag: reset HUD panels to default non-overlapping positions
     reposition_panels: bool,
+    // Throttle: skip heavy work (egui, modulation) when render channel was full
+    render_channel_full: bool,
     // Cached audio device names (populated once, refreshed on demand)
     cached_audio_devices: Vec<String>,
     selected_audio_device: String,
@@ -3121,6 +3123,7 @@ impl App {
             config_tab: 0,
             prev_screen_size: (1.0, 1.0),
             reposition_panels: true,
+            render_channel_full: false,
             cached_audio_devices: enumerate_audio_devices(),
             selected_audio_device: String::new(),
         }
@@ -4232,6 +4235,16 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
+                // Throttle: if the render channel was full last frame, skip all heavy work.
+                // Just request another redraw and try again — keeps winit event loop responsive.
+                if self.render_channel_full {
+                    self.render_channel_full = false;
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
+                    return;
+                }
+
                 if self.frame < 3 {
                     eprintln!("[debug] RedrawRequested frame={}", self.frame);
                 }
@@ -4697,10 +4710,13 @@ impl ApplicationHandler for App {
                         egui_pixels_per_point,
                     };
                     match tx.try_send(RenderCommand::Render(Box::new(frame_data))) {
-                        Ok(()) => {}
+                        Ok(()) => {
+                            self.render_channel_full = false;
+                        }
                         Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
                             // Save texture deltas from dropped frame for next send
                             self.pending_egui_textures = dropped.egui_textures_delta;
+                            self.render_channel_full = true;
                         }
                         Err(_) => {} // disconnected
                     }
