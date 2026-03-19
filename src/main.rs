@@ -1042,20 +1042,25 @@ fn fade_color(c: egui::Color32, opacity: f32) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(r, g, b, (a as f32 * opacity) as u8)
 }
 
-/// Create a HUD window: non-selectable text, no title bar, not resizable.
+/// Create a HUD window with a minimal title-bar drag handle.
+/// When `auto_position` is true the window is pinned to `pos` every frame.
 fn hud_window(
     name: &str,
     pos: egui::Pos2,
     opacity: f32,
-    force_reposition: bool,
+    auto_position: bool,
 ) -> egui::Window<'static> {
-    let mut win = egui::Window::new("")
-        .id(egui::Id::new(name))
-        .title_bar(false)
-        .resizable(false)
-        .default_pos(pos)
-        .frame(hud_frame(opacity));
-    if force_reposition {
+    let mut win = egui::Window::new(
+        egui::RichText::new("≡")
+            .size(8.0)
+            .color(fade_color(egui::Color32::from_rgb(100, 100, 100), opacity)),
+    )
+    .id(egui::Id::new(name))
+    .collapsible(false)
+    .resizable(false)
+    .default_pos(pos)
+    .frame(hud_frame(opacity));
+    if auto_position {
         win = win.current_pos(pos);
     }
     win
@@ -1067,14 +1072,9 @@ fn disable_text_selection(ui: &mut egui::Ui) {
 }
 
 /// Top-left: Identity panel — FPS, transform count, mutation info.
-fn hud_panel_identity(
-    ctx: &egui::Context,
-    hud: &HudFrameData,
-    opacity: f32,
-    force_reposition: bool,
-) {
+fn hud_panel_identity(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, auto_position: bool) {
     let pos = egui::pos2(10.0, 10.0);
-    hud_window("hud_identity", pos, opacity, force_reposition).show(ctx, |ui| {
+    hud_window("hud_identity", pos, opacity, auto_position).show(ctx, |ui| {
         disable_text_selection(ui);
         ui.label(
             egui::RichText::new(format!("{:.0} fps", hud.fps))
@@ -1104,10 +1104,10 @@ fn hud_panel_progress(
     hud: &HudFrameData,
     screen_w: f32,
     opacity: f32,
-    force_reposition: bool,
+    auto_position: bool,
 ) {
     let pos = egui::pos2(screen_w - 220.0, 10.0);
-    hud_window("hud_progress", pos, opacity, force_reposition).show(ctx, |ui| {
+    hud_window("hud_progress", pos, opacity, auto_position).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
@@ -1174,9 +1174,9 @@ fn hud_panel_progress(
 }
 
 /// Left side: Audio signals panel.
-fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, force_reposition: bool) {
+fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, auto_position: bool) {
     let pos = egui::pos2(10.0, 90.0);
-    hud_window("hud_audio", pos, opacity, force_reposition).show(ctx, |ui| {
+    hud_window("hud_audio", pos, opacity, auto_position).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         ui.label(egui::RichText::new("audio").size(10.0).color(dim));
@@ -1239,9 +1239,9 @@ fn hud_panel_audio(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, force_
 }
 
 /// Left side: Time signals panel (below audio).
-fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, force_reposition: bool) {
+fn hud_panel_time(ctx: &egui::Context, hud: &HudFrameData, opacity: f32, auto_position: bool) {
     let pos = egui::pos2(10.0, 310.0);
-    hud_window("hud_time", pos, opacity, force_reposition).show(ctx, |ui| {
+    hud_window("hud_time", pos, opacity, auto_position).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
@@ -1603,10 +1603,10 @@ fn hud_panel_transforms(
     hud: &HudFrameData,
     screen_w: f32,
     opacity: f32,
-    force_reposition: bool,
+    auto_position: bool,
 ) {
     let pos = egui::pos2(screen_w - 220.0, 250.0);
-    hud_window("hud_transforms", pos, opacity, force_reposition).show(ctx, |ui| {
+    hud_window("hud_transforms", pos, opacity, auto_position).show(ctx, |ui| {
         disable_text_selection(ui);
         let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
         ui.label(egui::RichText::new("transforms").size(10.0).color(dim));
@@ -1637,10 +1637,10 @@ fn hud_panel_hotkeys(
     screen_w: f32,
     screen_h: f32,
     opacity: f32,
-    force_reposition: bool,
+    auto_position: bool,
 ) {
     let pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0);
-    let win = hud_window("hud_hotkeys", pos, opacity, force_reposition)
+    let win = hud_window("hud_hotkeys", pos, opacity, auto_position)
         .frame(hud_frame(opacity).inner_margin(egui::Margin::symmetric(10, 4)));
     win.show(ctx, |ui| {
         disable_text_selection(ui);
@@ -1675,14 +1675,21 @@ struct ConfigAction {
     cancel: bool,
 }
 
+/// Config panel state passed in from the App.
+struct ConfigPanelState<'a> {
+    weights: &'a mut crate::weights::Weights,
+    tab: &'a mut usize,
+    auto_position_panels: &'a mut bool,
+    cached_audio_devices: &'a [String],
+    refresh_audio_devices: &'a mut bool,
+}
+
 /// Main config panel UI.
 fn config_panel_ui(
     ctx: &egui::Context,
-    weights: &mut crate::weights::Weights,
-    tab: &mut usize,
+    state: &mut ConfigPanelState<'_>,
     screen_w: f32,
     screen_h: f32,
-    reset_panels: &mut bool,
 ) -> ConfigAction {
     let mut changed = false;
     let mut save = false;
@@ -1715,7 +1722,7 @@ fn config_panel_ui(
                             .iter()
                             .enumerate()
                         {
-                            let color = if *tab == i {
+                            let color = if *state.tab == i {
                                 egui::Color32::from_rgb(100, 200, 255)
                             } else {
                                 egui::Color32::from_rgb(140, 140, 140)
@@ -1726,7 +1733,7 @@ fn config_panel_ui(
                                 ))
                                 .clicked()
                             {
-                                *tab = i;
+                                *state.tab = i;
                             }
                         }
                     });
@@ -1735,12 +1742,16 @@ fn config_panel_ui(
                     // Tab content in a scroll area
                     egui::ScrollArea::vertical()
                         .max_height(380.0)
-                        .show(ui, |ui| match *tab {
-                            0 => changed = config_tab_main(ui, &mut weights._config),
-                            1 => changed = config_tab_rendering(ui, &mut weights._config),
-                            2 => changed = config_tab_breeding(ui, &mut weights._config),
-                            3 => changed = config_tab_signals(ui, weights),
-                            4 => config_tab_audio(ui),
+                        .show(ui, |ui| match *state.tab {
+                            0 => changed = config_tab_main(ui, &mut state.weights._config),
+                            1 => changed = config_tab_rendering(ui, &mut state.weights._config),
+                            2 => changed = config_tab_breeding(ui, &mut state.weights._config),
+                            3 => changed = config_tab_signals(ui, state.weights),
+                            4 => config_tab_audio(
+                                ui,
+                                state.cached_audio_devices,
+                                state.refresh_audio_devices,
+                            ),
                             _ => {}
                         });
 
@@ -1777,16 +1788,12 @@ fn config_panel_ui(
                             cancel = true;
                         }
                         ui.add_space(8.0);
-                        if ui
-                            .add(egui::Button::new(
-                                egui::RichText::new("Auto-position")
-                                    .size(11.0)
-                                    .color(egui::Color32::from_rgb(180, 180, 255)),
-                            ))
-                            .clicked()
-                        {
-                            *reset_panels = true;
-                        }
+                        ui.add(egui::Checkbox::new(
+                            state.auto_position_panels,
+                            egui::RichText::new("Auto-position")
+                                .size(11.0)
+                                .color(egui::Color32::from_rgb(180, 180, 255)),
+                        ));
                     });
                 });
         });
@@ -2059,10 +2066,8 @@ fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) 
     changed
 }
 
-/// Audio tab: show current audio device and device list.
-fn config_tab_audio(ui: &mut egui::Ui) {
-    use cpal::traits::{DeviceTrait, HostTrait};
-
+/// Audio tab: show cached audio device list (no per-frame enumeration).
+fn config_tab_audio(ui: &mut egui::Ui, cached_devices: &[String], refresh: &mut bool) {
     let dim = egui::Color32::from_rgb(160, 160, 160);
     ui.label(
         egui::RichText::new("Audio Devices")
@@ -2071,9 +2076,7 @@ fn config_tab_audio(ui: &mut egui::Ui) {
     );
     ui.add_space(4.0);
 
-    let host = cpal::default_host();
-
-    // System Audio option
+    // System Audio option (always available)
     ui.label(
         egui::RichText::new("System Audio (ScreenCaptureKit)")
             .size(10.0)
@@ -2081,40 +2084,28 @@ fn config_tab_audio(ui: &mut egui::Ui) {
     );
     ui.add_space(4.0);
 
-    // Input devices
-    ui.label(egui::RichText::new("Input Devices:").size(10.0).color(dim));
-    if let Ok(inputs) = host.input_devices() {
-        for d in inputs {
-            let name = d
-                .description()
-                .map(|desc| desc.name().to_string())
-                .unwrap_or_else(|_| "???".into());
-            ui.label(
-                egui::RichText::new(format!("  {name}"))
-                    .size(9.0)
-                    .color(dim),
-            );
+    if cached_devices.is_empty() {
+        ui.label(
+            egui::RichText::new("No devices found")
+                .size(10.0)
+                .color(egui::Color32::from_rgb(200, 100, 100)),
+        );
+    } else {
+        for entry in cached_devices {
+            ui.label(egui::RichText::new(entry).size(9.0).color(dim));
         }
     }
 
     ui.add_space(4.0);
-    ui.label(
-        egui::RichText::new("Output Devices (loopback):")
-            .size(10.0)
-            .color(dim),
-    );
-    if let Ok(outputs) = host.output_devices() {
-        for d in outputs {
-            let name = d
-                .description()
-                .map(|desc| desc.name().to_string())
-                .unwrap_or_else(|_| "???".into());
-            ui.label(
-                egui::RichText::new(format!("  {name}"))
-                    .size(9.0)
-                    .color(dim),
-            );
-        }
+    if ui
+        .add(egui::Button::new(
+            egui::RichText::new("Refresh")
+                .size(10.0)
+                .color(egui::Color32::from_rgb(100, 200, 255)),
+        ))
+        .clicked()
+    {
+        *refresh = true;
     }
 
     ui.add_space(8.0);
@@ -2139,6 +2130,38 @@ fn config_slider_u32(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, 
     ui.add(egui::Slider::new(&mut v, min as i32..=max as i32).text(label));
     *value = v as u32;
     *value != before
+}
+
+/// Enumerate audio devices once (used for caching — avoids per-frame cpal calls).
+fn enumerate_audio_devices() -> Vec<String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let mut names = Vec::new();
+
+    names.push("Input Devices:".to_string());
+    if let Ok(inputs) = host.input_devices() {
+        for d in inputs {
+            let name = d
+                .description()
+                .map(|desc| desc.name().to_string())
+                .unwrap_or_else(|_| "???".into());
+            names.push(format!("  {name}"));
+        }
+    }
+
+    names.push(String::new());
+    names.push("Output Devices (loopback):".to_string());
+    if let Ok(outputs) = host.output_devices() {
+        for d in outputs {
+            let name = d
+                .description()
+                .map(|desc| desc.name().to_string())
+                .unwrap_or_else(|_| "???".into());
+            names.push(format!("  {name}"));
+        }
+    }
+
+    names
 }
 
 // ── Render Thread ──
@@ -2922,8 +2945,10 @@ struct App {
     config_edit: Option<crate::weights::RuntimeConfig>,
     config_edit_weights: Option<crate::weights::Weights>,
     config_tab: usize,
-    // Movable panel reset flag — true for one frame to snap panels back to defaults
-    reset_panels: bool,
+    // When true, HUD panels are pinned to their default positions every frame
+    auto_position_panels: bool,
+    // Cached audio device names (populated once, refreshed on demand)
+    cached_audio_devices: Vec<String>,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -3055,7 +3080,8 @@ impl App {
             config_edit: None,
             config_edit_weights: None,
             config_tab: 0,
-            reset_panels: false,
+            auto_position_panels: true,
+            cached_audio_devices: enumerate_audio_devices(),
         }
     }
 
@@ -3106,31 +3132,32 @@ impl App {
             cancel: false,
         };
 
+        let mut refresh_audio_devices = false;
         let egui_output = egui_ctx.run_ui(raw_input, |ui| {
             // HUD panels — skip when fully faded out
             if hud_opacity > 0.0 {
                 let ctx = ui.ctx();
-                let force = self.reset_panels;
-                hud_panel_identity(ctx, hud, hud_opacity, force);
-                hud_panel_progress(ctx, hud, screen_w, hud_opacity, force);
-                hud_panel_audio(ctx, hud, hud_opacity, force);
-                hud_panel_time(ctx, hud, hud_opacity, force);
-                hud_panel_transforms(ctx, hud, screen_w, hud_opacity, force);
-                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity, force);
+                let auto_pos = self.auto_position_panels;
+                hud_panel_identity(ctx, hud, hud_opacity, auto_pos);
+                hud_panel_progress(ctx, hud, screen_w, hud_opacity, auto_pos);
+                hud_panel_audio(ctx, hud, hud_opacity, auto_pos);
+                hud_panel_time(ctx, hud, hud_opacity, auto_pos);
+                hud_panel_transforms(ctx, hud, screen_w, hud_opacity, auto_pos);
+                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity, auto_pos);
             }
 
             // Config panel — always visible when open (ignores HUD fade)
             if self.config_panel_open
                 && let Some(ref mut edit_weights) = self.config_edit_weights
             {
-                config_action = config_panel_ui(
-                    ui.ctx(),
-                    edit_weights,
-                    &mut self.config_tab,
-                    screen_w,
-                    screen_h,
-                    &mut self.reset_panels,
-                );
+                let mut panel_state = ConfigPanelState {
+                    weights: edit_weights,
+                    tab: &mut self.config_tab,
+                    auto_position_panels: &mut self.auto_position_panels,
+                    cached_audio_devices: &self.cached_audio_devices,
+                    refresh_audio_devices: &mut refresh_audio_devices,
+                };
+                config_action = config_panel_ui(ui.ctx(), &mut panel_state, screen_w, screen_h);
             }
 
             // Vote feedback popup — always visible when active
@@ -3267,8 +3294,10 @@ impl App {
             }
         }
 
-        // Clear one-frame flags
-        self.reset_panels = false;
+        // Refresh audio device cache if requested
+        if refresh_audio_devices {
+            self.cached_audio_devices = enumerate_audio_devices();
+        }
 
         // Tessellate on main thread — send paint jobs to render thread
         let pixels_per_point = egui_output.pixels_per_point;
