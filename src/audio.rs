@@ -380,8 +380,9 @@ impl AudioProcessor {
         let dh = f.highs - self.ema_highs;
         let de = f.energy - self.ema_energy;
         let dist = (db * db + dm * dm + dh * dh + de * de).sqrt();
-        // Normalize: distance of 0.5 maps to change=1.0 (tunable via the 2.0 scale)
-        f.change = (dist * 2.0).min(1.0);
+        // Normalize: only large divergences register as "change"
+        // dist of ~1.5 maps to 1.0 — regular beats won't saturate this
+        f.change = (dist * 0.67).min(1.0);
     }
 
     fn decay_features(&mut self, dt: f32) {

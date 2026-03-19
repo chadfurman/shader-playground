@@ -20,6 +20,9 @@ screencapturekit = "1"
 crossterm = "0.28"
 quick-xml = "0.39.2"
 half = "2.7.1"
+egui = { git = "https://github.com/emilk/egui.git" }
+egui-winit = { git = "https://github.com/emilk/egui.git" }
+egui-wgpu = { git = "https://github.com/emilk/egui.git" }
 
 [package.metadata.packager]
 product-name = "Shader Playground"

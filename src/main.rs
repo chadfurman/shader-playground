@@ -24,7 +24,7 @@ mod weights;
 use crate::audio::{AudioCapture, AudioFeatures};
 use crate::genome::{FavoriteProfile, FlameGenome};
 use crate::votes::VoteLedger;
-use crate::weights::Weights;
+use crate::weights::{DRIFT_MOD_FIELD, PARAMS_PER_XF, SPIN_MOD_FIELD, Weights};
 
 // ── Render Thread Protocol ──
 
@@ -36,6 +36,10 @@ struct FrameData {
     hist_cdf_uniforms: [f32; 4],
     workgroups: u32,
     run_compute: bool,
+    /// Pre-tessellated egui paint jobs (built + tessellated on main thread).
+    egui_primitives: Vec<egui::ClippedPrimitive>,
+    egui_textures_delta: egui::TexturesDelta,
+    egui_pixels_per_point: f32,
 }
 
 /// Commands sent from the main thread to the render thread.
@@ -54,6 +58,42 @@ enum RenderCommand {
     ReloadComputeShader(String),
     /// Shut down the render thread.
     Shutdown,
+}
+
+/// Per-frame HUD data — sent with each FrameData.
+#[derive(Clone, Default)]
+struct HudFrameData {
+    fps: f32,
+    mutation_accum: f32,
+    time_since_mutation: f32,
+    cooldown: f32,
+    morph_progress: f32,
+    morph_xf_rates: [f32; 12],
+    num_transforms: usize,
+    // Audio signals
+    audio_bass: f32,
+    audio_mids: f32,
+    audio_highs: f32,
+    audio_energy: f32,
+    audio_beat: f32,
+    audio_beat_accum: f32,
+    audio_change: f32,
+    // Time signals
+    time_slow: f32,
+    time_med: f32,
+    time_fast: f32,
+    time_noise: f32,
+    time_drift: f32,
+    time_flutter: f32,
+    time_walk: f32,
+    time_envelope: f32,
+    // Per-transform weights
+    transform_weights: [f32; 12],
+    // Per-transform variation weights: [transform_idx][variation_idx]
+    transform_variations: [[f32; 26]; 12],
+    // HUD fade config
+    hud_fade_delay: f32,
+    hud_fade_duration: f32,
 }
 
 // ── Uniforms ──
@@ -253,10 +293,10 @@ impl Gpu {
         // Histogram buffer: 6 u32s per pixel (density + R + G + B + vx + vy)
         let histogram_buffer = create_histogram_buffer(&device, config.width, config.height);
 
-        // Initial transform buffer (6 transforms * 48 floats * 4 bytes)
+        // Initial transform buffer (6 transforms * 50 floats * 4 bytes)
         let transform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
-            size: (6 * 48 * 4) as u64,
+            size: (6 * PARAMS_PER_XF * 4) as u64,
             usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -741,7 +781,7 @@ impl Gpu {
     }
 
     fn resize_transform_buffer(&mut self, num_transforms: usize) {
-        let size = (num_transforms.max(1) * 48 * 4) as u64;
+        let size = (num_transforms.max(1) * PARAMS_PER_XF * 4) as u64;
         self.transform_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("transforms"),
             size,
@@ -802,7 +842,9 @@ impl Gpu {
         );
     }
 
-    fn render(&mut self, run_compute: bool) {
+    /// Runs compute + display passes, returns the surface texture for overlay rendering.
+    /// Caller must call `.present()` on the returned texture after any overlay passes.
+    fn render(&mut self, run_compute: bool) -> Option<wgpu::SurfaceTexture> {
         // Phase 1: Submit compute work BEFORE acquiring swapchain image.
         let mut compute_encoder = self.device.create_command_encoder(&Default::default());
         compute_encoder.clear_buffer(&self.histogram_buffer, 0, None);
@@ -855,7 +897,7 @@ impl Gpu {
             Ok(f) => f,
             Err(_) => {
                 self.surface.configure(&self.device, &self.config);
-                return;
+                return None;
             }
         };
         let screen_view = frame.texture.create_view(&Default::default());
@@ -905,15 +947,1280 @@ impl Gpu {
             pass.draw(0..3, 0..1);
         }
         self.queue.submit(std::iter::once(display_encoder.finish()));
-        frame.present();
         self.ping = !self.ping;
         self.render_frame_count += 1;
+        Some(frame)
     }
+}
+
+// ── HUD Panel Helpers ──
+
+/// Semi-transparent dark background frame for HUD panels.
+fn hud_frame(opacity: f32) -> egui::Frame {
+    let alpha = (153.0 * opacity) as u8;
+    egui::Frame::NONE
+        .fill(egui::Color32::from_rgba_unmultiplied(0, 0, 0, alpha))
+        .corner_radius(6.0)
+        .inner_margin(egui::Margin::same(8))
+}
+
+/// Draw a horizontal signal bar: label | colored fill | numeric value.
+fn signal_bar(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: f32,
+    color: egui::Color32,
+    max: f32,
+    opacity: f32,
+) {
+    let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+    let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(9.0).color(dim));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 2.0, bg);
+        let fill_frac = (value / max).clamp(0.0, 1.0);
+        let fill_rect = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(fill_frac * rect.width(), rect.height()),
+        );
+        ui.painter()
+            .rect_filled(fill_rect, 2.0, fade_color(color, opacity));
+        ui.label(
+            egui::RichText::new(format!("{:.2}", value))
+                .size(9.0)
+                .color(dim),
+        );
+    });
+}
+
+/// Draw a bipolar signal bar (center-zero): fills left for negative, right for positive.
+fn bipolar_bar(ui: &mut egui::Ui, label: &str, value: f32, color: egui::Color32, opacity: f32) {
+    let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+    let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(label).size(9.0).color(dim));
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(100.0, 4.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 2.0, bg);
+        let center_x = rect.min.x + rect.width() * 0.5;
+        let frac = value.clamp(-1.0, 1.0);
+        let fill_rect = if frac >= 0.0 {
+            egui::Rect::from_min_max(
+                egui::pos2(center_x, rect.min.y),
+                egui::pos2(center_x + frac * rect.width() * 0.5, rect.max.y),
+            )
+        } else {
+            egui::Rect::from_min_max(
+                egui::pos2(center_x + frac * rect.width() * 0.5, rect.min.y),
+                egui::pos2(center_x, rect.max.y),
+            )
+        };
+        ui.painter()
+            .rect_filled(fill_rect, 2.0, fade_color(color, opacity));
+        ui.label(
+            egui::RichText::new(format!("{:+.2}", value))
+                .size(9.0)
+                .color(dim),
+        );
+    });
+}
+
+/// Morph progress color: red→yellow→green based on completion.
+fn morph_color(completion: f32) -> egui::Color32 {
+    if completion >= 1.0 {
+        egui::Color32::from_rgb(68, 238, 68) // green
+    } else if completion >= 0.5 {
+        egui::Color32::from_rgb(238, 238, 68) // yellow
+    } else {
+        egui::Color32::from_rgb(238, 68, 68) // red
+    }
+}
+
+/// Apply opacity to a Color32.
+fn fade_color(c: egui::Color32, opacity: f32) -> egui::Color32 {
+    let [r, g, b, a] = c.to_array();
+    egui::Color32::from_rgba_unmultiplied(r, g, b, (a as f32 * opacity) as u8)
+}
+
+/// Create a HUD window with a minimal title-bar drag handle.
+/// When `override_pos` is Some, the window is forced to that position for one frame.
+fn hud_window(
+    name: &str,
+    default_pos: egui::Pos2,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) -> egui::Window<'static> {
+    let mut win = egui::Window::new(
+        egui::RichText::new("≡")
+            .size(8.0)
+            .color(fade_color(egui::Color32::from_rgb(100, 100, 100), opacity)),
+    )
+    .id(egui::Id::new(name))
+    .collapsible(false)
+    .resizable(false)
+    .default_pos(default_pos)
+    .frame(hud_frame(opacity));
+    if let Some(pos) = override_pos {
+        win = win.current_pos(pos);
+    }
+    win
+}
+
+/// Disable text selection inside a UI (so dragging works on text).
+fn disable_text_selection(ui: &mut egui::Ui) {
+    ui.style_mut().interaction.selectable_labels = false;
+}
+
+/// Top-left: Identity panel — FPS, transform count, mutation info.
+fn hud_panel_identity(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(10.0, 10.0);
+    hud_window("hud_identity", default_pos, opacity, override_pos).show(ctx, |ui| {
+        disable_text_selection(ui);
+        ui.label(
+            egui::RichText::new(format!("{:.0} fps", hud.fps))
+                .color(fade_color(egui::Color32::from_rgb(119, 255, 119), opacity))
+                .size(16.0),
+        );
+        let dim = fade_color(egui::Color32::from_rgb(160, 160, 160), opacity);
+        ui.label(
+            egui::RichText::new(format!("{} transforms", hud.num_transforms))
+                .color(dim)
+                .size(10.0),
+        );
+        ui.label(
+            egui::RichText::new(format!(
+                "cd:{:.0}/{:.0}s",
+                hud.time_since_mutation, hud.cooldown
+            ))
+            .color(dim)
+            .size(10.0),
+        );
+    });
+}
+
+/// Top-right: Progress panel — mutation progress bar, cooldown, per-transform morph bars.
+fn hud_panel_progress(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    screen_w: f32,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(screen_w - 220.0, 10.0);
+    hud_window("hud_progress", default_pos, opacity, override_pos).show(ctx, |ui| {
+        disable_text_selection(ui);
+        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+        let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
+
+        // Next evolve — signal-driven trigger bar
+        ui.label(
+            egui::RichText::new("next evolve (signal)")
+                .size(9.0)
+                .color(dim),
+        );
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(180.0, 6.0), egui::Sense::hover());
+        ui.painter().rect_filled(rect, 3.0, bg);
+        let fill_frac = hud.mutation_accum.clamp(0.0, 1.0);
+        let gate_met = hud.time_since_mutation >= 10.0;
+        let bar_color = fade_color(
+            if fill_frac >= 1.0 && gate_met {
+                egui::Color32::from_rgb(68, 238, 68) // green = ready to fire
+            } else if fill_frac >= 1.0 {
+                egui::Color32::from_rgb(238, 238, 68) // yellow = full but gated
+            } else {
+                egui::Color32::from_rgb(238, 153, 34) // orange = filling
+            },
+            opacity,
+        );
+        let fill_rect = egui::Rect::from_min_size(
+            rect.min,
+            egui::vec2(fill_frac * rect.width(), rect.height()),
+        );
+        ui.painter().rect_filled(fill_rect, 3.0, bar_color);
+        let gate_label = if gate_met { "ready" } else { "wait" };
+        ui.label(
+            egui::RichText::new(format!(
+                "{:.0}% gate:{} cd:{:.0}/{:.0}s",
+                fill_frac * 100.0,
+                gate_label,
+                hud.time_since_mutation,
+                hud.cooldown,
+            ))
+            .size(8.0)
+            .color(dim),
+        );
+
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("morph").size(9.0).color(dim));
+
+        // Per-transform morph bars
+        for i in 0..hud.num_transforms.min(12) {
+            let rate = hud.morph_xf_rates[i];
+            let completion = (hud.morph_progress * rate).min(1.0);
+            let bar_color = fade_color(morph_color(completion), opacity);
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(format!("{i}")).size(8.0).color(dim));
+                let (bar_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(150.0, 3.0), egui::Sense::hover());
+                ui.painter().rect_filled(bar_rect, 1.5, bg);
+                let fill = egui::Rect::from_min_size(
+                    bar_rect.min,
+                    egui::vec2(completion * bar_rect.width(), bar_rect.height()),
+                );
+                ui.painter().rect_filled(fill, 1.5, bar_color);
+            });
+        }
+    });
+}
+
+/// Left side: Audio signals panel.
+fn hud_panel_audio(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(10.0, 90.0);
+    hud_window("hud_audio", default_pos, opacity, override_pos).show(ctx, |ui| {
+        disable_text_selection(ui);
+        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+        ui.label(egui::RichText::new("audio").size(10.0).color(dim));
+        signal_bar(
+            ui,
+            "bass ",
+            hud.audio_bass,
+            egui::Color32::from_rgb(238, 68, 68),
+            1.0,
+            opacity,
+        );
+        signal_bar(
+            ui,
+            "mids ",
+            hud.audio_mids,
+            egui::Color32::from_rgb(238, 136, 68),
+            1.0,
+            opacity,
+        );
+        signal_bar(
+            ui,
+            "highs",
+            hud.audio_highs,
+            egui::Color32::from_rgb(238, 170, 68),
+            1.0,
+            opacity,
+        );
+        signal_bar(
+            ui,
+            "enrgy",
+            hud.audio_energy,
+            egui::Color32::from_rgb(68, 238, 136),
+            1.0,
+            opacity,
+        );
+        // Beat bar — glow when > 0.8
+        let beat_color = if hud.audio_beat > 0.8 {
+            egui::Color32::from_rgb(255, 102, 102)
+        } else {
+            egui::Color32::from_rgb(238, 68, 68)
+        };
+        signal_bar(ui, "beat ", hud.audio_beat, beat_color, 1.0, opacity);
+        signal_bar(
+            ui,
+            "b.acc",
+            hud.audio_beat_accum,
+            egui::Color32::from_rgb(136, 68, 238),
+            1.0,
+            opacity,
+        );
+        signal_bar(
+            ui,
+            "chng ",
+            hud.audio_change,
+            egui::Color32::from_rgb(255, 136, 68),
+            1.0,
+            opacity,
+        );
+    });
+}
+
+/// Left side: Time signals panel (below audio).
+fn hud_panel_time(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(10.0, 310.0);
+    hud_window("hud_time", default_pos, opacity, override_pos).show(ctx, |ui| {
+        disable_text_selection(ui);
+        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+        let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
+        ui.label(egui::RichText::new("time").size(10.0).color(dim));
+        // Bipolar signals (-1 to 1): slow, med, fast, noise, drift, flutter
+        bipolar_bar(ui, "slow ", hud.time_slow, bipolar_color, opacity);
+        bipolar_bar(ui, "med  ", hud.time_med, bipolar_color, opacity);
+        bipolar_bar(ui, "fast ", hud.time_fast, bipolar_color, opacity);
+        bipolar_bar(ui, "noise", hud.time_noise, bipolar_color, opacity);
+        bipolar_bar(ui, "drift", hud.time_drift, bipolar_color, opacity);
+        bipolar_bar(ui, "flutr", hud.time_flutter, bipolar_color, opacity);
+        // Walk: monotonically growing, show capped bar + numeric value
+        signal_bar(
+            ui,
+            "walk ",
+            hud.time_walk.abs(),
+            egui::Color32::from_rgb(136, 68, 170),
+            10.0,
+            opacity,
+        );
+        // Envelope: 0→1 range
+        signal_bar(
+            ui,
+            "envlp",
+            hud.time_envelope,
+            egui::Color32::from_rgb(170, 136, 68),
+            1.0,
+            opacity,
+        );
+    });
+}
+
+/// Variation names for tooltips (indices 0-25).
+const VARIATION_NAMES: [&str; 26] = [
+    "linear",
+    "sinusoidal",
+    "spherical",
+    "swirl",
+    "horseshoe",
+    "handkerchief",
+    "julia",
+    "polar",
+    "disc",
+    "rings",
+    "bubble",
+    "fisheye",
+    "exponential",
+    "spiral",
+    "diamond",
+    "bent",
+    "waves",
+    "popcorn",
+    "fan",
+    "eyefish",
+    "cross",
+    "tangent",
+    "cosine",
+    "blob",
+    "noise",
+    "curl",
+];
+
+/// Draw a tiny distinctive icon for a variation type.
+fn draw_variation_icon(ui: &mut egui::Ui, var_idx: u8, size: f32, opacity: f32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    let p = ui.painter();
+    let c = rect.center();
+    let r = size * 0.4;
+    let stroke = egui::Stroke {
+        width: 1.0,
+        color: fade_color(egui::Color32::from_rgb(200, 200, 200), opacity),
+    };
+    let fill = fade_color(egui::Color32::from_rgb(200, 200, 200), opacity);
+    draw_variation_shape(p, var_idx, c, r, stroke, fill);
+    response
+}
+
+/// Draw the shape for a given variation index at the given center and radius.
+fn draw_variation_shape(
+    p: &egui::Painter,
+    var_idx: u8,
+    c: egui::Pos2,
+    r: f32,
+    stroke: egui::Stroke,
+    fill: egui::Color32,
+) {
+    match var_idx {
+        0 => {
+            // linear: diagonal line /
+            p.line_segment(
+                [egui::pos2(c.x - r, c.y + r), egui::pos2(c.x + r, c.y - r)],
+                stroke,
+            );
+        }
+        1 => {
+            // sinusoidal: sine wave ~
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    egui::pos2(
+                        c.x - r + t * 2.0 * r,
+                        c.y - (t * std::f32::consts::TAU).sin() * r * 0.5,
+                    )
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        2 => {
+            // spherical: circle with center dot
+            p.circle_stroke(c, r, stroke);
+            p.circle_filled(c, 1.5, fill);
+        }
+        3 => {
+            // swirl: spiral curve
+            let pts: Vec<egui::Pos2> = (0..=16)
+                .map(|i| {
+                    let t = i as f32 / 16.0;
+                    let angle = t * std::f32::consts::TAU * 1.5;
+                    let rad = t * r;
+                    egui::pos2(c.x + rad * angle.cos(), c.y + rad * angle.sin())
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        4 => {
+            // horseshoe: U shape
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let angle = std::f32::consts::PI * t;
+                    egui::pos2(c.x + r * angle.cos(), c.y + r * angle.sin().abs())
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        5 => {
+            // handkerchief: diamond outline
+            let d = r;
+            let pts = vec![
+                egui::pos2(c.x, c.y - d),
+                egui::pos2(c.x + d, c.y),
+                egui::pos2(c.x, c.y + d),
+                egui::pos2(c.x - d, c.y),
+                egui::pos2(c.x, c.y - d),
+            ];
+            p.line(pts, stroke);
+        }
+        6 => {
+            // julia: two overlapping circles
+            p.circle_stroke(egui::pos2(c.x - r * 0.3, c.y), r * 0.6, stroke);
+            p.circle_stroke(egui::pos2(c.x + r * 0.3, c.y), r * 0.6, stroke);
+        }
+        7 => {
+            // polar: crosshair + circle
+            p.circle_stroke(c, r * 0.7, stroke);
+            p.line_segment([egui::pos2(c.x - r, c.y), egui::pos2(c.x + r, c.y)], stroke);
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+        }
+        8 => {
+            // disc: circle with vertical line
+            p.circle_stroke(c, r, stroke);
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+        }
+        9 => {
+            // rings: concentric circles
+            p.circle_stroke(c, r, stroke);
+            p.circle_stroke(c, r * 0.5, stroke);
+        }
+        10 => {
+            // bubble: dashed circle (approx with arcs)
+            for i in 0..6 {
+                let a0 = i as f32 * std::f32::consts::TAU / 6.0;
+                let a1 = a0 + std::f32::consts::TAU / 12.0;
+                p.line_segment(
+                    [
+                        egui::pos2(c.x + r * a0.cos(), c.y + r * a0.sin()),
+                        egui::pos2(c.x + r * a1.cos(), c.y + r * a1.sin()),
+                    ],
+                    stroke,
+                );
+            }
+        }
+        11 => {
+            // fisheye: ellipse with dot
+            let pts: Vec<egui::Pos2> = (0..=12)
+                .map(|i| {
+                    let a = i as f32 * std::f32::consts::TAU / 12.0;
+                    egui::pos2(c.x + r * a.cos(), c.y + r * 0.6 * a.sin())
+                })
+                .collect();
+            p.line(pts, stroke);
+            p.circle_filled(c, 1.5, fill);
+        }
+        12 => {
+            // exponential: exponential curve
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let y = (t * 3.0).exp() / (3.0_f32).exp();
+                    egui::pos2(c.x - r + t * 2.0 * r, c.y + r - y * 2.0 * r)
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        13 => {
+            // spiral
+            let pts: Vec<egui::Pos2> = (0..=20)
+                .map(|i| {
+                    let t = i as f32 / 20.0;
+                    let angle = t * std::f32::consts::TAU * 2.0;
+                    let rad = t * r;
+                    egui::pos2(c.x + rad * angle.cos(), c.y + rad * angle.sin())
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        14 => {
+            // diamond: filled diamond
+            let d = r * 0.8;
+            let pts = vec![
+                egui::pos2(c.x, c.y - d),
+                egui::pos2(c.x + d, c.y),
+                egui::pos2(c.x, c.y + d),
+                egui::pos2(c.x - d, c.y),
+            ];
+            p.add(egui::Shape::convex_polygon(pts, fill, stroke));
+        }
+        15 => {
+            // bent: bent line
+            p.line_segment([egui::pos2(c.x - r, c.y), egui::pos2(c.x, c.y)], stroke);
+            p.line_segment([egui::pos2(c.x, c.y), egui::pos2(c.x + r, c.y - r)], stroke);
+        }
+        16 => {
+            // waves: double wave
+            for offset in [-r * 0.3, r * 0.3] {
+                let pts: Vec<egui::Pos2> = (0..=8)
+                    .map(|i| {
+                        let t = i as f32 / 8.0;
+                        egui::pos2(
+                            c.x - r + t * 2.0 * r,
+                            c.y + offset - (t * std::f32::consts::TAU).sin() * r * 0.3,
+                        )
+                    })
+                    .collect();
+                p.line(pts, stroke);
+            }
+        }
+        17 => {
+            // popcorn: scattered dots
+            for (dx, dy) in [
+                (-0.5, -0.5),
+                (0.3, -0.2),
+                (-0.2, 0.4),
+                (0.5, 0.3),
+                (0.0, -0.6),
+            ] {
+                p.circle_filled(egui::pos2(c.x + dx * r, c.y + dy * r), 1.0, fill);
+            }
+        }
+        18 => {
+            // fan: triangle
+            let pts = vec![
+                egui::pos2(c.x, c.y - r),
+                egui::pos2(c.x + r, c.y + r),
+                egui::pos2(c.x - r, c.y + r),
+                egui::pos2(c.x, c.y - r),
+            ];
+            p.line(pts, stroke);
+        }
+        19 => {
+            // eyefish: eye shape
+            let top: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let x = c.x - r + t * 2.0 * r;
+                    let y = c.y - (t * std::f32::consts::PI).sin() * r * 0.6;
+                    egui::pos2(x, y)
+                })
+                .collect();
+            let bot: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    let x = c.x - r + t * 2.0 * r;
+                    let y = c.y + (t * std::f32::consts::PI).sin() * r * 0.6;
+                    egui::pos2(x, y)
+                })
+                .collect();
+            p.line(top, stroke);
+            p.line(bot, stroke);
+        }
+        20 => {
+            // cross: + cross
+            p.line_segment([egui::pos2(c.x - r, c.y), egui::pos2(c.x + r, c.y)], stroke);
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+        }
+        21 => {
+            // tangent: vertical asymptote
+            p.line_segment([egui::pos2(c.x, c.y - r), egui::pos2(c.x, c.y + r)], stroke);
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = (i as f32 / 8.0 - 0.5) * 2.0;
+                    egui::pos2(c.x + t * r, c.y - t.atan() * r * 0.8)
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        22 => {
+            // cosine: cosine curve
+            let pts: Vec<egui::Pos2> = (0..=8)
+                .map(|i| {
+                    let t = i as f32 / 8.0;
+                    egui::pos2(
+                        c.x - r + t * 2.0 * r,
+                        c.y - (t * std::f32::consts::TAU).cos() * r * 0.5,
+                    )
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+        23 => {
+            // blob: filled ellipse
+            let pts: Vec<egui::Pos2> = (0..=12)
+                .map(|i| {
+                    let a = i as f32 * std::f32::consts::TAU / 12.0;
+                    egui::pos2(c.x + r * a.cos(), c.y + r * 0.6 * a.sin())
+                })
+                .collect();
+            p.add(egui::Shape::convex_polygon(pts, fill, stroke));
+        }
+        24 => {
+            // noise: random dots (deterministic positions)
+            for (dx, dy) in [
+                (-0.7, 0.2),
+                (0.4, -0.6),
+                (-0.3, -0.4),
+                (0.6, 0.5),
+                (0.1, 0.1),
+                (-0.5, 0.6),
+            ] {
+                p.circle_filled(egui::pos2(c.x + dx * r, c.y + dy * r), 1.0, fill);
+            }
+        }
+        _ => {
+            // curl (25) or unknown: S-curve
+            let pts: Vec<egui::Pos2> = (0..=10)
+                .map(|i| {
+                    let t = i as f32 / 10.0 * 2.0 - 1.0;
+                    egui::pos2(c.x + t * r, c.y - (t * 1.5).tanh() * r)
+                })
+                .collect();
+            p.line(pts, stroke);
+        }
+    }
+}
+
+/// Right side: Transforms panel (below progress).
+fn hud_panel_transforms(
+    ctx: &egui::Context,
+    hud: &HudFrameData,
+    screen_w: f32,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(screen_w - 220.0, 250.0);
+    hud_window("hud_transforms", default_pos, opacity, override_pos).show(ctx, |ui| {
+        disable_text_selection(ui);
+        let dim = fade_color(egui::Color32::from_rgb(136, 136, 136), opacity);
+        ui.label(egui::RichText::new("transforms").size(10.0).color(dim));
+        for i in 0..hud.num_transforms.min(12) {
+            let w = hud.transform_weights[i];
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("xf{i:>2} w:{w:.3}"))
+                        .size(9.0)
+                        .color(dim)
+                        .family(egui::FontFamily::Monospace),
+                );
+                // Show variation icons for non-zero variations
+                for (v, &vw) in hud.transform_variations[i].iter().enumerate() {
+                    if vw.abs() > 0.001 {
+                        let resp = draw_variation_icon(ui, v as u8, 12.0, opacity);
+                        resp.on_hover_text(VARIATION_NAMES[v]);
+                    }
+                }
+            });
+        }
+    });
+}
+
+/// Bottom: Hotkey bar — centered row of key+label pairs.
+fn hud_panel_hotkeys(
+    ctx: &egui::Context,
+    screen_w: f32,
+    screen_h: f32,
+    opacity: f32,
+    override_pos: Option<egui::Pos2>,
+) {
+    let default_pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0);
+    let win = hud_window("hud_hotkeys", default_pos, opacity, override_pos)
+        .frame(hud_frame(opacity).inner_margin(egui::Margin::symmetric(10, 4)));
+    win.show(ctx, |ui| {
+        disable_text_selection(ui);
+        let key_color = fade_color(egui::Color32::from_rgb(187, 187, 187), opacity);
+        let label_color = fade_color(egui::Color32::from_rgb(102, 102, 102), opacity);
+        ui.horizontal(|ui| {
+            for (key, desc) in [
+                ("Space", "evolve"),
+                ("\u{2191}/\u{2193}", "vote"),
+                ("S", "save"),
+                ("F", "flame"),
+                ("A", "audio"),
+                ("C", "config"),
+                ("I", "info"),
+                ("Esc", "quit"),
+            ] {
+                ui.label(egui::RichText::new(key).size(9.0).color(key_color));
+                ui.label(egui::RichText::new(desc).size(9.0).color(label_color));
+                ui.add_space(6.0);
+            }
+        });
+    });
+}
+
+// ── Config Panel ──
+
+/// Config panel actions.
+struct ConfigAction {
+    changed: bool,
+    save: bool,
+    reset: bool,
+    cancel: bool,
+}
+
+/// Config panel state passed in from the App.
+struct ConfigPanelState<'a> {
+    weights: &'a mut crate::weights::Weights,
+    tab: &'a mut usize,
+    reposition_panels: &'a mut bool,
+    cached_audio_devices: &'a [String],
+    selected_audio_device: &'a mut String,
+    refresh_audio_devices: &'a mut bool,
+}
+
+/// Main config panel UI.
+fn config_panel_ui(
+    ctx: &egui::Context,
+    state: &mut ConfigPanelState<'_>,
+    screen_w: f32,
+    screen_h: f32,
+) -> ConfigAction {
+    let mut changed = false;
+    let mut save = false;
+    let mut reset = false;
+    let mut cancel = false;
+    let panel_w = 360.0;
+    let panel_h = 480.0;
+    let x = (screen_w - panel_w) * 0.5;
+    let y = (screen_h - panel_h) * 0.5;
+
+    egui::Window::new("Config")
+        .id(egui::Id::new("config_panel"))
+        .collapsible(false)
+        .resizable(false)
+        .default_pos(egui::pos2(x, y))
+        .frame(
+            egui::Frame::NONE
+                .fill(egui::Color32::from_rgba_premultiplied(15, 15, 15, 210))
+                .corner_radius(8.0)
+                .inner_margin(egui::Margin::same(12)),
+        )
+        .show(ctx, |ui| {
+            ui.set_min_width(panel_w - 24.0);
+            ui.label(
+                egui::RichText::new("Config Panel")
+                    .size(14.0)
+                    .color(egui::Color32::WHITE),
+            );
+            ui.add_space(4.0);
+
+            // Tab buttons
+            ui.horizontal(|ui| {
+                for (i, name) in ["Config", "Rendering", "Breeding", "Signals", "Audio"]
+                    .iter()
+                    .enumerate()
+                {
+                    let color = if *state.tab == i {
+                        egui::Color32::from_rgb(100, 200, 255)
+                    } else {
+                        egui::Color32::from_rgb(140, 140, 140)
+                    };
+                    if ui
+                        .add(egui::Button::new(
+                            egui::RichText::new(*name).size(11.0).color(color),
+                        ))
+                        .clicked()
+                    {
+                        *state.tab = i;
+                    }
+                }
+            });
+            ui.add_space(4.0);
+
+            // Tab content in a scroll area
+            egui::ScrollArea::vertical()
+                .max_height(380.0)
+                .show(ui, |ui| match *state.tab {
+                    0 => changed = config_tab_main(ui, &mut state.weights._config),
+                    1 => changed = config_tab_rendering(ui, &mut state.weights._config),
+                    2 => changed = config_tab_breeding(ui, &mut state.weights._config),
+                    3 => changed = config_tab_signals(ui, state.weights),
+                    4 => config_tab_audio(
+                        ui,
+                        state.cached_audio_devices,
+                        state.selected_audio_device,
+                        state.refresh_audio_devices,
+                    ),
+                    _ => {}
+                });
+
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Save")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(100, 255, 100)),
+                    ))
+                    .clicked()
+                {
+                    save = true;
+                }
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Reset")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(255, 200, 100)),
+                    ))
+                    .clicked()
+                {
+                    reset = true;
+                }
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Cancel")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(200, 100, 100)),
+                    ))
+                    .clicked()
+                {
+                    cancel = true;
+                }
+                ui.add_space(8.0);
+                if ui
+                    .add(egui::Button::new(
+                        egui::RichText::new("Reset positions")
+                            .size(11.0)
+                            .color(egui::Color32::from_rgb(180, 180, 255)),
+                    ))
+                    .clicked()
+                {
+                    *state.reposition_panels = true;
+                }
+            });
+        });
+    ConfigAction {
+        changed,
+        save,
+        reset,
+        cancel,
+    }
+}
+
+/// Config tab: morph, mutation, motion, and accumulation sliders.
+fn config_tab_main(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConfig) -> bool {
+    let mut changed = false;
+    changed |= config_slider_f32(ui, "morph_duration", &mut cfg.morph_duration, 1.0, 120.0);
+    changed |= config_slider_f32(
+        ui,
+        "mutation_cooldown",
+        &mut cfg.mutation_cooldown,
+        1.0,
+        300.0,
+    );
+    changed |= config_slider_f32(ui, "spin_speed_max", &mut cfg.spin_speed_max, 0.0, 2.0);
+    changed |= config_slider_f32(ui, "position_drift", &mut cfg.position_drift, 0.0, 2.0);
+    changed |= config_slider_f32(ui, "drift_speed", &mut cfg.drift_speed, 0.0, 10.0);
+    changed |= config_slider_f32(ui, "trail", &mut cfg.trail, 0.0, 1.0);
+    changed |= config_slider_f32(ui, "bloom_intensity", &mut cfg.bloom_intensity, 0.0, 0.5);
+    changed |= config_slider_f32(
+        ui,
+        "accumulation_decay",
+        &mut cfg.accumulation_decay,
+        0.5,
+        0.999,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "mutation_accum_decay",
+        &mut cfg.mutation_accum_decay,
+        0.0,
+        2.0,
+    );
+    changed
+}
+
+/// Rendering tab: tonemap, jitter, histogram, DoF, blur, gamma, bloom.
+fn config_tab_rendering(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConfig) -> bool {
+    let mut changed = false;
+    // tonemap_mode as u32 selector
+    let mut mode = cfg.tonemap_mode as usize;
+    let labels = ["Reinhard (0)", "ACES (1)", "Filmic (2)"];
+    ui.horizontal(|ui| {
+        let dim = egui::Color32::from_rgb(160, 160, 160);
+        ui.label(egui::RichText::new("tonemap_mode").size(10.0).color(dim));
+        for (i, label) in labels.iter().enumerate() {
+            let color = if mode == i {
+                egui::Color32::from_rgb(100, 200, 255)
+            } else {
+                egui::Color32::from_rgb(100, 100, 100)
+            };
+            if ui
+                .add(egui::Button::new(
+                    egui::RichText::new(*label).size(9.0).color(color),
+                ))
+                .clicked()
+            {
+                mode = i;
+                changed = true;
+            }
+        }
+    });
+    cfg.tonemap_mode = mode as u32;
+
+    changed |= config_slider_f32(ui, "jitter_amount", &mut cfg.jitter_amount, 0.0, 1.0);
+    changed |= config_slider_f32(
+        ui,
+        "histogram_equalization",
+        &mut cfg.histogram_equalization,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(ui, "dof_strength", &mut cfg.dof_strength, 0.0, 2.0);
+    changed |= config_slider_f32(
+        ui,
+        "velocity_blur_max",
+        &mut cfg.velocity_blur_max,
+        0.0,
+        50.0,
+    );
+    changed |= config_slider_f32(ui, "gamma", &mut cfg.gamma, 0.1, 2.0);
+    changed |= config_slider_f32(ui, "bloom_radius", &mut cfg.bloom_radius, 0.0, 10.0);
+    changed
+}
+
+/// Breeding tab: transform counts, parent biases, breeding distance.
+fn config_tab_breeding(ui: &mut egui::Ui, cfg: &mut crate::weights::RuntimeConfig) -> bool {
+    let mut changed = false;
+    changed |= config_slider_u32(
+        ui,
+        "transform_count_min",
+        &mut cfg.transform_count_min,
+        1,
+        20,
+    );
+    changed |= config_slider_u32(
+        ui,
+        "transform_count_max",
+        &mut cfg.transform_count_max,
+        1,
+        20,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_current_bias",
+        &mut cfg.parent_current_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_voted_bias",
+        &mut cfg.parent_voted_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_saved_bias",
+        &mut cfg.parent_saved_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_f32(
+        ui,
+        "parent_random_bias",
+        &mut cfg.parent_random_bias,
+        0.0,
+        1.0,
+    );
+    changed |= config_slider_u32(
+        ui,
+        "min_breeding_distance",
+        &mut cfg.min_breeding_distance,
+        0,
+        20,
+    );
+    changed
+}
+
+/// Signals tab: show and edit audio/time signal weight mappings.
+fn config_tab_signals(ui: &mut egui::Ui, weights: &mut crate::weights::Weights) -> bool {
+    let mut changed = false;
+    let dim = egui::Color32::from_rgb(160, 160, 160);
+
+    // Signal groups in order matching Weights struct
+    let signal_names = [
+        "bass",
+        "mids",
+        "highs",
+        "energy",
+        "beat",
+        "beat_accum",
+        "change",
+        "time",
+        "time_slow",
+        "time_med",
+        "time_fast",
+        "time_noise",
+        "time_drift",
+        "time_flutter",
+        "time_walk",
+        "time_envelope",
+    ];
+
+    for signal_name in &signal_names {
+        let map = match *signal_name {
+            "bass" => &mut weights.bass,
+            "mids" => &mut weights.mids,
+            "highs" => &mut weights.highs,
+            "energy" => &mut weights.energy,
+            "beat" => &mut weights.beat,
+            "beat_accum" => &mut weights.beat_accum,
+            "change" => &mut weights.change,
+            "time" => &mut weights.time,
+            "time_slow" => &mut weights.time_slow,
+            "time_med" => &mut weights.time_med,
+            "time_fast" => &mut weights.time_fast,
+            "time_noise" => &mut weights.time_noise,
+            "time_drift" => &mut weights.time_drift,
+            "time_flutter" => &mut weights.time_flutter,
+            "time_walk" => &mut weights.time_walk,
+            "time_envelope" => &mut weights.time_envelope,
+            _ => continue,
+        };
+
+        let header_text = if map.is_empty() {
+            format!("{signal_name} (empty)")
+        } else {
+            format!("{signal_name} ({})", map.len())
+        };
+
+        egui::CollapsingHeader::new(egui::RichText::new(header_text).size(11.0).color(dim))
+            .default_open(!map.is_empty())
+            .show(ui, |ui| {
+                let mut to_remove: Option<String> = None;
+                // Sort keys for stable display order
+                let mut keys: Vec<String> = map.keys().cloned().collect();
+                keys.sort();
+                for key in &keys {
+                    if let Some(val) = map.get_mut(key) {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(key)
+                                    .size(9.0)
+                                    .color(dim)
+                                    .family(egui::FontFamily::Monospace),
+                            );
+                            let before = *val;
+                            ui.add(egui::DragValue::new(val).range(-10.0..=10.0).speed(0.01));
+                            if (*val - before).abs() > f32::EPSILON {
+                                changed = true;
+                            }
+                            if ui
+                                .add(egui::Button::new(
+                                    egui::RichText::new("X")
+                                        .size(9.0)
+                                        .color(egui::Color32::from_rgb(200, 100, 100)),
+                                ))
+                                .clicked()
+                            {
+                                to_remove = Some(key.clone());
+                            }
+                        });
+                    }
+                }
+                if let Some(key) = to_remove {
+                    map.remove(&key);
+                    changed = true;
+                }
+
+                // Add new entry
+                ui.horizontal(|ui| {
+                    let add_id = egui::Id::new(format!("signals_add_{signal_name}"));
+                    let mut new_param =
+                        ui.data_mut(|d| d.get_temp::<String>(add_id).unwrap_or_default());
+                    ui.label(egui::RichText::new("+").size(10.0).color(dim));
+                    ui.add(
+                        egui::TextEdit::singleline(&mut new_param)
+                            .desired_width(120.0)
+                            .hint_text("param name"),
+                    );
+                    if ui
+                        .add(egui::Button::new(
+                            egui::RichText::new("Add")
+                                .size(9.0)
+                                .color(egui::Color32::from_rgb(100, 200, 100)),
+                        ))
+                        .clicked()
+                        && !new_param.trim().is_empty()
+                        && !map.contains_key(new_param.trim())
+                    {
+                        map.insert(new_param.trim().to_string(), 0.0);
+                        changed = true;
+                        new_param.clear();
+                    }
+                    ui.data_mut(|d| d.insert_temp(add_id, new_param));
+                });
+            });
+    }
+
+    changed
+}
+
+/// Audio tab: dropdown device selector + refresh.
+fn config_tab_audio(
+    ui: &mut egui::Ui,
+    cached_devices: &[String],
+    selected_device: &mut String,
+    refresh: &mut bool,
+) {
+    let dim = egui::Color32::from_rgb(160, 160, 160);
+    ui.label(
+        egui::RichText::new("Audio Device")
+            .size(12.0)
+            .color(egui::Color32::WHITE),
+    );
+    ui.add_space(4.0);
+
+    // Build device options: System Audio first, then cached devices
+    let system_audio = "System Audio (ScreenCaptureKit)".to_string();
+    let mut all_devices = vec![system_audio.clone()];
+    all_devices.extend_from_slice(cached_devices);
+
+    // Default to system audio if nothing selected
+    if selected_device.is_empty() {
+        *selected_device = system_audio;
+    }
+
+    egui::ComboBox::from_label(egui::RichText::new("Device").size(10.0).color(dim))
+        .width(280.0)
+        .selected_text(
+            egui::RichText::new(selected_device.as_str())
+                .size(10.0)
+                .color(egui::Color32::from_rgb(100, 200, 255)),
+        )
+        .show_ui(ui, |ui| {
+            for device in &all_devices {
+                ui.selectable_value(
+                    selected_device,
+                    device.clone(),
+                    egui::RichText::new(device).size(10.0),
+                );
+            }
+        });
+
+    ui.add_space(4.0);
+    if ui
+        .add(egui::Button::new(
+            egui::RichText::new("Refresh devices")
+                .size(10.0)
+                .color(egui::Color32::from_rgb(100, 200, 255)),
+        ))
+        .clicked()
+    {
+        *refresh = true;
+    }
+
+    ui.add_space(8.0);
+    ui.label(
+        egui::RichText::new("Device switching requires restart.")
+            .size(9.0)
+            .color(egui::Color32::from_rgb(180, 140, 80)),
+    );
+}
+
+/// Helper: f32 slider with label. Returns true if value changed.
+fn config_slider_f32(ui: &mut egui::Ui, label: &str, value: &mut f32, min: f32, max: f32) -> bool {
+    let before = *value;
+    ui.add(egui::Slider::new(value, min..=max).text(label));
+    (*value - before).abs() > f32::EPSILON
+}
+
+/// Helper: u32 slider with label. Returns true if value changed.
+fn config_slider_u32(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, max: u32) -> bool {
+    let before = *value;
+    let mut v = *value as i32;
+    ui.add(egui::Slider::new(&mut v, min as i32..=max as i32).text(label));
+    *value = v as u32;
+    *value != before
+}
+
+/// Enumerate audio devices once (used for caching — avoids per-frame cpal calls).
+fn enumerate_audio_devices() -> Vec<String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let mut names = Vec::new();
+
+    names.push("Input Devices:".to_string());
+    if let Ok(inputs) = host.input_devices() {
+        for d in inputs {
+            let name = d
+                .description()
+                .map(|desc| desc.name().to_string())
+                .unwrap_or_else(|_| "???".into());
+            names.push(format!("  {name}"));
+        }
+    }
+
+    names.push(String::new());
+    names.push("Output Devices (loopback):".to_string());
+    if let Ok(outputs) = host.output_devices() {
+        for d in outputs {
+            let name = d
+                .description()
+                .map(|desc| desc.name().to_string())
+                .unwrap_or_else(|_| "???".into());
+            names.push(format!("  {name}"));
+        }
+    }
+
+    names
 }
 
 // ── Render Thread ──
 
+/// Compute HUD opacity based on time since last mouse move.
+fn compute_hud_opacity(elapsed: f32, fade_delay: f32, fade_duration: f32) -> f32 {
+    if elapsed < fade_delay {
+        return 1.0;
+    }
+    let fade_elapsed = elapsed - fade_delay;
+    if fade_duration <= 0.0 {
+        return 0.0;
+    }
+    (1.0 - fade_elapsed / fade_duration).clamp(0.0, 1.0)
+}
+
 fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
+    // egui renderer lives on the render thread (needs GPU device/queue)
+    let mut egui_renderer = egui_wgpu::Renderer::new(
+        &gpu.device,
+        gpu.config.format,
+        egui_wgpu::RendererOptions::default(),
+    );
     while let Ok(cmd) = rx.recv() {
         match cmd {
             RenderCommand::Render(data) => {
@@ -943,7 +2250,63 @@ fn render_thread_loop(rx: mpsc::Receiver<RenderCommand>, mut gpu: Gpu) {
                     bytemuck::cast_slice(&data.hist_cdf_uniforms),
                 );
                 gpu.workgroups = data.workgroups;
-                gpu.render(data.run_compute);
+
+                // Run fractal compute + display passes; get surface for overlay
+                if let Some(surface_texture) = gpu.render(data.run_compute) {
+                    let screen_view = surface_texture.texture.create_view(&Default::default());
+
+                    // egui overlay — execute pre-built paint jobs from main thread
+                    let screen_descriptor = egui_wgpu::ScreenDescriptor {
+                        size_in_pixels: [gpu.config.width, gpu.config.height],
+                        pixels_per_point: data.egui_pixels_per_point,
+                    };
+
+                    for (id, image_delta) in &data.egui_textures_delta.set {
+                        egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, image_delta);
+                    }
+
+                    let mut egui_encoder = gpu.device.create_command_encoder(&Default::default());
+                    let egui_cmd_bufs = egui_renderer.update_buffers(
+                        &gpu.device,
+                        &gpu.queue,
+                        &mut egui_encoder,
+                        &data.egui_primitives,
+                        &screen_descriptor,
+                    );
+
+                    // Render egui overlay — LoadOp::Load preserves the fractal
+                    {
+                        let egui_pass =
+                            egui_encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                                label: Some("egui"),
+                                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                    view: &screen_view,
+                                    resolve_target: None,
+                                    depth_slice: None,
+                                    ops: wgpu::Operations {
+                                        load: wgpu::LoadOp::Load,
+                                        store: wgpu::StoreOp::Store,
+                                    },
+                                })],
+                                ..Default::default()
+                            });
+                        let mut egui_pass = egui_pass.forget_lifetime();
+                        egui_renderer.render(
+                            &mut egui_pass,
+                            &data.egui_primitives,
+                            &screen_descriptor,
+                        );
+                    }
+
+                    let mut cmd_bufs: Vec<wgpu::CommandBuffer> = egui_cmd_bufs;
+                    cmd_bufs.push(egui_encoder.finish());
+                    gpu.queue.submit(cmd_bufs);
+                    surface_texture.present();
+
+                    for id in &data.egui_textures_delta.free {
+                        egui_renderer.free_texture(id);
+                    }
+                }
             }
             RenderCommand::Resize { width, height } => {
                 gpu.resize(width, height);
@@ -1608,6 +2971,25 @@ struct App {
     prev_zoom: f32,
     genome_frame_count: u32,
     genome_start_time: Instant,
+    egui_state: Option<egui_winit::State>,
+    last_cursor_move: Instant,
+    pending_egui_textures: egui::TexturesDelta,
+    // Vote feedback popup state: (score, genome_name, text_input, prev_genome_name)
+    vote_feedback: Option<(i32, String, String, Option<String>)>,
+    // Config panel state (now on main thread)
+    config_panel_open: bool,
+    config_edit: Option<crate::weights::RuntimeConfig>,
+    config_edit_weights: Option<crate::weights::Weights>,
+    config_tab: usize,
+    // Previous screen size for resize-aware panel repositioning
+    prev_screen_size: (f32, f32),
+    // One-shot flag: reset HUD panels to default non-overlapping positions
+    reposition_panels: bool,
+    // Throttle: skip heavy work (egui, modulation) when render channel was full
+    render_channel_full: bool,
+    // Cached audio device names (populated once, refreshed on demand)
+    cached_audio_devices: Vec<String>,
+    selected_audio_device: String,
 }
 
 fn smoothstep(t: f32) -> f32 {
@@ -1731,6 +3113,19 @@ impl App {
             prev_zoom: 3.0,
             genome_frame_count: 0,
             genome_start_time: Instant::now(),
+            egui_state: None,
+            last_cursor_move: Instant::now(),
+            pending_egui_textures: egui::TexturesDelta::default(),
+            vote_feedback: None,
+            config_panel_open: false,
+            config_edit: None,
+            config_edit_weights: None,
+            config_tab: 0,
+            prev_screen_size: (1.0, 1.0),
+            reposition_panels: true,
+            render_channel_full: false,
+            cached_audio_devices: enumerate_audio_devices(),
+            selected_audio_device: String::new(),
         }
     }
 
@@ -1748,6 +3143,270 @@ impl App {
         }
     }
 
+    /// Build the full egui UI on the main thread: collect input, run all HUD panels +
+    /// vote popup + config panel, tessellate, and return paint jobs ready for the render thread.
+    fn build_egui_frame(
+        &mut self,
+        hud: &HudFrameData,
+    ) -> (Vec<egui::ClippedPrimitive>, egui::TexturesDelta, f32) {
+        let (egui_ctx, raw_input) =
+            if let (Some(egui_state), Some(window)) = (&mut self.egui_state, &self.window) {
+                let raw = egui_state.take_egui_input(window);
+                (egui_state.egui_ctx().clone(), raw)
+            } else {
+                return (Vec::new(), egui::TexturesDelta::default(), 1.0);
+            };
+
+        let screen_w = self.gpu_width as f32;
+        let screen_h = self.gpu_height as f32;
+
+        // HUD fade — compute opacity from cursor idle time
+        let hud_opacity = compute_hud_opacity(
+            self.last_cursor_move.elapsed().as_secs_f32(),
+            hud.hud_fade_delay,
+            hud.hud_fade_duration,
+        );
+
+        // --- Resize-aware panel repositioning ---
+        // Detect window size change and compute per-panel position overrides so
+        // panels maintain their distance from the nearest edge.
+        let size_changed = (screen_w - self.prev_screen_size.0).abs() > 0.5
+            || (screen_h - self.prev_screen_size.1).abs() > 0.5;
+        let dw = screen_w - self.prev_screen_size.0;
+        let dh = screen_h - self.prev_screen_size.1;
+        let old_w = self.prev_screen_size.0;
+        let old_h = self.prev_screen_size.1;
+        self.prev_screen_size = (screen_w, screen_h);
+
+        // Build per-panel override positions for this frame.
+        // - On resize: shift panels that are right-anchored / bottom-anchored
+        // - On reposition (reset button): snap to default non-overlapping layout
+        // - Otherwise: None (let egui manage drag state)
+        let panel_ids: [&str; 6] = [
+            "hud_identity",
+            "hud_progress",
+            "hud_audio",
+            "hud_time",
+            "hud_transforms",
+            "hud_hotkeys",
+        ];
+
+        let override_positions: [Option<egui::Pos2>; 6] = if self.reposition_panels {
+            // One-shot reset to default non-overlapping positions
+            self.reposition_panels = false;
+            [
+                Some(egui::pos2(10.0, 10.0)),                              // identity
+                Some(egui::pos2(screen_w - 220.0, 10.0)),                  // progress
+                Some(egui::pos2(10.0, 90.0)),                              // audio
+                Some(egui::pos2(10.0, 310.0)),                             // time
+                Some(egui::pos2(screen_w - 220.0, 250.0)),                 // transforms
+                Some(egui::pos2(screen_w * 0.5 - 250.0, screen_h - 30.0)), // hotkeys
+            ]
+        } else if size_changed {
+            // Shift panels based on their anchor edge
+            let mut positions: [Option<egui::Pos2>; 6] = [None; 6];
+            for (i, name) in panel_ids.iter().enumerate() {
+                let id = egui::Id::new(*name);
+                if let Some(rect) = egui_ctx.memory(|m| m.area_rect(id)) {
+                    let mut pos = rect.min;
+                    // Right-anchored if panel center is past 40% of old width
+                    if pos.x > old_w * 0.4 {
+                        pos.x += dw;
+                    }
+                    // Bottom-anchored if panel center is past 60% of old height
+                    if pos.y > old_h * 0.6 {
+                        pos.y += dh;
+                    }
+                    positions[i] = Some(pos);
+                }
+            }
+            positions
+        } else {
+            [None; 6]
+        };
+
+        // Track vote/config actions to apply after the egui closure
+        let mut vote_submit: Option<(String, Option<String>)> = None;
+        let mut config_action = ConfigAction {
+            changed: false,
+            save: false,
+            reset: false,
+            cancel: false,
+        };
+
+        let mut refresh_audio_devices = false;
+        let egui_output = egui_ctx.run_ui(raw_input, |ui| {
+            // HUD panels — skip when fully faded out
+            if hud_opacity > 0.0 {
+                let ctx = ui.ctx();
+                hud_panel_identity(ctx, hud, hud_opacity, override_positions[0]);
+                hud_panel_progress(ctx, hud, screen_w, hud_opacity, override_positions[1]);
+                hud_panel_audio(ctx, hud, hud_opacity, override_positions[2]);
+                hud_panel_time(ctx, hud, hud_opacity, override_positions[3]);
+                hud_panel_transforms(ctx, hud, screen_w, hud_opacity, override_positions[4]);
+                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity, override_positions[5]);
+            }
+
+            // Config panel — always visible when open (ignores HUD fade)
+            if self.config_panel_open
+                && let Some(ref mut edit_weights) = self.config_edit_weights
+            {
+                let mut panel_state = ConfigPanelState {
+                    weights: edit_weights,
+                    tab: &mut self.config_tab,
+                    reposition_panels: &mut self.reposition_panels,
+                    cached_audio_devices: &self.cached_audio_devices,
+                    selected_audio_device: &mut self.selected_audio_device,
+                    refresh_audio_devices: &mut refresh_audio_devices,
+                };
+                config_action = config_panel_ui(ui.ctx(), &mut panel_state, screen_w, screen_h);
+            }
+
+            // Vote feedback popup — always visible when active
+            if let Some((score, ref genome_name, ref mut text, ref prev_name)) = self.vote_feedback
+            {
+                let ctx = ui.ctx();
+                let prompt = if score > 0 {
+                    "What do you like about this?"
+                } else {
+                    "What don't you like?"
+                };
+                let popup_w = 400.0;
+                let popup_h = 120.0;
+                egui::Area::new(egui::Id::new("vote_feedback"))
+                    .fixed_pos(egui::pos2(
+                        (screen_w - popup_w) * 0.5,
+                        (screen_h - popup_h) * 0.5,
+                    ))
+                    .show(ctx, |ui| {
+                        egui::Frame::NONE
+                            .fill(egui::Color32::from_rgba_premultiplied(20, 20, 20, 200))
+                            .corner_radius(8.0)
+                            .inner_margin(egui::Margin::same(16))
+                            .show(ui, |ui| {
+                                ui.set_min_width(popup_w - 32.0);
+                                let arrow = if score > 0 { "\u{2191}" } else { "\u{2193}" };
+                                ui.label(
+                                    egui::RichText::new(format!("{arrow} {prompt}"))
+                                        .size(14.0)
+                                        .color(egui::Color32::WHITE),
+                                );
+                                // Show genome context
+                                let dim = egui::Color32::from_rgb(120, 120, 120);
+                                ui.label(
+                                    egui::RichText::new(format!("current: {genome_name}"))
+                                        .size(9.0)
+                                        .color(dim),
+                                );
+                                if let Some(prev) = prev_name {
+                                    ui.label(
+                                        egui::RichText::new(format!("previous: {prev}"))
+                                            .size(9.0)
+                                            .color(dim),
+                                    );
+                                }
+                                ui.add_space(4.0);
+                                let response = ui.add(
+                                    egui::TextEdit::singleline(text)
+                                        .desired_width(popup_w - 32.0)
+                                        .hint_text(
+                                            "optional \u{2014} press Enter to submit, Esc to skip",
+                                        ),
+                                );
+                                // Auto-focus the text input
+                                if response.gained_focus() || !response.has_focus() {
+                                    response.request_focus();
+                                }
+                                // Enter = submit note, Esc = dismiss
+                                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                    let note = if text.trim().is_empty() {
+                                        None
+                                    } else {
+                                        Some(text.trim().to_string())
+                                    };
+                                    vote_submit = Some((genome_name.clone(), note));
+                                }
+                                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                                    vote_submit = Some((genome_name.clone(), None));
+                                }
+                            });
+                    });
+            }
+        });
+
+        // Handle platform output (cursor changes, clipboard, etc.)
+        if let (Some(egui_state), Some(window)) = (&mut self.egui_state, &self.window) {
+            egui_state.handle_platform_output(window, egui_output.platform_output);
+        }
+
+        // Apply vote feedback actions
+        if let Some((genome_name, note)) = vote_submit {
+            if let Some(note_text) = note {
+                let dir = project_dir().join("genomes");
+                self.vote_ledger.attach_note(&genome_name, note_text, &dir);
+                eprintln!("[vote] note attached to {genome_name}");
+            }
+            self.vote_feedback = None;
+        }
+
+        // Apply config actions
+        if config_action.changed
+            && let Some(ref edit_weights) = self.config_edit_weights
+        {
+            self.weights = edit_weights.clone();
+        }
+        if config_action.save {
+            // Save applies edit to live weights AND writes to disk
+            if let Some(ref edit_weights) = self.config_edit_weights {
+                self.weights = edit_weights.clone();
+            }
+            let path = weights_path();
+            match serde_json::to_string_pretty(&self.weights) {
+                Ok(json) => {
+                    if let Err(e) = std::fs::write(&path, json) {
+                        eprintln!("[config] save error: {e}");
+                    } else {
+                        eprintln!("[config] saved to {}", path.display());
+                    }
+                }
+                Err(e) => eprintln!("[config] serialize error: {e}"),
+            }
+            self.config_panel_open = false;
+            self.config_edit = None;
+            self.config_edit_weights = None;
+        }
+        if config_action.reset {
+            // Reset to serde defaults
+            let default_weights: crate::weights::Weights =
+                serde_json::from_str(r#"{"_config": {}}"#).unwrap();
+            self.config_edit = Some(default_weights._config.clone());
+            self.config_edit_weights = Some(default_weights.clone());
+            self.weights = default_weights;
+            eprintln!("[config] reset to defaults");
+        }
+        if config_action.cancel {
+            // Revert to what was on disk before editing
+            self.config_edit = None;
+            self.config_edit_weights = None;
+            self.config_panel_open = false;
+            // Reload from disk
+            if let Ok(w) = crate::weights::Weights::load(&weights_path()) {
+                self.weights = w;
+                eprintln!("[config] cancelled — reverted to saved config");
+            }
+        }
+
+        // Refresh audio device cache if requested
+        if refresh_audio_devices {
+            self.cached_audio_devices = enumerate_audio_devices();
+        }
+
+        // Tessellate on main thread — send paint jobs to render thread
+        let pixels_per_point = egui_output.pixels_per_point;
+        let primitives = egui_ctx.tessellate(egui_output.shapes, pixels_per_point);
+        (primitives, egui_output.textures_delta, pixels_per_point)
+    }
+
     /// If mid-morph, snapshot the interpolated state as a new genome. Otherwise return current.
     fn morph_snapshot_or_current(&self) -> FlameGenome {
         if self.morph_progress >= 1.0 {
@@ -1760,7 +3419,7 @@ impl App {
         );
         let xf_data = &self.morph_base_xf;
         for (i, xf) in snapshot.transforms.iter_mut().enumerate() {
-            let base = i * 48;
+            let base = i * PARAMS_PER_XF;
             if base + 13 < xf_data.len() {
                 xf.weight = xf_data[base];
                 // 3x3 affine: 9 values at base+1..base+9
@@ -2009,7 +3668,7 @@ impl App {
 
         // Ensure buffers can hold max of current and target transforms
         let target_xf = self.genome.flatten_transforms();
-        let max_xf = (self.xf_params.len().max(target_xf.len())) / 48;
+        let max_xf = (self.xf_params.len().max(target_xf.len())) / PARAMS_PER_XF;
         if max_xf != self.num_transforms {
             self.num_transforms = max_xf;
             if let Some(tx) = &self.render_tx {
@@ -2017,7 +3676,7 @@ impl App {
             }
         }
         // Pad start vectors to match
-        self.morph_start_xf.resize(max_xf * 48, 0.0);
+        self.morph_start_xf.resize(max_xf * PARAMS_PER_XF, 0.0);
 
         // Generate per-transform morph rates: some fast (2x), some slow (0.4x)
         // This makes transforms arrive at different times for organic transitions.
@@ -2223,9 +3882,9 @@ impl ApplicationHandler for App {
         gpu.resize_transform_buffer(self.num_transforms);
 
         // Spawn render thread — gpu moves into it permanently
-        // Bounded channel (2 frames): prevents main thread from spinning faster than GPU
+        // Bounded channel (1 frame): prevents main thread from spinning faster than GPU
         // can consume, which would starve keyboard/mouse events.
-        let (tx, rx) = mpsc::sync_channel(2);
+        let (tx, rx) = mpsc::sync_channel(1);
         std::thread::Builder::new()
             .name("render".into())
             .spawn(move || render_thread_loop(rx, gpu))
@@ -2235,6 +3894,18 @@ impl ApplicationHandler for App {
         // Use configured dimensions — inner_size() returns 0×0 on macOS before window is shown
         self.gpu_width = self.weights._config.window_width.max(1);
         self.gpu_height = self.weights._config.window_height.max(1);
+
+        // Initialize egui input state on main thread
+        let egui_ctx = egui::Context::default();
+        self.egui_state = Some(egui_winit::State::new(
+            egui_ctx,
+            egui::ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None,
+        ));
+
         self.window = Some(window.clone());
         eprintln!(
             "[debug] window surface={}x{}, gpu_dims={}x{}, samples_per_frame={}, xf_range={}-{}, iters={}",
@@ -2270,6 +3941,25 @@ impl ApplicationHandler for App {
         _window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        // Always track cursor movement (before egui consumes the event)
+        if let WindowEvent::CursorMoved { position, .. } = &event {
+            self.last_cursor_move = Instant::now();
+            self.mouse = [
+                position.x as f32 / self.gpu_width.max(1) as f32,
+                position.y as f32 / self.gpu_height.max(1) as f32,
+            ];
+        }
+
+        // Forward events to egui for input handling
+        if let Some(egui_state) = &mut self.egui_state
+            && let Some(window) = &self.window
+        {
+            let response = egui_state.on_window_event(window, &event);
+            if response.consumed {
+                return;
+            }
+        }
+
         match event {
             WindowEvent::CloseRequested => {
                 if let Some(tx) = self.render_tx.take() {
@@ -2289,12 +3979,7 @@ impl ApplicationHandler for App {
                     }
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                self.mouse = [
-                    position.x as f32 / self.gpu_width.max(1) as f32,
-                    position.y as f32 / self.gpu_height.max(1) as f32,
-                ];
-            }
+            WindowEvent::CursorMoved { .. } => {} // handled above (before egui consumes it)
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
@@ -2308,7 +3993,7 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } => match logical_key {
+            } if self.vote_feedback.is_none() => match logical_key {
                 Key::Named(NamedKey::Space) => {
                     self.genome_history.push(self.genome.clone());
                     if self.genome_history.len() > 10 {
@@ -2374,6 +4059,15 @@ impl ApplicationHandler for App {
                     let igmm_path = dir.join("taste_model.json");
                     self.taste_engine.on_upvote(&self.genome, Some(&igmm_path));
                     self.rebuild_taste_model();
+                    let existing_note = self
+                        .vote_ledger
+                        .entries
+                        .get(&vote_genome.name)
+                        .and_then(|e| e.note.clone())
+                        .unwrap_or_default();
+                    let prev_name = self.genome_history.last().map(|g| g.name.clone());
+                    self.vote_feedback =
+                        Some((1, vote_genome.name.clone(), existing_note, prev_name));
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} +1 (score: {})",
@@ -2391,6 +4085,15 @@ impl ApplicationHandler for App {
                     let score = self.vote_ledger.vote(&vote_genome, -1, &dir);
                     self.favorite_profile = Self::scan_favorite_profile();
                     self.rebuild_taste_model();
+                    let existing_note = self
+                        .vote_ledger
+                        .entries
+                        .get(&vote_genome.name)
+                        .and_then(|e| e.note.clone())
+                        .unwrap_or_default();
+                    let prev_name = self.genome_history.last().map(|g| g.name.clone());
+                    self.vote_feedback =
+                        Some((-1, vote_genome.name.clone(), existing_note, prev_name));
                     if vote_genome.name != self.genome.name {
                         eprintln!(
                             "[vote] captured morph {:.0}% → {} -1 (score: {})",
@@ -2442,7 +4145,7 @@ impl ApplicationHandler for App {
                     "1" | "2" | "3" | "4" => {
                         let idx: usize = c.as_str().parse::<usize>().unwrap() - 1;
                         if idx < self.num_transforms {
-                            let base = idx * 48; // weight is first field
+                            let base = idx * PARAMS_PER_XF; // weight is first field
                             if base < self.xf_params.len() {
                                 if self.xf_params[base] < 0.01 {
                                     self.xf_params[base] = 0.25;
@@ -2482,6 +4185,24 @@ impl ApplicationHandler for App {
                             }
                         );
                     }
+                    "c" => {
+                        self.config_panel_open = !self.config_panel_open;
+                        if self.config_panel_open {
+                            self.config_edit = Some(self.weights._config.clone());
+                            self.config_edit_weights = Some(self.weights.clone());
+                        } else {
+                            self.config_edit = None;
+                            self.config_edit_weights = None;
+                        }
+                        eprintln!(
+                            "[config] panel {}",
+                            if self.config_panel_open {
+                                "opened"
+                            } else {
+                                "closed"
+                            }
+                        );
+                    }
                     "i" => {
                         self.audio_info = !self.audio_info;
                         if self.audio_info {
@@ -2514,6 +4235,19 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::RedrawRequested => {
+                // Throttle: skip heavy work when render channel was recently full.
+                // Only clear after enough time for the render thread to consume.
+                if self.render_channel_full {
+                    let since_last = self.last_frame_time.elapsed();
+                    if since_last < std::time::Duration::from_millis(4) {
+                        if let Some(w) = &self.window {
+                            w.request_redraw();
+                        }
+                        return;
+                    }
+                    self.render_channel_full = false;
+                }
+
                 if self.frame < 3 {
                     eprintln!("[debug] RedrawRequested frame={}", self.frame);
                 }
@@ -2571,12 +4305,13 @@ impl ApplicationHandler for App {
                     padded_start.resize(max_len, 0.0);
                     let mut padded_genome = genome_xf;
                     padded_genome.resize(max_len, 0.0);
-                    let num_xf = max_len / 48;
+                    let num_xf = max_len / PARAMS_PER_XF;
                     for xi in 0..num_xf {
                         // Each transform morphs at its own rate
                         let rate = self.morph_xf_rates.get(xi).copied().unwrap_or(1.0);
                         let xf_t = smoothstep((self.morph_progress * rate).min(1.0));
-                        let base = xi * 48;
+                        let base = xi * PARAMS_PER_XF;
+                        // Only morph genome-owned fields (0..48), not audio modulation fields (48-49)
                         for j in 0..48 {
                             let idx = base + j;
                             if idx < max_len {
@@ -2608,11 +4343,29 @@ impl ApplicationHandler for App {
                         ._config
                         .apply_variation_scales(&mut self.xf_params, self.num_transforms);
 
+                    // Clamp per-transform spin_mod and drift_mod
+                    let cfg = &self.weights._config;
+                    for xf in 0..self.num_transforms {
+                        let spin_idx = xf * PARAMS_PER_XF + SPIN_MOD_FIELD;
+                        let drift_idx = xf * PARAMS_PER_XF + DRIFT_MOD_FIELD;
+                        if spin_idx < self.xf_params.len() {
+                            self.xf_params[spin_idx] =
+                                self.xf_params[spin_idx].clamp(0.0, cfg.spin_mod_max);
+                        }
+                        if drift_idx < self.xf_params.len() {
+                            self.xf_params[drift_idx] =
+                                self.xf_params[drift_idx].clamp(0.0, cfg.drift_mod_max);
+                        }
+                    }
+
                     // Accumulate signal-driven mutation_rate from weights
                     let mr = self
                         .weights
                         .compute_mutation_rate(&self.audio_features, &time_signals);
-                    self.mutation_accum += mr;
+                    // Decay so accum drains during silence, signals must outpace decay
+                    let decay = self.weights._config.mutation_accum_decay;
+                    self.mutation_accum =
+                        ((self.mutation_accum + mr * dt) * (1.0 - decay * dt)).clamp(0.0, 1.0);
 
                     // Two evolution paths: signal-driven OR time-based
                     let time_since_last = time - self.last_mutation_time;
@@ -2799,16 +4552,16 @@ impl ApplicationHandler for App {
                 };
 
                 // Jacobian importance sampling (CPU work, stays on main thread)
-                let xf_write_len = self.num_transforms * 48;
+                let xf_write_len = self.num_transforms * PARAMS_PER_XF;
                 let xf_len = xf_write_len.min(self.xf_params.len());
                 let final_xf_params: Vec<f32> = {
                     let jac_strength = self.weights._config.jacobian_weight_strength;
                     if jac_strength > 0.001 && self.num_transforms > 0 {
                         let mut adjusted: Vec<f32> = self.xf_params[..xf_len].to_vec();
-                        let n = (xf_len / 48).min(self.num_transforms);
+                        let n = (xf_len / PARAMS_PER_XF).min(self.num_transforms);
                         let mut weights: Vec<f32> = Vec::with_capacity(n);
                         for i in 0..n {
-                            let base = i * 48;
+                            let base = i * PARAMS_PER_XF;
                             let w = adjusted[base];
                             let a = adjusted[base + 1];
                             let b = adjusted[base + 2];
@@ -2820,7 +4573,7 @@ impl ApplicationHandler for App {
                         let total: f32 = weights.iter().sum();
                         if total > 0.0 {
                             for (i, jw) in weights.iter().enumerate() {
-                                adjusted[i * 48] = jw / total;
+                                adjusted[i * PARAMS_PER_XF] = jw / total;
                             }
                         }
                         adjusted
@@ -2858,7 +4611,95 @@ impl ApplicationHandler for App {
                     self.morph_burst_frames -= 1;
                 }
 
-                // Send to render thread
+                // Build HUD data for this frame
+                let time = self.start.elapsed().as_secs_f32();
+                let hud_time_signals = crate::weights::TimeSignals::compute(
+                    time,
+                    time - self.last_mutation_time,
+                    self.random_walk,
+                );
+                let hud = HudFrameData {
+                    fps: 1.0 / dt,
+                    mutation_accum: self.mutation_accum,
+                    time_since_mutation: time - self.last_mutation_time,
+                    cooldown: self.weights._config.mutation_cooldown,
+                    morph_progress: self.morph_progress,
+                    morph_xf_rates: {
+                        let mut rates = [0.0f32; 12];
+                        for (i, r) in self.morph_xf_rates.iter().take(12).enumerate() {
+                            rates[i] = *r;
+                        }
+                        rates
+                    },
+                    num_transforms: self.num_transforms,
+                    // Audio signals
+                    audio_bass: self.audio_features.bass,
+                    audio_mids: self.audio_features.mids,
+                    audio_highs: self.audio_features.highs,
+                    audio_energy: self.audio_features.energy,
+                    audio_beat: self.audio_features.beat,
+                    audio_beat_accum: self.audio_features.beat_accum,
+                    audio_change: self.audio_features.change,
+                    // Time signals
+                    time_slow: hud_time_signals.time_slow,
+                    time_med: hud_time_signals.time_med,
+                    time_fast: hud_time_signals.time_fast,
+                    time_noise: hud_time_signals.time_noise,
+                    time_drift: hud_time_signals.time_drift,
+                    time_flutter: hud_time_signals.time_flutter,
+                    time_walk: hud_time_signals.time_walk,
+                    time_envelope: hud_time_signals.time_envelope,
+                    // Per-transform weights
+                    transform_weights: {
+                        let mut w = [0.0f32; 12];
+                        for (i, slot) in w.iter_mut().enumerate().take(self.num_transforms.min(12))
+                        {
+                            let idx = i * PARAMS_PER_XF;
+                            if idx < self.xf_params.len() {
+                                *slot = self.xf_params[idx];
+                            }
+                        }
+                        w
+                    },
+                    // Per-transform variation weights (26 variations per transform)
+                    transform_variations: {
+                        let mut vars = [[0.0f32; 26]; 12];
+                        for (i, xf_vars) in vars
+                            .iter_mut()
+                            .enumerate()
+                            .take(self.num_transforms.min(12))
+                        {
+                            let base = i * PARAMS_PER_XF + 14; // variations start at offset 14
+                            for (v, slot) in xf_vars.iter_mut().enumerate() {
+                                let idx = base + v;
+                                if idx < self.xf_params.len() {
+                                    *slot = self.xf_params[idx];
+                                }
+                            }
+                        }
+                        vars
+                    },
+                    hud_fade_delay: self.weights._config.hud_fade_delay,
+                    hud_fade_duration: self.weights._config.hud_fade_duration,
+                };
+
+                // Build egui UI on main thread — collect input, run panels, tessellate
+                let (egui_primitives, egui_textures_delta, egui_pixels_per_point) =
+                    self.build_egui_frame(&hud);
+
+                // Send pre-built paint jobs to render thread
+                // Merge any pending texture deltas from previously dropped frames
+                let mut egui_textures_delta = egui_textures_delta;
+                if !self.pending_egui_textures.set.is_empty()
+                    || !self.pending_egui_textures.free.is_empty()
+                {
+                    // Prepend pending texture sets (creations must come before partial updates)
+                    let mut merged = std::mem::take(&mut self.pending_egui_textures);
+                    merged.set.append(&mut egui_textures_delta.set);
+                    merged.free.append(&mut egui_textures_delta.free);
+                    egui_textures_delta = merged;
+                }
+
                 if let Some(tx) = &self.render_tx {
                     let frame_data = FrameData {
                         uniforms: final_uniforms,
@@ -2867,8 +4708,21 @@ impl ApplicationHandler for App {
                         hist_cdf_uniforms,
                         workgroups: computed_workgroups,
                         run_compute: self.frame >= 3,
+                        egui_primitives,
+                        egui_textures_delta,
+                        egui_pixels_per_point,
                     };
-                    let _ = tx.try_send(RenderCommand::Render(Box::new(frame_data)));
+                    match tx.try_send(RenderCommand::Render(Box::new(frame_data))) {
+                        Ok(()) => {
+                            self.render_channel_full = false;
+                        }
+                        Err(mpsc::TrySendError::Full(RenderCommand::Render(dropped))) => {
+                            // Save texture deltas from dropped frame for next send
+                            self.pending_egui_textures = dropped.egui_textures_delta;
+                            self.render_channel_full = true;
+                        }
+                        Err(_) => {} // disconnected
+                    }
                 }
                 self.frame += 1;
 
@@ -3000,27 +4854,35 @@ impl ApplicationHandler for App {
 fn main() {
     env_logger::init();
 
-    // Interactive device picker before opening the window
-    let capture = match device_picker::run() {
-        device_picker::Selection::SystemAudio => match AudioCapture::new_system_audio() {
-            Ok(cap) => Some(cap),
-            Err(e) => {
-                eprintln!("[audio] SCK capture failed: {e} (visuals-only mode)");
-                None
-            }
-        },
-        device_picker::Selection::CpalDevice(device, is_input) => {
-            match AudioCapture::from_device(device, is_input) {
-                Ok(cap) => Some(cap),
-                Err(e) => {
-                    eprintln!("[audio] capture failed: {e} (visuals-only mode)");
+    // Auto-select System Audio (ScreenCaptureKit) — skip terminal picker
+    eprintln!("[audio] Auto-selecting System Audio (ScreenCaptureKit)");
+    let capture = match AudioCapture::new_system_audio() {
+        Ok(cap) => Some(cap),
+        Err(e) => {
+            eprintln!("[audio] SCK capture failed: {e} — falling back to device picker");
+            // Fall back to interactive picker if SCK fails
+            match device_picker::run() {
+                device_picker::Selection::SystemAudio => match AudioCapture::new_system_audio() {
+                    Ok(cap) => Some(cap),
+                    Err(e2) => {
+                        eprintln!("[audio] SCK retry failed: {e2} (visuals-only mode)");
+                        None
+                    }
+                },
+                device_picker::Selection::CpalDevice(device, is_input) => {
+                    match AudioCapture::from_device(device, is_input) {
+                        Ok(cap) => Some(cap),
+                        Err(e2) => {
+                            eprintln!("[audio] capture failed: {e2} (visuals-only mode)");
+                            None
+                        }
+                    }
+                }
+                device_picker::Selection::Cancelled => {
+                    eprintln!("[audio] cancelled — visuals-only mode");
                     None
                 }
             }
-        }
-        device_picker::Selection::Cancelled => {
-            eprintln!("[audio] cancelled — visuals-only mode");
-            None
         }
     };
 

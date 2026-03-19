@@ -74,7 +74,9 @@
       "xfN_cosine":         "All transforms cosine variation weight",
       "xfN_blob":           "All transforms blob variation weight",
       "xfN_noise":          "All transforms noise variation weight",
-      "xfN_curl":           "All transforms curl variation weight"
+      "xfN_curl":           "All transforms curl variation weight",
+      "xfN_spin_mod":       "Per-transform spin speed multiplier (default 1.0 = full participation)",
+      "xfN_drift_mod":      "Per-transform position drift multiplier (default 1.0 = full participation)"
     },
     "_config_doc": {
       "morph_duration":      "Seconds for genome transition ease-in-out (default 8)",
@@ -131,7 +133,12 @@
       "window_width": "Initial window width in logical pixels (default 640)",
       "window_height": "Initial window height in logical pixels (default 480)",
       "transform_count_min": "Minimum transforms per genome during breeding (default 3)",
-      "transform_count_max": "Maximum transforms per genome during breeding (default 6)"
+      "transform_count_max": "Maximum transforms per genome during breeding (default 6)",
+      "spin_mod_max": "Max per-transform spin_mod clamp value (default 4.0)",
+      "drift_mod_max": "Max per-transform drift_mod clamp value (default 4.0)",
+      "hud_fade_delay": "Seconds of mouse inactivity before HUD starts fading (default 3.0)",
+      "hud_fade_duration": "Seconds for HUD fade-out animation (default 0.5)",
+      "mutation_accum_decay": "Per-second decay rate for mutation accumulator (default 0.3). Higher = drains faster, signals must be stronger to trigger. 0 = no decay (old behavior)."
     }
   },
   "_config": {
@@ -159,12 +166,12 @@
     "max_mutation_retries": 10,
     "trail": 0.15,
     "accumulation_decay": 0.94,
-    "samples_per_frame": 1024,
+    "samples_per_frame": 512,
     "bloom_radius": 3.0,
     "fitness_bias_strength": 0.5,
     "drift_speed": 3.0,
     "velocity_blur_max": 3.0,
-    "iterations_per_thread": 400,
+    "iterations_per_thread": 200,
     "morph_speed": 1.0,
     "morph_stagger_count": 2,
     "morph_stagger_min": 0.3,
@@ -207,20 +214,26 @@
     "min_genome_fps": 5.0,
     "morph_burst_decay": 0.7,
     "transform_count_min": 8,
-    "transform_count_max": 12
+    "transform_count_max": 12,
+    "mutation_accum_decay": 0.3,
+    "hud_fade_delay": 3.0,
+    "hud_fade_duration": 0.5
   },
   "bass": {},
   "mids": {},
   "highs": {},
   "energy": {
-    "bloom_intensity": 0.02
+    "bloom_intensity": 0.02,
+    "xfN_spin_mod": 0.3,
+    "mutation_rate": 1.0
   },
   "beat": {
-    "position_drift": 0.001
+    "position_drift": 0.001,
+    "xfN_drift_mod": 0.2
   },
   "beat_accum": {},
   "change": {
-      "mutation_rate": 0.8
+      "mutation_rate": 5.0
   },
   "time": {},
   "time_slow": {
@@ -232,9 +245,7 @@
   },
   "time_drift": {},
   "time_flutter": {},
-  "time_walk": {
-    "mutation_rate": 0.02
-  },
+  "time_walk": {},
   "time_envelope": {
     "drift_speed": 0.3
   }

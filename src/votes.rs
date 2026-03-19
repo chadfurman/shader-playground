@@ -12,6 +12,8 @@ pub struct VoteEntry {
     pub score: i32,
     pub file: String,
     pub last_seen: String,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -60,6 +62,7 @@ impl VoteLedger {
                     score: 0,
                     file: file_path,
                     last_seen: today(),
+                    note: None,
                 },
             );
         }
@@ -87,6 +90,17 @@ impl VoteLedger {
         }
 
         score
+    }
+
+    /// Attach a text note to the most recent vote for the given genome name.
+    /// Saves the ledger immediately.
+    pub fn attach_note(&mut self, genome_name: &str, note: String, genomes_dir: &Path) {
+        if let Some(entry) = self.entries.get_mut(genome_name) {
+            entry.note = Some(note);
+            if let Err(e) = self.save(genomes_dir) {
+                eprintln!("[vote] note save error: {e}");
+            }
+        }
     }
 
     /// Pick a genome from the vote-weighted pool.
@@ -434,6 +448,7 @@ mod tests {
                 score: 3,
                 file: "/tmp/test_genome.json".into(),
                 last_seen: "2026-01-01".into(),
+                note: None,
             },
         );
         let picked = ledger.pick_voted(0);
@@ -450,6 +465,7 @@ mod tests {
                 score: -5,
                 file: "/tmp/bad.json".into(),
                 last_seen: "2026-01-01".into(),
+                note: None,
             },
         );
         assert!(ledger.pick_voted(0).is_none());
@@ -464,6 +480,7 @@ mod tests {
                 score: 0,
                 file: "/tmp/meh.json".into(),
                 last_seen: "2026-01-01".into(),
+                note: None,
             },
         );
         assert!(ledger.pick_voted(0).is_none());

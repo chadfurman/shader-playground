@@ -29,10 +29,10 @@ struct Uniforms {
 // Unique thread ID for subgroup leader election (set from gid.x in main)
 var<private> sg_thread_id: u32;
 
-fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 48u + field]; }
+fn xf(idx: u32, field: u32) -> f32 { return transforms[idx * 50u + field]; }
 
 fn xf_param(idx: u32, param_offset: u32) -> f32 {
-    return transforms[idx * 48u + 40u + param_offset];
+    return transforms[idx * 50u + 40u + param_offset];
 }
 
 const PI: f32 = 3.14159265;
@@ -282,12 +282,12 @@ fn apply_xform(p: vec2<f32>, idx: u32, t: f32, rng: ptr<function, u32>) -> vec2<
         let drift_amt = 0.3 + hash_f(seed) * 0.7;
         let spin_max = u.extra3.x;
         let pos_drift = u.extra3.y;
-        let spin_speed = (hash_f(seed + 300u) * 2.0 - 1.0) * spin_max;
+        let spin_speed = (hash_f(seed + 300u) * 2.0 - 1.0) * spin_max * xf(idx, 48u);
         angle_drift = t * spin_speed * drift * drift_amt;
         // Position drift uses vnoise — the expensive part, only when drift > 0
         if (pos_drift > 0.001) {
-            ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * pos_drift;
-            oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * pos_drift;
+            ox_drift = vnoise(t * 0.03 * drift * drift_amt, seed + 100u) * pos_drift * xf(idx, 49u);
+            oy_drift = vnoise(t * 0.04 * drift * drift_amt, seed + 200u) * pos_drift * xf(idx, 49u);
         }
     }
 
