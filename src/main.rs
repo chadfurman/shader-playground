@@ -1059,14 +1059,8 @@ fn fade_color(c: egui::Color32, opacity: f32) -> egui::Color32 {
 }
 
 /// Create a HUD window with a minimal title-bar drag handle.
-/// When `override_pos` is Some, the window is forced to that position for one frame.
-fn hud_window(
-    name: &str,
-    default_pos: egui::Pos2,
-    opacity: f32,
-    override_pos: Option<egui::Pos2>,
-) -> egui::Window<'static> {
-    let mut win = egui::Window::new(
+fn hud_window(name: &str, default_pos: egui::Pos2, opacity: f32) -> egui::Window<'static> {
+    egui::Window::new(
         egui::RichText::new("≡")
             .size(8.0)
             .color(fade_color(egui::Color32::from_rgb(100, 100, 100), opacity)),
@@ -1075,11 +1069,7 @@ fn hud_window(
     .collapsible(false)
     .resizable(false)
     .default_pos(default_pos)
-    .frame(hud_frame(opacity));
-    if let Some(pos) = override_pos {
-        win = win.current_pos(pos);
-    }
-    win
+    .frame(hud_frame(opacity))
 }
 
 /// Disable text selection inside a UI (so dragging works on text).
@@ -1087,222 +1077,216 @@ fn disable_text_selection(ui: &mut egui::Ui) {
     ui.style_mut().interaction.selectable_labels = false;
 }
 
-/// Top-left: Identity panel — FPS, transform count, mutation info.
-fn hud_panel_identity(
-    ctx: &egui::Context,
-    hud: &HudFrameData,
-    opacity: f32,
-    override_pos: Option<egui::Pos2>,
-) {
-    let default_pos = egui::pos2(10.0, 10.0);
-    hud_window("hud_identity", default_pos, opacity, override_pos).show(ctx, |ui| {
-        disable_text_selection(ui);
-        ui.label(
-            egui::RichText::new(format!("{:.0} fps", hud.fps))
-                .color(fade_color(egui::Color32::from_rgb(119, 255, 119), opacity))
-                .size(16.0),
-        );
-        let dim = fade_color(egui::Color32::from_rgb(210, 210, 210), opacity);
-        ui.label(
-            egui::RichText::new(format!("{} transforms", hud.num_transforms))
-                .color(dim)
-                .size(12.0),
-        );
-        ui.label(
-            egui::RichText::new(format!(
-                "cd:{:.0}/{:.0}s",
-                hud.time_since_mutation, hud.cooldown
-            ))
-            .color(dim)
-            .size(12.0),
-        );
-    });
-}
+/// Unified HUD panel — single collapsible window with all sections.
+fn hud_panel(ctx: &egui::Context, hud: &HudFrameData, opacity: f32) {
+    egui::Window::new("HUD")
+        .id(egui::Id::new("hud_main"))
+        .collapsible(true)
+        .resizable(false)
+        .default_pos(egui::pos2(10.0, 30.0))
+        .frame(hud_frame(opacity))
+        .show(ctx, |ui| {
+            disable_text_selection(ui);
+            ui.set_max_width(250.0);
+            let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
+            let green = fade_color(egui::Color32::from_rgb(119, 255, 119), opacity);
 
-/// Top-right: Progress panel — mutation progress bar, cooldown, per-transform morph bars.
-fn hud_panel_progress(
-    ctx: &egui::Context,
-    hud: &HudFrameData,
-    screen_w: f32,
-    opacity: f32,
-    override_pos: Option<egui::Pos2>,
-) {
-    let default_pos = egui::pos2(screen_w - 230.0, 10.0);
-    hud_window("hud_progress", default_pos, opacity, override_pos).show(ctx, |ui| {
-        disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
-        let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
-
-        // Next evolve — signal-driven trigger bar
-        ui.label(
-            egui::RichText::new("next evolve (signal)")
-                .size(11.0)
-                .color(dim),
-        );
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(180.0, 6.0), egui::Sense::hover());
-        ui.painter().rect_filled(rect, 3.0, bg);
-        let fill_frac = hud.mutation_accum.clamp(0.0, 1.0);
-        let gate_met = hud.time_since_mutation >= 10.0;
-        let bar_color = fade_color(
-            if fill_frac >= 1.0 && gate_met {
-                egui::Color32::from_rgb(68, 238, 68) // green = ready to fire
-            } else if fill_frac >= 1.0 {
-                egui::Color32::from_rgb(238, 238, 68) // yellow = full but gated
-            } else {
-                egui::Color32::from_rgb(238, 153, 34) // orange = filling
-            },
-            opacity,
-        );
-        let fill_rect = egui::Rect::from_min_size(
-            rect.min,
-            egui::vec2(fill_frac * rect.width(), rect.height()),
-        );
-        ui.painter().rect_filled(fill_rect, 3.0, bar_color);
-        let gate_label = if gate_met { "ready" } else { "wait" };
-        ui.label(
-            egui::RichText::new(format!(
-                "{:.0}% gate:{} cd:{:.0}/{:.0}s",
-                fill_frac * 100.0,
-                gate_label,
-                hud.time_since_mutation,
-                hud.cooldown,
-            ))
-            .size(8.0)
-            .color(dim),
-        );
-
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new("morph").size(11.0).color(dim));
-
-        // Per-transform morph bars
-        for i in 0..hud.num_transforms.min(12) {
-            let rate = hud.morph_xf_rates[i];
-            let completion = (hud.morph_progress * rate).min(1.0);
-            let bar_color = fade_color(morph_color(completion), opacity);
+            // Identity — always visible, compact single line
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(format!("{i}")).size(8.0).color(dim));
-                let (bar_rect, _) =
-                    ui.allocate_exact_size(egui::vec2(150.0, 3.0), egui::Sense::hover());
-                ui.painter().rect_filled(bar_rect, 1.5, bg);
-                let fill = egui::Rect::from_min_size(
-                    bar_rect.min,
-                    egui::vec2(completion * bar_rect.width(), bar_rect.height()),
+                ui.label(
+                    egui::RichText::new(format!("{:.0} fps", hud.fps))
+                        .color(green)
+                        .size(14.0),
                 );
-                ui.painter().rect_filled(fill, 1.5, bar_color);
+                ui.label(
+                    egui::RichText::new(format!("{}xf", hud.num_transforms))
+                        .color(dim)
+                        .size(11.0),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "cd:{:.0}/{:.0}s",
+                        hud.time_since_mutation, hud.cooldown
+                    ))
+                    .color(dim)
+                    .size(11.0),
+                );
             });
-        }
-    });
-}
 
-/// Left side: Audio signals panel.
-fn hud_panel_audio(
-    ctx: &egui::Context,
-    hud: &HudFrameData,
-    opacity: f32,
-    override_pos: Option<egui::Pos2>,
-) {
-    let default_pos = egui::pos2(10.0, 80.0);
-    hud_window("hud_audio", default_pos, opacity, override_pos).show(ctx, |ui| {
-        disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
-        ui.label(egui::RichText::new("audio").size(12.0).color(dim));
-        signal_bar(
-            ui,
-            "bass ",
-            hud.audio_bass,
-            egui::Color32::from_rgb(238, 68, 68),
-            1.0,
-            opacity,
-        );
-        signal_bar(
-            ui,
-            "mids ",
-            hud.audio_mids,
-            egui::Color32::from_rgb(238, 136, 68),
-            1.0,
-            opacity,
-        );
-        signal_bar(
-            ui,
-            "highs",
-            hud.audio_highs,
-            egui::Color32::from_rgb(238, 170, 68),
-            1.0,
-            opacity,
-        );
-        signal_bar(
-            ui,
-            "enrgy",
-            hud.audio_energy,
-            egui::Color32::from_rgb(68, 238, 136),
-            1.0,
-            opacity,
-        );
-        // Beat bar — glow when > 0.8
-        let beat_color = if hud.audio_beat > 0.8 {
-            egui::Color32::from_rgb(255, 102, 102)
-        } else {
-            egui::Color32::from_rgb(238, 68, 68)
-        };
-        signal_bar(ui, "beat ", hud.audio_beat, beat_color, 1.0, opacity);
-        signal_bar(
-            ui,
-            "b.acc",
-            hud.audio_beat_accum,
-            egui::Color32::from_rgb(136, 68, 238),
-            1.0,
-            opacity,
-        );
-        signal_bar(
-            ui,
-            "chng ",
-            hud.audio_change,
-            egui::Color32::from_rgb(255, 136, 68),
-            1.0,
-            opacity,
-        );
-    });
-}
+            // Next evolve — collapsible, starts collapsed
+            egui::CollapsingHeader::new(egui::RichText::new("next evolve").size(11.0).color(dim))
+                .default_open(false)
+                .show(ui, |ui| {
+                    let bg = fade_color(egui::Color32::from_rgb(34, 34, 34), opacity);
 
-/// Left side: Time signals panel (below audio).
-fn hud_panel_time(
-    ctx: &egui::Context,
-    hud: &HudFrameData,
-    opacity: f32,
-    override_pos: Option<egui::Pos2>,
-) {
-    let default_pos = egui::pos2(10.0, 300.0);
-    hud_window("hud_time", default_pos, opacity, override_pos).show(ctx, |ui| {
-        disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
-        let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
-        ui.label(egui::RichText::new("time").size(12.0).color(dim));
-        // Bipolar signals (-1 to 1): slow, med, fast, noise, drift, flutter
-        bipolar_bar(ui, "slow ", hud.time_slow, bipolar_color, opacity);
-        bipolar_bar(ui, "med  ", hud.time_med, bipolar_color, opacity);
-        bipolar_bar(ui, "fast ", hud.time_fast, bipolar_color, opacity);
-        bipolar_bar(ui, "noise", hud.time_noise, bipolar_color, opacity);
-        bipolar_bar(ui, "drift", hud.time_drift, bipolar_color, opacity);
-        bipolar_bar(ui, "flutr", hud.time_flutter, bipolar_color, opacity);
-        // Walk: monotonically growing, show capped bar + numeric value
-        signal_bar(
-            ui,
-            "walk ",
-            hud.time_walk.abs(),
-            egui::Color32::from_rgb(136, 68, 170),
-            10.0,
-            opacity,
-        );
-        // Envelope: 0→1 range
-        signal_bar(
-            ui,
-            "envlp",
-            hud.time_envelope,
-            egui::Color32::from_rgb(170, 136, 68),
-            1.0,
-            opacity,
-        );
-    });
+                    // Signal-driven trigger bar
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(180.0, 6.0), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 3.0, bg);
+                    let fill_frac = hud.mutation_accum.clamp(0.0, 1.0);
+                    let gate_met = hud.time_since_mutation >= 10.0;
+                    let bar_color = fade_color(
+                        if fill_frac >= 1.0 && gate_met {
+                            egui::Color32::from_rgb(68, 238, 68)
+                        } else if fill_frac >= 1.0 {
+                            egui::Color32::from_rgb(238, 238, 68)
+                        } else {
+                            egui::Color32::from_rgb(238, 153, 34)
+                        },
+                        opacity,
+                    );
+                    let fill_rect = egui::Rect::from_min_size(
+                        rect.min,
+                        egui::vec2(fill_frac * rect.width(), rect.height()),
+                    );
+                    ui.painter().rect_filled(fill_rect, 3.0, bar_color);
+                    let gate_label = if gate_met { "ready" } else { "wait" };
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "{:.0}% gate:{} cd:{:.0}/{:.0}s",
+                            fill_frac * 100.0,
+                            gate_label,
+                            hud.time_since_mutation,
+                            hud.cooldown,
+                        ))
+                        .size(8.0)
+                        .color(dim),
+                    );
+
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("morph").size(11.0).color(dim));
+
+                    // Per-transform morph bars
+                    for i in 0..hud.num_transforms.min(12) {
+                        let rate = hud.morph_xf_rates[i];
+                        let completion = (hud.morph_progress * rate).min(1.0);
+                        let bar_color = fade_color(morph_color(completion), opacity);
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(format!("{i}")).size(8.0).color(dim));
+                            let (bar_rect, _) = ui
+                                .allocate_exact_size(egui::vec2(150.0, 3.0), egui::Sense::hover());
+                            ui.painter().rect_filled(bar_rect, 1.5, bg);
+                            let fill = egui::Rect::from_min_size(
+                                bar_rect.min,
+                                egui::vec2(completion * bar_rect.width(), bar_rect.height()),
+                            );
+                            ui.painter().rect_filled(fill, 1.5, bar_color);
+                        });
+                    }
+                });
+
+            // Audio — collapsible, starts collapsed
+            egui::CollapsingHeader::new(egui::RichText::new("audio").size(11.0).color(dim))
+                .default_open(false)
+                .show(ui, |ui| {
+                    signal_bar(
+                        ui,
+                        "bass ",
+                        hud.audio_bass,
+                        egui::Color32::from_rgb(238, 68, 68),
+                        1.0,
+                        opacity,
+                    );
+                    signal_bar(
+                        ui,
+                        "mids ",
+                        hud.audio_mids,
+                        egui::Color32::from_rgb(238, 136, 68),
+                        1.0,
+                        opacity,
+                    );
+                    signal_bar(
+                        ui,
+                        "highs",
+                        hud.audio_highs,
+                        egui::Color32::from_rgb(238, 170, 68),
+                        1.0,
+                        opacity,
+                    );
+                    signal_bar(
+                        ui,
+                        "enrgy",
+                        hud.audio_energy,
+                        egui::Color32::from_rgb(68, 238, 136),
+                        1.0,
+                        opacity,
+                    );
+                    let beat_color = if hud.audio_beat > 0.8 {
+                        egui::Color32::from_rgb(255, 102, 102)
+                    } else {
+                        egui::Color32::from_rgb(238, 68, 68)
+                    };
+                    signal_bar(ui, "beat ", hud.audio_beat, beat_color, 1.0, opacity);
+                    signal_bar(
+                        ui,
+                        "b.acc",
+                        hud.audio_beat_accum,
+                        egui::Color32::from_rgb(136, 68, 238),
+                        1.0,
+                        opacity,
+                    );
+                    signal_bar(
+                        ui,
+                        "chng ",
+                        hud.audio_change,
+                        egui::Color32::from_rgb(255, 136, 68),
+                        1.0,
+                        opacity,
+                    );
+                });
+
+            // Time — collapsible, starts collapsed
+            egui::CollapsingHeader::new(egui::RichText::new("time").size(11.0).color(dim))
+                .default_open(false)
+                .show(ui, |ui| {
+                    let bipolar_color = egui::Color32::from_rgb(68, 136, 170);
+                    bipolar_bar(ui, "slow ", hud.time_slow, bipolar_color, opacity);
+                    bipolar_bar(ui, "med  ", hud.time_med, bipolar_color, opacity);
+                    bipolar_bar(ui, "fast ", hud.time_fast, bipolar_color, opacity);
+                    bipolar_bar(ui, "noise", hud.time_noise, bipolar_color, opacity);
+                    bipolar_bar(ui, "drift", hud.time_drift, bipolar_color, opacity);
+                    bipolar_bar(ui, "flutr", hud.time_flutter, bipolar_color, opacity);
+                    signal_bar(
+                        ui,
+                        "walk ",
+                        hud.time_walk.abs(),
+                        egui::Color32::from_rgb(136, 68, 170),
+                        10.0,
+                        opacity,
+                    );
+                    signal_bar(
+                        ui,
+                        "envlp",
+                        hud.time_envelope,
+                        egui::Color32::from_rgb(170, 136, 68),
+                        1.0,
+                        opacity,
+                    );
+                });
+
+            // Transforms — collapsible, starts collapsed
+            egui::CollapsingHeader::new(egui::RichText::new("transforms").size(11.0).color(dim))
+                .default_open(false)
+                .show(ui, |ui| {
+                    for i in 0..hud.num_transforms.min(12) {
+                        let w = hud.transform_weights[i];
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("xf{i:>2} w:{w:.3}"))
+                                    .size(11.0)
+                                    .color(dim)
+                                    .family(egui::FontFamily::Monospace),
+                            );
+                            for (v, &vw) in hud.transform_variations[i].iter().enumerate() {
+                                if vw.abs() > 0.001 {
+                                    let resp = draw_variation_icon(ui, v as u8, 12.0, opacity);
+                                    resp.on_hover_text(VARIATION_NAMES[v]);
+                                }
+                            }
+                        });
+                    }
+                });
+        });
 }
 
 /// Variation names for tooltips (indices 0-25).
@@ -1628,50 +1612,10 @@ fn draw_variation_shape(
     }
 }
 
-/// Right side: Transforms panel (below progress).
-fn hud_panel_transforms(
-    ctx: &egui::Context,
-    hud: &HudFrameData,
-    screen_w: f32,
-    opacity: f32,
-    override_pos: Option<egui::Pos2>,
-) {
-    let default_pos = egui::pos2(screen_w - 230.0, 260.0);
-    hud_window("hud_transforms", default_pos, opacity, override_pos).show(ctx, |ui| {
-        disable_text_selection(ui);
-        let dim = fade_color(egui::Color32::from_rgb(190, 190, 190), opacity);
-        ui.label(egui::RichText::new("transforms").size(12.0).color(dim));
-        for i in 0..hud.num_transforms.min(12) {
-            let w = hud.transform_weights[i];
-            ui.horizontal(|ui| {
-                ui.label(
-                    egui::RichText::new(format!("xf{i:>2} w:{w:.3}"))
-                        .size(11.0)
-                        .color(dim)
-                        .family(egui::FontFamily::Monospace),
-                );
-                // Show variation icons for non-zero variations
-                for (v, &vw) in hud.transform_variations[i].iter().enumerate() {
-                    if vw.abs() > 0.001 {
-                        let resp = draw_variation_icon(ui, v as u8, 12.0, opacity);
-                        resp.on_hover_text(VARIATION_NAMES[v]);
-                    }
-                }
-            });
-        }
-    });
-}
-
 /// Bottom: Hotkey bar — centered row of key+label pairs.
-fn hud_panel_hotkeys(
-    ctx: &egui::Context,
-    screen_w: f32,
-    screen_h: f32,
-    opacity: f32,
-    override_pos: Option<egui::Pos2>,
-) {
+fn hud_panel_hotkeys(ctx: &egui::Context, screen_w: f32, screen_h: f32, opacity: f32) {
     let default_pos = egui::pos2(screen_w * 0.5 - 250.0, screen_h - 40.0);
-    let win = hud_window("hud_hotkeys", default_pos, opacity, override_pos)
+    let win = hud_window("hud_hotkeys", default_pos, opacity)
         .frame(hud_frame(opacity).inner_margin(egui::Margin::symmetric(10, 4)));
     win.show(ctx, |ui| {
         disable_text_selection(ui);
@@ -1710,7 +1654,6 @@ struct ConfigAction {
 struct ConfigPanelState<'a> {
     weights: &'a mut crate::weights::Weights,
     tab: &'a mut usize,
-    reposition_panels: &'a mut bool,
     cached_audio_devices: &'a [String],
     selected_audio_device: &'a mut String,
     refresh_audio_devices: &'a mut bool,
@@ -1823,17 +1766,6 @@ fn config_panel_ui(
                     .clicked()
                 {
                     cancel = true;
-                }
-                ui.add_space(8.0);
-                if ui
-                    .add(egui::Button::new(
-                        egui::RichText::new("Reset positions")
-                            .size(11.0)
-                            .color(egui::Color32::from_rgb(180, 180, 255)),
-                    ))
-                    .clicked()
-                {
-                    *state.reposition_panels = true;
                 }
             });
         });
@@ -2996,8 +2928,6 @@ struct UiState {
     config_edit: Option<crate::weights::RuntimeConfig>,
     config_edit_weights: Option<crate::weights::Weights>,
     config_tab: usize,
-    prev_screen_size: (f32, f32),
-    reposition_panels: bool,
     cached_audio_devices: Vec<String>,
     selected_audio_device: String,
     // File watcher
@@ -3202,8 +3132,6 @@ impl UiState {
             config_edit: None,
             config_edit_weights: None,
             config_tab: 0,
-            prev_screen_size: (1.0, 1.0),
-            reposition_panels: true,
             cached_audio_devices: enumerate_audio_devices(),
             selected_audio_device: String::new(),
             watcher,
@@ -3486,64 +3414,6 @@ impl UiState {
             hud.hud_fade_duration,
         );
 
-        // --- Resize-aware panel repositioning ---
-        // Detect window size change and compute per-panel position overrides so
-        // panels maintain their distance from the nearest edge.
-        let size_changed = (screen_w - self.prev_screen_size.0).abs() > 0.5
-            || (screen_h - self.prev_screen_size.1).abs() > 0.5;
-        let dw = screen_w - self.prev_screen_size.0;
-        let dh = screen_h - self.prev_screen_size.1;
-        let old_w = self.prev_screen_size.0;
-        let old_h = self.prev_screen_size.1;
-        self.prev_screen_size = (screen_w, screen_h);
-
-        // Build per-panel override positions for this frame.
-        // - On resize: shift panels that are right-anchored / bottom-anchored
-        // - On reposition (reset button): snap to default non-overlapping layout
-        // - Otherwise: None (let egui manage drag state)
-        let panel_ids: [&str; 6] = [
-            "hud_identity",
-            "hud_progress",
-            "hud_audio",
-            "hud_time",
-            "hud_transforms",
-            "hud_hotkeys",
-        ];
-
-        let override_positions: [Option<egui::Pos2>; 6] = if self.reposition_panels {
-            // One-shot reset to default non-overlapping positions
-            self.reposition_panels = false;
-            [
-                Some(egui::pos2(10.0, 10.0)),              // identity: top-left
-                Some(egui::pos2(screen_w - 230.0, 10.0)),  // progress: top-right
-                Some(egui::pos2(10.0, 80.0)),              // audio: left, below identity
-                Some(egui::pos2(10.0, 300.0)),             // time: left, below audio
-                Some(egui::pos2(screen_w - 230.0, 260.0)), // transforms: right, below progress
-                Some(egui::pos2(screen_w * 0.5 - 250.0, screen_h - 40.0)), // hotkeys: bottom center
-            ]
-        } else if size_changed {
-            // Shift panels based on their anchor edge
-            let mut positions: [Option<egui::Pos2>; 6] = [None; 6];
-            for (i, name) in panel_ids.iter().enumerate() {
-                let id = egui::Id::new(*name);
-                if let Some(rect) = egui_ctx.memory(|m| m.area_rect(id)) {
-                    let mut pos = rect.min;
-                    // Right-anchored if panel center is past 40% of old width
-                    if pos.x > old_w * 0.4 {
-                        pos.x += dw;
-                    }
-                    // Bottom-anchored if panel center is past 60% of old height
-                    if pos.y > old_h * 0.6 {
-                        pos.y += dh;
-                    }
-                    positions[i] = Some(pos);
-                }
-            }
-            positions
-        } else {
-            [None; 6]
-        };
-
         // Track vote/config actions to apply after the egui closure
         let mut vote_submit: Option<(String, Option<String>)> = None;
         let mut config_action = ConfigAction {
@@ -3558,12 +3428,8 @@ impl UiState {
             // HUD panels — skip when fully faded out
             if hud_opacity > 0.0 {
                 let ctx = ui.ctx();
-                hud_panel_identity(ctx, hud, hud_opacity, override_positions[0]);
-                hud_panel_progress(ctx, hud, screen_w, hud_opacity, override_positions[1]);
-                hud_panel_audio(ctx, hud, hud_opacity, override_positions[2]);
-                hud_panel_time(ctx, hud, hud_opacity, override_positions[3]);
-                hud_panel_transforms(ctx, hud, screen_w, hud_opacity, override_positions[4]);
-                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity, override_positions[5]);
+                hud_panel(ctx, hud, hud_opacity);
+                hud_panel_hotkeys(ctx, screen_w, screen_h, hud_opacity);
             }
 
             // Config panel — always visible when open (ignores HUD fade)
@@ -3573,7 +3439,6 @@ impl UiState {
                 let mut panel_state = ConfigPanelState {
                     weights: edit_weights,
                     tab: &mut self.config_tab,
-                    reposition_panels: &mut self.reposition_panels,
                     cached_audio_devices: &self.cached_audio_devices,
                     selected_audio_device: &mut self.selected_audio_device,
                     refresh_audio_devices: &mut refresh_audio_devices,
