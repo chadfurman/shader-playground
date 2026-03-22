@@ -1,0 +1,12 @@
+{"type":"server-started","port":62017,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:62017","screen_dir":"/tmp/brainstorm"}
+{"type":"screen-added","file":"/tmp/brainstorm/hud-concept.html"}
+{"source":"user-event","type":"click","text":"1\n    \n      FPS Counter\n      Current framerate, maybe with a tiny sparkline of recent history","choice":"fps","id":null,"timestamp":1773788384941}
+{"source":"user-event","type":"click","text":"2\n    \n      Mutation Progress Bar\n      Shows mutation_accum filling toward 1.0 — so you can SEE when the next evolve is coming. Also shows time-based cooldown progress.","choice":"mutation","id":null,"timestamp":1773788389075}
+{"source":"user-event","type":"click","text":"3\n    \n      Audio Signal Meters\n      Real-time bars for: bass, mids, highs, energy, beat, beat_accum, change. Lets you verify audio is actually flowing and which signals are active.","choice":"signals","id":null,"timestamp":1773788398775}
+{"source":"user-event","type":"click","text":"4\n    \n      Hotkey Reference\n      Compact list of keyboard shortcuts — space=evolve, arrows=vote, F=flame import, etc. Always visible when HUD is up.","choice":"hotkeys","id":null,"timestamp":1773788401224}
+{"source":"user-event","type":"click","text":"6\n    \n      Morph Progress\n      Per-transform morph completion — shows which transforms have arrived and which are still transitioning. Explains why you see some parts moving and others not.","choice":"morph","id":null,"timestamp":1773788407024}
+{"source":"user-event","type":"click","text":"5\n    \n      Genome Info\n      Current genome name, generation number, parent lineage. Helps track what you're looking at.","choice":"genome","id":null,"timestamp":1773788409624}
+{"type":"screen-added","file":"/tmp/brainstorm/hud-layout.html"}
+{"type":"screen-added","file":"/tmp/brainstorm/hud-layout-v2.html"}
+{"type":"screen-added","file":"/tmp/brainstorm/hud-variations.html"}
+{"type":"screen-added","file":"/tmp/brainstorm/waiting.html"}

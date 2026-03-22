@@ -1,0 +1,1062 @@
+[
+  {
+    "weight": 0.13601916,
+    "affine": [
+      [
+        0.08966832,
+        -0.0055514323,
+        0.0
+      ],
+      [
+        -0.02232199,
+        0.123289585,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.1492777
+      ]
+    ],
+    "offset": [
+      -1.2759603,
+      -1.1763083,
+      0.0
+    ],
+    "color": 0.3035025,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 1.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.19956888,
+    "affine": [
+      [
+        0.15987155,
+        0.011166745,
+        0.0
+      ],
+      [
+        -0.0117398035,
+        0.17944534,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.1549821
+      ]
+    ],
+    "offset": [
+      -4.7368813,
+      -1.606254,
+      0.0
+    ],
+    "color": 0.0,
+    "linear": 0.0,
+    "sinusoidal": 0.6,
+    "spherical": 0.0,
+    "swirl": 0.4,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.11253502,
+    "affine": [
+      [
+        -0.14565192,
+        -0.09958403,
+        0.0
+      ],
+      [
+        -0.046456773,
+        0.1907702,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0384572
+      ]
+    ],
+    "offset": [
+      2.4499755,
+      2.878405,
+      0.0
+    ],
+    "color": 0.27612054,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 1.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.13732654,
+    "affine": [
+      [
+        0.044052392,
+        -0.20921677,
+        0.0
+      ],
+      [
+        0.1042524,
+        -0.019955441,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        0.9784336
+      ]
+    ],
+    "offset": [
+      -2.534128,
+      1.976174,
+      -0.011722562
+    ],
+    "color": 0.45205283,
+    "linear": 0.0,
+    "sinusoidal": 0.5,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.5,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.17783095,
+    "affine": [
+      [
+        -0.056438226,
+        0.06697333,
+        0.0
+      ],
+      [
+        -0.08027486,
+        0.037201393,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.2479935
+      ]
+    ],
+    "offset": [
+      0.42172,
+      0.4143692,
+      0.0
+    ],
+    "color": 0.3934425,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 1.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.12309161,
+    "affine": [
+      [
+        0.06461377,
+        -0.09562237,
+        0.0
+      ],
+      [
+        0.05423004,
+        0.04384032,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0887867
+      ]
+    ],
+    "offset": [
+      2.0839057,
+      -0.24625596,
+      0.0
+    ],
+    "color": 0.21051659,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 1.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.18657021,
+    "affine": [
+      [
+        0.026922926,
+        -0.07958661,
+        0.0
+      ],
+      [
+        -0.32300845,
+        0.059981048,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0319479
+      ]
+    ],
+    "offset": [
+      -0.36436564,
+      -1.5711333,
+      0.0
+    ],
+    "color": 0.75296354,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 1.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.12941702,
+    "affine": [
+      [
+        0.20727234,
+        -0.13409323,
+        0.0
+      ],
+      [
+        0.029356387,
+        -0.0813177,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0630553
+      ]
+    ],
+    "offset": [
+      1.4740571,
+      0.16081183,
+      0.0
+    ],
+    "color": 0.17009154,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 1.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.1307173,
+    "affine": [
+      [
+        0.084540054,
+        -0.06445525,
+        0.0
+      ],
+      [
+        0.0067041004,
+        -0.13222216,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.098946
+      ]
+    ],
+    "offset": [
+      -1.0029172,
+      0.17917933,
+      0.0
+    ],
+    "color": 0.30133653,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 1.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.10974138,
+    "affine": [
+      [
+        -0.11272631,
+        -0.012837553,
+        0.0
+      ],
+      [
+        -0.09267652,
+        -0.13497917,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.1545801
+      ]
+    ],
+    "offset": [
+      -2.46585,
+      -1.6399797,
+      -0.005022381
+    ],
+    "color": 0.6723485,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 1.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.19650155,
+    "affine": [
+      [
+        -0.27145848,
+        -0.34692127,
+        0.0
+      ],
+      [
+        -0.012103644,
+        0.050452363,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.2049093
+      ]
+    ],
+    "offset": [
+      2.7848806,
+      -1.2753913,
+      0.0
+    ],
+    "color": 0.26349527,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 1.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.12608325,
+    "affine": [
+      [
+        0.01676804,
+        0.06598372,
+        0.0
+      ],
+      [
+        -0.045605633,
+        -0.013950206,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.1384705
+      ]
+    ],
+    "offset": [
+      0.04072942,
+      0.08424657,
+      0.0
+    ],
+    "color": 0.2702945,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 1.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.14702815,
+    "affine": [
+      [
+        0.028494399,
+        -0.07628703,
+        0.0
+      ],
+      [
+        -0.095117025,
+        0.10861769,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0921701
+      ]
+    ],
+    "offset": [
+      -3.940404,
+      -0.3158888,
+      0.0
+    ],
+    "color": 0.47969282,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 1.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.14119574,
+    "affine": [
+      [
+        -0.021341972,
+        0.1520811,
+        0.0
+      ],
+      [
+        -0.069044515,
+        -0.18278685,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.1614192
+      ]
+    ],
+    "offset": [
+      1.1971145,
+      -4.739941,
+      -0.046587043
+    ],
+    "color": 0.30082,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.42857143,
+    "fan": 0.5714286,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.1315894,
+    "affine": [
+      [
+        -0.06606704,
+        0.14634746,
+        0.0
+      ],
+      [
+        -0.22690268,
+        0.11950134,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0212127
+      ]
+    ],
+    "offset": [
+      0.08260738,
+      -2.7638657,
+      0.0
+    ],
+    "color": 0.23323292,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.71428573,
+    "rings": 0.2857143,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.15836406,
+    "affine": [
+      [
+        -0.34821784,
+        -0.050943732,
+        0.0
+      ],
+      [
+        -0.037859097,
+        0.014322221,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.1140267
+      ]
+    ],
+    "offset": [
+      2.5257957,
+      -0.86809856,
+      0.0
+    ],
+    "color": 0.34556442,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 1.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.14736107,
+    "affine": [
+      [
+        -0.34428164,
+        -0.025342278,
+        0.0
+      ],
+      [
+        -0.0053156987,
+        -0.08911863,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.1820664
+      ]
+    ],
+    "offset": [
+      -2.6767309,
+      0.3954976,
+      0.0
+    ],
+    "color": 0.6133021,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 1.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.1800319,
+    "affine": [
+      [
+        0.178261,
+        0.07212865,
+        0.0
+      ],
+      [
+        -0.22953519,
+        -0.21947888,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.2547624
+      ]
+    ],
+    "offset": [
+      1.7078708,
+      -1.8856755,
+      0.0
+    ],
+    "color": 0.27973425,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 1.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.11411491,
+    "affine": [
+      [
+        -0.10268538,
+        -0.12996976,
+        0.0
+      ],
+      [
+        0.019228807,
+        -0.039558686,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0915416
+      ]
+    ],
+    "offset": [
+      0.6282742,
+      2.9534426,
+      0.0
+    ],
+    "color": 0.1875704,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.0,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 1.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.0,
+    "curl": 0.0,
+    "variation_params": {}
+  },
+  {
+    "weight": 0.14638522,
+    "affine": [
+      [
+        0.054924004,
+        -0.061888643,
+        0.0
+      ],
+      [
+        0.040093206,
+        0.05671368,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0110965
+      ]
+    ],
+    "offset": [
+      -3.2083118,
+      3.889893,
+      0.0
+    ],
+    "color": 0.8733414,
+    "linear": 0.0,
+    "sinusoidal": 0.0,
+    "spherical": 0.0,
+    "swirl": 0.0,
+    "horseshoe": 0.0,
+    "handkerchief": 0.28617525,
+    "julia": 0.0,
+    "polar": 0.0,
+    "disc": 0.0,
+    "rings": 0.0,
+    "bubble": 0.0,
+    "fisheye": 0.0,
+    "exponential": 0.0,
+    "spiral": 0.0,
+    "diamond": 0.0,
+    "bent": 0.0,
+    "waves": 0.0,
+    "popcorn": 0.0,
+    "fan": 0.0,
+    "eyefish": 0.0,
+    "cross": 0.0,
+    "tangent": 0.0,
+    "cosine": 0.0,
+    "blob": 0.0,
+    "noise": 0.71382475,
+    "curl": 0.0,
+    "variation_params": {}
+  }
+]

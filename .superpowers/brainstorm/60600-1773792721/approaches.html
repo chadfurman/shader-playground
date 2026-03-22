@@ -1,0 +1,78 @@
+<h2>Three Approaches: How Do We Get There?</h2>
+<p class="subtitle">Same destination, different roads. Click the one that feels right.</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Fork &amp; Evolve</h3>
+      <p style="color: #7ee787; margin-bottom: 8px;">Copy shader-playground into a new repo. Build the game on top.</p>
+      <div style="font-size: 13px; color: #aaa; line-height: 1.7;">
+        <strong style="color: #ccc;">How it works:</strong> Full copy of shader-playground becomes the game's foundation.
+        Strip the HUD/dev tooling, add game systems (flight, input, modes, networking).
+        Shader-playground continues evolving separately as the art tool.<br><br>
+        <strong style="color: #ccc;">Architecture:</strong> Monolithic Rust binary, single repo. Game-specific code lives alongside
+        the renderer/genome/audio systems. Platform abstraction via feature flags + cfg targets.<br><br>
+        <strong style="color: #7ee787;">Pros:</strong> Fastest to first prototype. All existing code just works.
+        Easy to experiment &mdash; change anything without worrying about breaking the art tool.<br><br>
+        <strong style="color: #e94560;">Cons:</strong> Diverges from shader-playground immediately. Bug fixes / improvements
+        have to be manually ported back. Two codebases to maintain long-term.
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Extract Core Library</h3>
+      <p style="color: #7ee787; margin-bottom: 8px;">Pull shared systems into a Rust library crate. Both projects depend on it.</p>
+      <div style="font-size: 13px; color: #aaa; line-height: 1.7;">
+        <strong style="color: #ccc;">How it works:</strong> Create <code>flame-engine</code> as a library crate containing:
+        genome/genetics, audio analysis, taste model, flame compute pipeline, weights system.
+        Shader-playground and the game are separate binaries that both depend on <code>flame-engine</code>.<br><br>
+        <strong style="color: #ccc;">Architecture:</strong> Cargo workspace with 3 crates: <code>flame-engine</code> (lib),
+        <code>shader-playground</code> (bin), <code>fractal-flight</code> (bin). Shared WGSL shaders via build.rs.
+        Platform layer abstracted behind traits in the engine.<br><br>
+        <strong style="color: #7ee787;">Pros:</strong> Clean separation. Improvements to engine benefit both projects.
+        Forces good API boundaries. Engine becomes reusable for future projects.
+        Best for cross-platform &mdash; the engine is pure, apps handle platform details.<br><br>
+        <strong style="color: #e94560;">Cons:</strong> Upfront refactoring cost before you can prototype gameplay.
+        Need to design the engine API before you fully know what the game needs.
+        Risk of premature abstraction.
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Fork First, Extract Later</h3>
+      <p style="color: #f0883e; margin-bottom: 8px;">Recommended. Start with A, graduate to B once the game design solidifies.</p>
+      <div style="font-size: 13px; color: #aaa; line-height: 1.7;">
+        <strong style="color: #ccc;">How it works:</strong> Copy shader-playground into <code>fractal-flight/</code>. Build rapid prototypes
+        of flight, input modes, and game feel. Once you know what the game IS (maybe 2-4 weeks of
+        prototyping), extract the shared engine into a library crate. Then both projects converge on it.<br><br>
+        <strong style="color: #ccc;">Architecture:</strong> Phase 1: monolithic fork, messy and fast. Phase 2: workspace extraction
+        once APIs are clear. Phase 3: platform targets (web/mobile) added to the engine crate.<br><br>
+        <strong style="color: #7ee787;">Pros:</strong> Fastest path to playable prototype. No premature abstraction.
+        The engine API emerges from real usage, not speculation.
+        You discover the game through play, THEN architect for it.<br><br>
+        <strong style="color: #e94560;">Cons:</strong> Some throwaway work during extraction. Requires discipline to
+        actually do the extraction (tech debt gravity is real).
+        Slight delay on cross-platform vs. B's cleaner start.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin: 24px 0;">
+  <h3 style="color: #f0883e; margin: 0 0 12px 0;">My Recommendation: C</h3>
+  <p style="color: #ccc; font-size: 14px; line-height: 1.7; margin: 0;">
+    You said "prototype and try stuff" three times now, and that instinct is correct.
+    The worst thing we can do is spend weeks designing an engine API for a game we haven't
+    played yet. Fork it, make it fly, discover the game through your hands, THEN clean up.
+    <br><br>
+    <strong>Prototype targets:</strong> 3 input modes (drift, tunnel, gestural) &times; fractal flight in ~1 week each.
+    Whichever one makes you go "oh HELL yes" when you play it &mdash; that's the game.
+  </p>
+</div>

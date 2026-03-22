@@ -1,0 +1,150 @@
+<div style="text-align: center; padding: 12px 0;">
+  <p style="color: #666; font-size: 13px; letter-spacing: 4px; text-transform: uppercase; margin: 0 0 4px 0;">स्पन्द</p>
+  <h2 style="margin: 0 0 4px 0;">Architecture & Roadmap</h2>
+  <p class="subtitle">How we get from here to playable</p>
+</div>
+
+<div style="max-width: 680px; margin: 0 auto;">
+
+  <!-- ARCHITECTURE -->
+  <div style="background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 24px; margin: 16px 0;">
+    <h3 style="color: #7ee787; margin: 0 0 12px 0;">Fork First, Extract Later</h3>
+    <div style="display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 13px;">
+      <span style="color: #7ee787; font-weight: bold;">Phase 1</span>
+      <span style="color: #ccc;">Full copy of shader-playground → <code>spanda/</code> repo. Messy and fast.</span>
+      <span style="color: #f0883e; font-weight: bold;">Phase 2</span>
+      <span style="color: #ccc;">Extract shared code → <code>flame-engine</code> library crate. Clean APIs.</span>
+      <span style="color: #533483; font-weight: bold;">Phase 3</span>
+      <span style="color: #ccc;">Platform targets: web (wasm), mobile (iOS/Android). Engine stays pure.</span>
+    </div>
+  </div>
+
+  <!-- ROADMAP -->
+  <div style="position: relative; margin: 24px 0; padding-left: 24px;">
+    <div style="position: absolute; left: 10px; top: 0; bottom: 0; width: 2px; background: #30363d;"></div>
+
+    <!-- MILESTONE 0 -->
+    <div style="position: relative; margin-bottom: 24px;">
+      <div style="position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #7ee787; border: 2px solid #161b22;"></div>
+      <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-left: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <h4 style="color: #7ee787; margin: 0 0 6px 0;">M0: Fork & Fly</h4>
+          <span style="color: #555; font-size: 11px;">~1 week</span>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+          Copy shader-playground. Strip dev tooling. Add a camera you can move through the fractal.
+          Doesn't need to be a "game" — just prove you can fly through flame space and it feels like something.
+          <br><strong style="color: #ccc;">Deliverable:</strong> You press WASD and drift through a fractal flame. That's it.
+        </p>
+      </div>
+    </div>
+
+    <!-- MILESTONE 1 -->
+    <div style="position: relative; margin-bottom: 24px;">
+      <div style="position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #7ee787; border: 2px solid #161b22;"></div>
+      <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-left: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <h4 style="color: #7ee787; margin: 0 0 6px 0;">M1: Three Modes</h4>
+          <span style="color: #555; font-size: 11px;">~2 weeks</span>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+          Implement drift, tunnel, and gestural input modes. Each is a different way to move
+          through the same world. Play all three with music running. Find the magic.
+          <br><strong style="color: #ccc;">Deliverable:</strong> Press 1/2/3 to switch modes. One of them makes you go "oh HELL yes."
+        </p>
+      </div>
+    </div>
+
+    <!-- MILESTONE 2 -->
+    <div style="position: relative; margin-bottom: 24px;">
+      <div style="position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #f0883e; border: 2px solid #161b22;"></div>
+      <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-left: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <h4 style="color: #f0883e; margin: 0 0 6px 0;">M2: The World Evolves</h4>
+          <span style="color: #555; font-size: 11px;">~2 weeks</span>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+          Movement becomes selection pressure. Multiple genome regions in the world.
+          Flying toward beauty → more of it. Beat-quantized mutations. Music drives evolution.
+          R&D spike on multi-flame rendering happens here.
+          <br><strong style="color: #ccc;">Deliverable:</strong> The world visibly responds to where you go and what's playing.
+        </p>
+      </div>
+    </div>
+
+    <!-- MILESTONE 3 -->
+    <div style="position: relative; margin-bottom: 24px;">
+      <div style="position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #f0883e; border: 2px solid #161b22;"></div>
+      <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-left: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <h4 style="color: #f0883e; margin: 0 0 6px 0;">M3: The World Learns You</h4>
+          <span style="color: #555; font-size: 11px;">~2 weeks</span>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+          Taste model wired to implicit behavior signals. R&D spike on signal filtering.
+          Over a 10-minute session, your Spanda should feel distinctly yours.
+          Game modes: zen (default), challenge (optional scoring), garden (sandbox).
+          <br><strong style="color: #ccc;">Deliverable:</strong> Play for 10 minutes. The world at the end looks nothing like the start — and it's <em>yours</em>.
+        </p>
+      </div>
+    </div>
+
+    <!-- MILESTONE 4 -->
+    <div style="position: relative; margin-bottom: 24px;">
+      <div style="position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #533483; border: 2px solid #161b22;"></div>
+      <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-left: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <h4 style="color: #533483; margin: 0 0 6px 0;">M4: Engine Extraction</h4>
+          <span style="color: #555; font-size: 11px;">~2 weeks</span>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+          By now we know what the game IS. Extract <code>flame-engine</code> as a shared library crate.
+          Cargo workspace. Clean API boundaries. shader-playground and Spanda both depend on it.
+          <br><strong style="color: #ccc;">Deliverable:</strong> Two binaries, one engine. Both build and run.
+        </p>
+      </div>
+    </div>
+
+    <!-- MILESTONE 5 -->
+    <div style="position: relative; margin-bottom: 24px;">
+      <div style="position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #533483; border: 2px solid #161b22;"></div>
+      <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-left: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <h4 style="color: #533483; margin: 0 0 6px 0;">M5: Silent Communion</h4>
+          <span style="color: #555; font-size: 11px;">~3-4 weeks</span>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+          Multiplayer. Server architecture. Anonymous presence. Genome cross-pollination.
+          Session-end reveal. Security hardening. Subscription payment integration.
+          <br><strong style="color: #ccc;">Deliverable:</strong> Two players drift together. Their flames touch. Something new is born.
+        </p>
+      </div>
+    </div>
+
+    <!-- MILESTONE 6 -->
+    <div style="position: relative; margin-bottom: 8px;">
+      <div style="position: absolute; left: -20px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #e94560; border: 2px solid #161b22;"></div>
+      <div style="background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-left: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;">
+          <h4 style="color: #e94560; margin: 0 0 6px 0;">M6: Release</h4>
+          <span style="color: #555; font-size: 11px;">~2 weeks</span>
+        </div>
+        <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+          Polish. Music file loading. Platform packaging (Steam, itch.io).
+          Web build (wasm/WebGPU). Trailer. Launch.
+          <br><strong style="color: #ccc;">Deliverable:</strong> People play Spanda. And it's wonderful.
+        </p>
+      </div>
+    </div>
+
+  </div>
+
+  <div style="background: #0d1117; border: 2px solid #e94560; border-radius: 12px; padding: 20px; margin: 24px 0; text-align: center;">
+    <p style="color: #e0e0e0; font-size: 15px; line-height: 1.7; margin: 0;">
+      Full spec: <code style="color: #f0883e;">.plans/2026-03-17-spanda-game-design.md</code>
+      <br><br>
+      <span style="color: #888;">Section 4 of 4 &mdash; Does this roadmap feel right?</span>
+    </p>
+  </div>
+
+</div>

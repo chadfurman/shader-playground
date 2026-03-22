@@ -1,0 +1,108 @@
+<div style="text-align: center; padding: 12px 0;">
+  <p style="color: #666; font-size: 13px; letter-spacing: 4px; text-transform: uppercase; margin: 0 0 4px 0;">स्पन्द</p>
+  <h2 style="margin: 0 0 4px 0;">Open Questions</h2>
+  <p class="subtitle">Your concerns, captured. None of these are blockers — they're discovery work.</p>
+</div>
+
+<div style="max-width: 680px; margin: 0 auto;">
+
+  <div style="display: grid; gap: 12px;">
+
+    <div style="background: #161b22; border-left: 3px solid #e94560; border-radius: 0 8px 8px 0; padding: 16px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h4 style="color: #e94560; margin: 0 0 6px 0;">OQ1: What is "terrain"?</h4>
+        <span style="color: #555; font-size: 11px;">PROTOTYPE</span>
+      </div>
+      <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+        Fractal flames are attractors, not terrain meshes. What does "flying through" them mean?
+        Are flames nodes you fly between? Are you inside the attractor? Both?
+        <strong style="color: #ccc;">Resolved by: building the simplest flight prototype and seeing what feels right.</strong>
+      </p>
+    </div>
+
+    <div style="background: #161b22; border-left: 3px solid #533483; border-radius: 0 8px 8px 0; padding: 16px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h4 style="color: #533483; margin: 0 0 6px 0;">OQ2: What do player lights look like?</h4>
+        <span style="color: #555; font-size: 11px;">PROTOTYPE</span>
+      </div>
+      <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+        A glowing point? A small flame? A particle trail? How does it read against fractal backgrounds?
+        <strong style="color: #ccc;">Resolved by: trying 3-4 visual treatments and playtesting.</strong>
+      </p>
+    </div>
+
+    <div style="background: #161b22; border-left: 3px solid #e94560; border-radius: 0 8px 8px 0; padding: 16px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h4 style="color: #e94560; margin: 0 0 6px 0;">OQ3: Multiple flames coexisting</h4>
+        <span style="color: #555; font-size: 11px;">R&amp;D</span>
+      </div>
+      <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+        shader-playground renders one genome fullscreen. Spanda needs multiple simultaneously.
+        Spatial partitioning? Multiple render targets? Blended fields?
+        <strong style="color: #ccc;">This is a core rendering architecture question. Needs dedicated R&amp;D spike.</strong>
+      </p>
+    </div>
+
+    <div style="background: #161b22; border-left: 3px solid #0ea5e9; border-radius: 0 8px 8px 0; padding: 16px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h4 style="color: #0ea5e9; margin: 0 0 6px 0;">OQ4: "Close to a flame" — proximity UX</h4>
+        <span style="color: #555; font-size: 11px;">PROTOTYPE</span>
+      </div>
+      <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+        How does the player sense proximity? Visual glow? Audio resonance? Haptic pulse?
+        Camera shift? The fractal pulling toward you?
+        <strong style="color: #ccc;">Resolved by: prototyping proximity feedback cues.</strong>
+      </p>
+    </div>
+
+    <div style="background: #161b22; border-left: 3px solid #f0883e; border-radius: 0 8px 8px 0; padding: 16px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h4 style="color: #f0883e; margin: 0 0 6px 0;">OQ5: Rendering performance</h4>
+        <span style="color: #555; font-size: 11px;">ARCHITECTURE</span>
+      </div>
+      <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+        Fractals are expensive. Game logic + physics + multiple flames + networking = more expensive.
+        Mitigations: LOD for distant flames, temporal reprojection, adaptive quality, render thread
+        (already built). <strong style="color: #ccc;">Architecture decisions, but the render thread gives us a strong starting point.</strong>
+      </p>
+    </div>
+
+    <div style="background: #161b22; border-left: 3px solid #7ee787; border-radius: 0 8px 8px 0; padding: 16px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h4 style="color: #7ee787; margin: 0 0 6px 0;">OQ6: Taste engine — implicit signals</h4>
+        <span style="color: #555; font-size: 11px;">R&amp;D</span>
+      </div>
+      <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+        Explicit votes are clean data. Movement-as-preference is noisy. How to filter signal from
+        random movement? How fast should taste converge? How to blend tastes in multiplayer?
+        <strong style="color: #ccc;">Needs experimentation with the existing IGMM model + new implicit signal pipeline.</strong>
+      </p>
+    </div>
+
+    <div style="background: #161b22; border-left: 3px solid #e5c07b; border-radius: 0 8px 8px 0; padding: 16px 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <h4 style="color: #e5c07b; margin: 0 0 6px 0;">OQ7: Server security &amp; architecture</h4>
+        <span style="color: #555; font-size: 11px;">LATER — phase 2+</span>
+      </div>
+      <p style="color: #aaa; font-size: 13px; margin: 0; line-height: 1.6;">
+        Dedicated vs P2P? Genome validation (malicious data)? Payment processing? Privacy?
+        <strong style="color: #ccc;">Build single-player first. Multiplayer architecture is a separate design cycle
+        once core gameplay is proven.</strong>
+      </p>
+    </div>
+
+  </div>
+
+  <div style="background: #0d1117; border: 2px solid #30363d; border-radius: 12px; padding: 20px; margin: 24px 0; text-align: center;">
+    <p style="color: #ccc; font-size: 14px; line-height: 1.7; margin: 0;">
+      <strong style="color: #7ee787;">None of these are blockers.</strong><br>
+      4 are resolved by prototyping. 2 need R&amp;D spikes. 1 is deferred to phase 2.<br><br>
+      Full spec saved to: <code style="color: #f0883e;">.plans/2026-03-17-spanda-game-design.md</code>
+    </p>
+  </div>
+
+  <p style="color: #666; font-size: 13px; text-align: center; font-style: italic;">
+    Section 3 of 4 &mdash; Anything to add or adjust before I write the final section (architecture &amp; roadmap)?
+  </p>
+
+</div>
